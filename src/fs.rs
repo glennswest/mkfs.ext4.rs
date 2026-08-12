@@ -465,6 +465,11 @@ impl<D: BlockDevice> Filesystem<D> {
             // The contents live in i_block itself; there are no blocks.
             return Ok(());
         }
+        if !inode.has_block_map() {
+            // A device, FIFO, socket or fast symlink keeps something other
+            // than block pointers in i_block.
+            return Ok(());
+        }
         if inode.uses_extents() {
             self.walk_extents(inode, &mut visit).await
         } else {
@@ -608,6 +613,9 @@ impl<D: BlockDevice> Filesystem<D> {
 
     /// Resolve a file's logical block to its physical block, if mapped.
     pub async fn resolve_block(&self, inode: &Inode, logical: u64) -> Result<Option<u64>> {
+        if !inode.has_block_map() {
+            return Ok(None);
+        }
         if inode.uses_extents() {
             return self.resolve_extent(inode, logical).await;
         }

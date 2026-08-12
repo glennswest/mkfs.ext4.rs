@@ -228,6 +228,50 @@ impl Inode {
         self.flags & iflags::EXTENTS != 0
     }
 
+    /// Whether this inode's `i_block` is a block map at all.
+    ///
+    /// It usually is — but not for a device, FIFO or socket, where `i_block`
+    /// holds the device number, and not for a fast symlink, where it holds the
+    /// target path. Walking those as if they were block pointers reads a
+    /// device's major and minor number as a physical block, which is how a
+    /// checker ends up reporting a filesystem full of impossible blocks.
+    pub fn has_block_map(&self) -> bool {
+        match self.file_type() {
+            mode::IFCHR | mode::IFBLK | mode::IFIFO | mode::IFSOCK => false,
+            // A symlink short enough to sit inside the inode has no blocks.
+            mode::IFLNK => self.size >= I_BLOCK_LEN as u64,
+            _ => true,
+        }
+    }
+
+    /// The device number a special file refers to, as (major, minor).
+    ///
+    /// Small numbers live in `i_block[0]` the classic way; anything larger uses
+    /// the wider encoding in `i_block[1]`.
+    pub fn device_numbers(&self) -> (u32, u32) {
+        let first = get_u32(&self.block, 0);
+        if first != 0 {
+            ((first >> 8) & 0xff, first & 0xff)
+        } else {
+            let second = get_u32(&self.block, 4);
+            (
+                (second & 0x000f_ff00) >> 8,
+                (second & 0xff) | ((second >> 12) & 0x000f_ff00),
+            )
+        }
+    }
+
+    /// Point this inode at a device.
+    pub fn set_device_numbers(&mut self, major: u32, minor: u32) {
+        self.block = [0u8; I_BLOCK_LEN];
+        if major < 256 && minor < 256 {
+            put_u32(&mut self.block, 0, (major << 8) | minor);
+        } else {
+            let encoded = (minor & 0xff) | (major << 8) | ((minor & !0xff) << 12);
+            put_u32(&mut self.block, 4, encoded);
+        }
+    }
+
     /// Whether the inode is in use — an unused inode has no links and no
     /// deletion time.
     pub fn in_use(&self) -> bool {

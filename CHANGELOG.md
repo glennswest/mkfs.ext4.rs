@@ -137,3 +137,9 @@
   check interval.
 - **fix:** fsck now claims the MMP block. It belongs to no inode and no group's
   metadata, so nothing else would ever account for it.
+- **feat:** `Inode` learned about special files: `has_block_map()` tells a
+  caller when `i_block` holds something other than block pointers, and
+  `device_numbers()` / `set_device_numbers()` encode a device the way the
+  kernel reads it — the classic 16-bit slot for small numbers, the wider
+  encoding beyond. Without this a checker walks a device's major and minor
+  number as if it were a physical block.
