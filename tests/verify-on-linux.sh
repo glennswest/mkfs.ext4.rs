@@ -44,6 +44,8 @@ CASES=(
     # The journal has to be allocated in pieces.
     "ext3-256m:256:ext3:"
     "ext2-256m:256:ext2:"
+    # Multiple mount protection: the kernel should take the fence on mount.
+    "ext4-64m-mmp:64:ext4:mmp"
 )
 
 WORK="$(mktemp -d)"

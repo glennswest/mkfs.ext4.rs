@@ -17,7 +17,9 @@ path = "src/lib.rs"
 [dependencies]
 # Async runtime. The crate needs only these features; a consumer running a
 # full tokio (stormblock does) is unaffected.
-tokio = { version = "1", features = ["fs", "io-util", "rt", "sync", "macros"] }
+# "time" is for the MMP protocol's waits, which are the mechanism
+# rather than an optimisation.
+tokio = { version = "1", features = ["fs", "io-util", "rt", "sync", "macros", "time"] }
 async-trait = "0.1"
 futures = "0.3"
 
@@ -36,7 +38,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = tr
 anyhow = { version = "1", optional = true }
 
 [dev-dependencies]
-tokio = { version = "1", features = ["full"] }
+# "test-util" gives the paused clock the MMP tests need.
+tokio = { version = "1", features = ["full", "test-util"] }
 tempfile = "3"
 # The golden reference filesystems are stored compressed.
 flate2 = "1"

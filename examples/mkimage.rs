@@ -33,6 +33,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             params = params.block_size(n.parse()?);
         } else if let Some(l) = arg.strip_prefix("label=") {
             params = params.label(l);
+        } else if arg == "mmp" {
+            params = params.features("mmp");
         }
     }
 

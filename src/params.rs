@@ -182,6 +182,9 @@ pub struct Params {
     pub flex_bg_size: Option<u32>,
     /// First meta block group. `mke2fs -E first_meta_bg=`.
     pub first_meta_bg: Option<u32>,
+    /// Seconds between multiple-mount-protection heartbeats.
+    /// `mke2fs -E mmp_update_interval=`.
+    pub mmp_update_interval: Option<u16>,
     /// Journal sizing. `mke2fs -J size=`.
     pub journal: JournalSize,
     /// Feature overrides applied after the profile's own. `mke2fs -O`.
@@ -218,6 +221,7 @@ impl Default for Params {
             blocks_per_group: None,
             flex_bg_size: None,
             first_meta_bg: None,
+            mmp_update_interval: None,
             journal: JournalSize::Default,
             feature_spec: None,
             mkfs_time: None,

@@ -105,6 +105,10 @@ struct Plan {
     orphan_extent_leaf: Option<u64>,
     /// Indirect blocks mapping the orphan file without extents.
     orphan_indirect: IndirectMap,
+    /// Block holding the multiple-mount-protection structure.
+    mmp_block: Option<u64>,
+    /// Seconds a holder promises to heartbeat within.
+    mmp_update_interval: u16,
     csum_scheme: GroupDescCsum,
     csum_seed: u32,
     lazy_itable: bool,
@@ -791,6 +795,21 @@ fn plan(device_size: u64, params: &Params) -> Result<Plan> {
         None
     };
 
+    // Multiple mount protection: one block, somewhere in the middle of the
+    // filesystem so a stray write to the start does not take the fence with it.
+    let (mmp_block, mmp_update_interval) =
+        if geom.features.incompat.contains(IncompatFeatures::MMP) {
+            let goal = geom.blocks_count / 2;
+            let block = alloc.alloc(goal, 1)?;
+            let interval = params
+                .mmp_update_interval
+                .unwrap_or(crate::mmp::UPDATE_INTERVAL)
+                .clamp(crate::mmp::MIN_CHECK_INTERVAL, crate::mmp::MAX_UPDATE_INTERVAL);
+            (Some(block), interval)
+        } else {
+            (None, 0)
+        };
+
     // Four extents fit inside an inode. More than that needs a leaf block, and
     // the inode becomes a one-level tree pointing at it.
     let inline_max = extent::ExtentHeader::max_entries(extent::INLINE_LEN, false) as usize;
@@ -857,6 +876,8 @@ fn plan(device_size: u64, params: &Params) -> Result<Plan> {
         orphan_i_block,
         orphan_extent_leaf,
         orphan_indirect,
+        mmp_block,
+        mmp_update_interval,
         csum_scheme,
         csum_seed,
         lazy_itable: params.lazy_itable_init,
@@ -1100,6 +1121,22 @@ async fn write_filesystem<D: BlockDevice + ?Sized>(dev: &D, plan: &Plan) -> Resu
     if plan.orphan_inode.is_some() {
         write_orphan_file(dev, plan).await?;
     }
+    if let Some(block) = plan.mmp_block {
+        // Clean: nobody holds a filesystem that has just been created.
+        let mmp = crate::mmp::Mmp {
+            seq: crate::mmp::SEQ_CLEAN,
+            time: plan.mkfs_time,
+            nodename: String::new(),
+            bdevname: String::new(),
+            check_interval: plan.mmp_update_interval,
+        };
+        let buf = mmp.encode(
+            g.block_size as usize,
+            plan.csum_scheme == GroupDescCsum::Crc32c,
+            plan.csum_seed,
+        );
+        dev.write_at(block * block_size, &buf).await?;
+    }
     write_reserved_inodes(dev, plan).await?;
 
     // The primary superblock last: until it lands, a torn format is not a
@@ -1288,8 +1325,8 @@ fn build_superblock(plan: &Plan, free_blocks: u64, free_inodes: u32) -> Superblo
         want_extra_isize: extra_isize,
         flags: superblock::flags::SIGNED_HASH,
         raid_stride: 0,
-        mmp_update_interval: 0,
-        mmp_block: 0,
+        mmp_update_interval: plan.mmp_update_interval,
+        mmp_block: plan.mmp_block.unwrap_or(0),
         raid_stripe_width: 0,
         log_groups_per_flex: g.log_groups_per_flex,
         checksum_type: if plan.csum_scheme == GroupDescCsum::Crc32c {

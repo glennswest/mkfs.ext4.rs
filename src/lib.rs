@@ -41,6 +41,7 @@ pub mod fs;
 pub mod fsck;
 pub mod journal;
 pub mod layout;
+pub mod mmp;
 pub mod params;
 pub mod structs;
 

@@ -394,6 +394,17 @@ async fn pass0_superblock<D: BlockDevice>(
         state.claim(b);
     }
 
+    // The multiple-mount-protection block belongs to no inode and no group's
+    // metadata, so nothing else would ever claim it.
+    if sb
+        .feature_incompat
+        .contains(crate::features::IncompatFeatures::MMP)
+        && sb.mmp_block >= sb.first_data_block as u64
+        && sb.mmp_block < sb.blocks_count
+    {
+        state.claim(sb.mmp_block);
+    }
+
     Ok(())
 }
 

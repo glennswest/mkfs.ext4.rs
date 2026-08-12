@@ -82,6 +82,10 @@ struct Args {
     #[arg(long)]
     mkfs_time: Option<u64>,
 
+    /// Seconds between multiple-mount-protection heartbeats. Implies -O mmp.
+    #[arg(long)]
+    mmp_update_interval: Option<u16>,
+
     /// Report what would be done and write nothing.
     #[arg(short = 'n', long)]
     dry_run: bool,
@@ -117,6 +121,14 @@ async fn main() -> anyhow::Result<()> {
     params.feature_spec = args.features;
     params.mkfs_time = args.mkfs_time;
     params.lazy_itable_init = args.lazy_itable_init;
+    params.mmp_update_interval = args.mmp_update_interval;
+    if args.mmp_update_interval.is_some() {
+        // Asking for an interval is asking for the fence.
+        params.feature_spec = Some(match params.feature_spec.take() {
+            Some(spec) => format!("{spec},mmp"),
+            None => "mmp".to_string(),
+        });
+    }
     if let Some(u) = args.uuid.as_deref() {
         params.uuid = Some(parse_uuid(u)?);
     }

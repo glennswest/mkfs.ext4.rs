@@ -122,3 +122,18 @@
   blocks interleaved, as `mke2fs` does, rather than all data first and the
   indirect blocks after. Same file, and each indirect block now sits beside the
   data it describes.
+- **feat:** Implement `mmp` — multiple mount protection. Shared block storage
+  can hand one device to two hosts and ext4 has no other way to notice; MMP is
+  the only multi-host primitive the format has, and it fences rather than
+  arbitrates. Format-time allocates `s_mmp_block` and writes the structure
+  clean; `-O mmp` and `--mmp-update-interval` control it. Open-time implements
+  the race-and-wait of `ext2fs_mmp_start()`: stamp a sequence, wait out two
+  check intervals, refuse if it moved. A refusal names the holder from
+  `mmp_nodename` rather than leaving an operator to guess.
+  A dead holder can be taken over; a running check and an unknown sequence are
+  refused distinctly.
+  Verified with a real kernel: it mounts our MMP filesystem and **takes the
+  fence** — the sequence moves from `SEQ_CLEAN` to its own and it sets its own
+  check interval.
+- **fix:** fsck now claims the MMP block. It belongs to no inode and no group's
+  metadata, so nothing else would ever account for it.
