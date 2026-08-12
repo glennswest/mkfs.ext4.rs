@@ -1948,6 +1948,33 @@ mod tests {
         }
     }
 
+    /// A device that reports 4 KiB sectors gets 4 KiB blocks without anyone
+    /// asking — and a caller can still override it either way. This is the
+    /// path a storage engine takes: its volumes are neither files nor block
+    /// devices, so it states the sector size itself.
+    #[tokio::test]
+    async fn the_devices_sector_size_reaches_the_geometry() {
+        // A device that says 4096 gets 4096-byte blocks, with no parameters.
+        let dev = MemDevice::with_sector_size(64 * MIB, 4096);
+        let report = format(&dev, &fixed_params(Profile::Ext4).no_journal())
+            .await
+            .unwrap();
+        assert_eq!(report.block_size, 4096);
+
+        // The same size on a 512-byte-sector device is a 1 KiB filesystem.
+        let dev = MemDevice::with_sector_size(64 * MIB, 512);
+        let report = format(&dev, &fixed_params(Profile::Ext4).no_journal())
+            .await
+            .unwrap();
+        assert_eq!(report.block_size, 1024);
+
+        // And Params overrides whatever the device claimed.
+        let dev = MemDevice::with_sector_size(64 * MIB, 512);
+        let params = fixed_params(Profile::Ext4).no_journal().sector_size(4096);
+        let report = format(&dev, &params).await.unwrap();
+        assert_eq!(report.block_size, 4096);
+    }
+
     #[tokio::test]
     async fn refuses_a_device_too_small_to_hold_a_filesystem() {
         let dev = MemDevice::new(16 * 1024);

@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+## [v1.0.2] — 2026-08-12
+
+### Fixed
+
+- **`FileDevice` now asks the kernel for the device's logical sector size**
+  instead of assuming 512. v1.0.1 added the sector-size *mechanism* but no
+  detection, so on a real 4 KiB-sector device it still produced a 1 KiB-block
+  filesystem unless the caller passed `--sector-size` — which is not a fix.
+  Measured on a 4 KiB loop device: ours now chooses 4096 with no flag, matching
+  `mke2fs`; on a 512-byte device both still choose 1024.
+
+### Added
+
+- Three ways to state a sector size, for storage that cannot be probed:
+  override `BlockDevice::logical_sector_size()`, pass `Params::sector_size`,
+  or use `--sector-size`. `Params` wins over the device. Documented in the
+  crate docs and README, since a consumer implementing `BlockDevice` over its
+  own volumes is exactly who needs it.
+
 ## [v1.0.1] — 2026-08-12
 
 ### Changed

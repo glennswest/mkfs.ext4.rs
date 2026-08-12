@@ -23,6 +23,29 @@ let report = format(&dev, &Params::new(Profile::Ext4).label("data")).await?;
 println!("{} blocks, {} inodes", report.blocks_count, report.inodes_count);
 ```
 
+## Sector size
+
+The block size is never smaller than the device's logical sector, exactly as
+`mke2fs` does it — so the same 256 MiB filesystem is **1 KiB-block on a
+512-byte-sector device and 4 KiB-block on a 4 KiB one**. Getting this wrong
+produces a filesystem that cannot be written a block at a time.
+
+`FileDevice` asks the kernel. If you implement `BlockDevice` over your own
+storage, report it:
+
+```rust
+impl BlockDevice for MyVolume {
+    fn logical_sector_size(&self) -> u32 { 4096 }
+    // …
+}
+```
+
+Or state it per-format, which overrides the device:
+
+```rust
+Params::new(Profile::Ext4).sector_size(4096)
+```
+
 ## Why
 
 Two properties the C tools cannot offer a Rust storage engine:

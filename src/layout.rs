@@ -704,6 +704,30 @@ mod tests {
         assert_eq!(g.block_size, 4096);
     }
 
+
+    /// A consumer whose storage is neither a file nor a block device — a
+    /// network-backed volume, say — cannot be probed, so it must be able to
+    /// state its sector size. Both routes are checked here: the device
+    /// reporting it, and `Params` overriding whatever the device said.
+    #[test]
+    fn the_sector_size_can_always_be_stated_explicitly() {
+        // Params wins over anything the device reports.
+        let g = Geometry::compute(
+            256 * MIB,
+            &Params::new(Profile::Ext4).sector_size(4096),
+        )
+        .unwrap();
+        assert_eq!(g.block_size, 4096);
+
+        // And downwards too, for a device that really is 512.
+        let g = Geometry::compute(
+            256 * MIB,
+            &Params::new(Profile::Ext4).sector_size(512),
+        )
+        .unwrap();
+        assert_eq!(g.block_size, 1024);
+    }
+
     #[test]
     fn a_block_smaller_than_the_sector_is_refused() {
         let params = Params::new(Profile::Ext4).sector_size(4096).block_size(1024);

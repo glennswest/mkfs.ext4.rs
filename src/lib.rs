@@ -16,6 +16,29 @@
 //!   its own in-memory or network-backed volume directly, with no loopback, no
 //!   `/dev` node and no `mkfs.ext4` subprocess.
 //!
+//! # If you implement `BlockDevice` yourself
+//!
+//! **Report your sector size.** [`BlockDevice::logical_sector_size`] defaults to
+//! 512, and the block size is never smaller than it. A volume that really
+//! exports 4 KiB sectors but inherits the default gets a 1 KiB-block
+//! filesystem — valid on paper, and unwritable a block at a time on the device
+//! it was made for.
+//!
+//! ```
+//! # use mkfs_ext4::device::BlockDevice;
+//! # struct MyVolume;
+//! impl MyVolume {
+//!     // In your `impl BlockDevice for MyVolume`:
+//!     fn logical_sector_size(&self) -> u32 {
+//!         4096
+//!     }
+//! }
+//! ```
+//!
+//! [`FileDevice`] asks the kernel, so a real block device needs nothing. For
+//! anything else, either override the method or set
+//! [`params::Params::sector_size`], which wins over whatever the device says.
+//!
 //! # Layout of this crate
 //!
 //! | Module | What it owns |

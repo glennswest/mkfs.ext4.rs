@@ -97,10 +97,11 @@ impl FileDevice {
         .map_err(|e| Error::io(0, e))?;
 
         let size = device_size(&file)?;
+        let sector_size = detect_sector_size(&file);
         Ok(Self {
             file,
             size,
-            sector_size: 512,
+            sector_size,
         })
     }
 
@@ -137,6 +138,35 @@ impl FileDevice {
         self.sector_size = sector_size;
         self
     }
+}
+
+/// The device's logical sector size, asked of the kernel.
+///
+/// A filesystem's block size can never be smaller than this, so guessing is not
+/// good enough: on a 4 KiB-sector device, assuming 512 produces a 1 KiB-block
+/// filesystem that cannot be written a block at a time. `mke2fs` queries the
+/// device and so does this.
+///
+/// A regular file has no sectors of its own and reports 512, which is what
+/// `mke2fs` falls back to as well.
+fn detect_sector_size(file: &std::fs::File) -> u32 {
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::fs::FileTypeExt;
+        if file
+            .metadata()
+            .map(|m| m.file_type().is_block_device())
+            .unwrap_or(false)
+        {
+            if let Ok(size) = rustix::fs::ioctl_blksszget(file) {
+                if size > 0 {
+                    return size as u32;
+                }
+            }
+        }
+    }
+    let _ = file;
+    512
 }
 
 /// Size of a file, or of the block device it refers to.
