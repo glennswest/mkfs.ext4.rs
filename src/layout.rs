@@ -89,7 +89,26 @@ impl Geometry {
             .map_err(Error::IncompatibleFeatures)?;
 
         let class = SizeType::of(size_bytes);
-        let block_size = params.block_size.unwrap_or_else(|| class.block_size());
+
+        // The device's sector is the floor. `mke2fs` raises its default block
+        // size to the logical sector size, which is why the same 256 MiB image
+        // gets 1 KiB blocks on a 512-byte-sector device and 4 KiB blocks on a
+        // 4 KiB-sector one. Getting this wrong produces a filesystem that is
+        // valid on paper and unwritable on the device it was made for.
+        let sector_size = params.sector_size.unwrap_or(512).max(1);
+        let block_size = match params.block_size {
+            Some(explicit) => {
+                if explicit < sector_size {
+                    return Err(Error::invalid(format!(
+                        "a block size of {explicit} is smaller than the device's \
+                         {sector_size}-byte sector; the filesystem could not be written \
+                         a block at a time"
+                    )));
+                }
+                explicit
+            }
+            None => class.block_size().max(sector_size),
+        };
         validate_block_size(block_size)?;
         let log_block_size = block_size.trailing_zeros() - 10;
 
@@ -655,6 +674,53 @@ mod tests {
     use crate::params::Profile;
 
     const MIB: u64 = 1024 * 1024;
+
+
+    /// A device's sector size is the floor for the block size, and it changes
+    /// the answer. Measured against real `mke2fs` on a 4 KiB-sector loop
+    /// device: the same 256 MiB image gets 1 KiB blocks at 512-byte sectors
+    /// and 4 KiB blocks at 4 KiB sectors.
+    ///
+    /// This is not academic. A storage engine exporting 4 KiB sectors — which
+    /// is the common case for network-backed volumes — would otherwise be
+    /// handed a filesystem it cannot write a block at a time.
+    #[test]
+    fn the_sector_size_raises_the_block_size() {
+        let base = Params::new(Profile::Ext4);
+
+        // 512-byte sectors: the size class decides, and 256 MiB is "small".
+        let g = Geometry::compute(256 * MIB, &base.clone().sector_size(512)).unwrap();
+        assert_eq!(g.block_size, 1024);
+        assert_eq!(g.blocks_count, 262_144);
+
+        // 4 KiB sectors: the floor wins.
+        let g = Geometry::compute(256 * MIB, &base.clone().sector_size(4096)).unwrap();
+        assert_eq!(g.block_size, 4096);
+        assert_eq!(g.blocks_count, 65_536);
+
+        // And a sector size larger than the class default for a big filesystem
+        // changes nothing, because the default was already larger.
+        let g = Geometry::compute(2048 * MIB, &base.clone().sector_size(4096)).unwrap();
+        assert_eq!(g.block_size, 4096);
+    }
+
+    #[test]
+    fn a_block_smaller_than_the_sector_is_refused() {
+        let params = Params::new(Profile::Ext4).sector_size(4096).block_size(1024);
+        let err = Geometry::compute(256 * MIB, &params).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains("1024"), "{text}");
+        assert!(text.contains("4096"), "{text}");
+    }
+
+    #[test]
+    fn an_explicit_block_size_at_or_above_the_sector_is_allowed() {
+        let params = Params::new(Profile::Ext4).sector_size(4096).block_size(4096);
+        assert_eq!(
+            Geometry::compute(256 * MIB, &params).unwrap().block_size,
+            4096
+        );
+    }
 
     #[test]
     fn sparse_super_picks_groups_0_1_and_powers_of_3_5_7() {

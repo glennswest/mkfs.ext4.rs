@@ -143,3 +143,16 @@
   kernel reads it — the classic 16-bit slot for small numbers, the wider
   encoding beyond. Without this a checker walks a device's major and minor
   number as if it were a physical block.
+- **fix:** The device's logical sector size now sets the floor for the block
+  size, as `mke2fs` does. This changes the answer: the same 256 MiB filesystem
+  gets **1 KiB blocks on a 512-byte-sector device and 4 KiB blocks on a 4 KiB
+  one**, because the size-class default is raised to the sector size. A
+  filesystem with blocks smaller than the device's sector cannot be written a
+  block at a time, and an implementation is entitled to refuse it — which makes
+  this a candidate cause of stormblock#39, where a 256 MiB template was
+  exported over a volume reporting 4096-byte sectors.
+  `BlockDevice::logical_sector_size()` reports it, `Params::sector_size` and
+  `--sector-size` override it, and an explicit block size below the sector is
+  refused with a message rather than accepted.
+- **test:** An eighth golden reference generated on a 4 KiB-sector loop device.
+  Zero structural differences there too.

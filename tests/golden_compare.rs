@@ -121,6 +121,15 @@ fn cases() -> Vec<Case> {
             size: 256 * MIB,
             params: || pinned(Profile::Ext4),
         },
+        // The same size on a 4 KiB-sector device. mke2fs raises its default
+        // block size to the sector size, so this is a 4 KiB-block filesystem
+        // where the 512-byte-sector one above is 1 KiB — the difference that
+        // matters on any network-backed volume.
+        Case {
+            name: "ext4-256m-4ksector",
+            size: 256 * MIB,
+            params: || pinned(Profile::Ext4).sector_size(4096),
+        },
     ]
 }
 

@@ -590,6 +590,13 @@ fn journal_extent_leaf_block(extents: &[Extent], block_size: u32, with_tail: boo
 ///
 /// The device is written in place; everything previously on it is lost.
 pub async fn format<D: BlockDevice + ?Sized>(dev: &D, params: &Params) -> Result<Report> {
+    // The device knows its own sector size; a caller may override it, but must
+    // not have to state it.
+    let mut params = params.clone();
+    if params.sector_size.is_none() {
+        params.sector_size = Some(dev.logical_sector_size());
+    }
+    let params = &params;
     let plan = plan(dev.size(), params)?;
     write_filesystem(dev, &plan).await
 }

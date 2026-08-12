@@ -24,6 +24,21 @@ pub trait BlockDevice: Send + Sync {
     /// Total addressable size in bytes.
     fn size(&self) -> u64;
 
+    /// The device's logical sector size — the smallest I/O it will accept.
+    ///
+    /// This is not cosmetic. A filesystem whose block size is smaller than the
+    /// device's sector cannot be written to a block at a time, and an
+    /// implementation that tries is entitled to refuse. `mke2fs` raises its
+    /// default block size to the sector size for exactly this reason, so a
+    /// 256 MiB filesystem gets 1 KiB blocks on a 512-byte-sector device and
+    /// 4 KiB blocks on a 4 KiB-sector one.
+    ///
+    /// Defaults to 512. A device that knows better — a network-backed volume
+    /// exporting 4 KiB sectors, say — should say so.
+    fn logical_sector_size(&self) -> u32 {
+        512
+    }
+
     /// Read exactly `buf.len()` bytes starting at `offset`.
     async fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<()>;
 
@@ -67,6 +82,7 @@ pub(crate) fn check_bounds(offset: u64, len: u64, size: u64) -> Result<()> {
 pub struct FileDevice {
     file: std::fs::File,
     size: u64,
+    sector_size: u32,
 }
 
 impl FileDevice {
@@ -81,7 +97,11 @@ impl FileDevice {
         .map_err(|e| Error::io(0, e))?;
 
         let size = device_size(&file)?;
-        Ok(Self { file, size })
+        Ok(Self {
+            file,
+            size,
+            sector_size: 512,
+        })
     }
 
     /// Create (or truncate) a file of exactly `size` bytes to format into.
@@ -101,7 +121,21 @@ impl FileDevice {
         .map_err(|e| Error::io(0, io::Error::other(e)))?
         .map_err(|e| Error::io(0, e))?;
 
-        Ok(Self { file, size })
+        Ok(Self {
+            file,
+            size,
+            sector_size: 512,
+        })
+    }
+
+    /// Declare the device's logical sector size.
+    ///
+    /// A plain file has no sectors of its own, so a caller building an image
+    /// for a device with 4 KiB sectors has to say so — otherwise the
+    /// filesystem is laid out for the file, not for where it is going.
+    pub fn with_sector_size(mut self, sector_size: u32) -> Self {
+        self.sector_size = sector_size;
+        self
     }
 }
 
@@ -130,6 +164,10 @@ fn device_size(file: &std::fs::File) -> Result<u64> {
 impl BlockDevice for FileDevice {
     fn size(&self) -> u64 {
         self.size
+    }
+
+    fn logical_sector_size(&self) -> u32 {
+        self.sector_size
     }
 
     async fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<()> {
@@ -198,6 +236,7 @@ impl BlockDevice for FileDevice {
 pub struct MemDevice {
     data: Mutex<Vec<u8>>,
     size: u64,
+    sector_size: u32,
 }
 
 impl MemDevice {
@@ -206,6 +245,15 @@ impl MemDevice {
         Self {
             data: Mutex::new(vec![0u8; size as usize]),
             size,
+            sector_size: 512,
+        }
+    }
+
+    /// A device that reports the given logical sector size.
+    pub fn with_sector_size(size: u64, sector_size: u32) -> Self {
+        Self {
+            sector_size,
+            ..Self::new(size)
         }
     }
 
@@ -219,6 +267,10 @@ impl MemDevice {
 impl BlockDevice for MemDevice {
     fn size(&self) -> u64 {
         self.size
+    }
+
+    fn logical_sector_size(&self) -> u32 {
+        self.sector_size
     }
 
     async fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<()> {
@@ -252,6 +304,10 @@ impl<D: BlockDevice + ?Sized> BlockDevice for &D {
         (**self).size()
     }
 
+    fn logical_sector_size(&self) -> u32 {
+        (**self).logical_sector_size()
+    }
+
     async fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<()> {
         (**self).read_at(offset, buf).await
     }
@@ -275,6 +331,10 @@ impl<D: BlockDevice + ?Sized> BlockDevice for &D {
 impl<D: BlockDevice + ?Sized> BlockDevice for std::sync::Arc<D> {
     fn size(&self) -> u64 {
         (**self).size()
+    }
+
+    fn logical_sector_size(&self) -> u32 {
+        (**self).logical_sector_size()
     }
 
     async fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<()> {

@@ -30,6 +30,10 @@ struct Args {
     #[arg(short = 'b', long)]
     block_size: Option<u32>,
 
+    /// The device's logical sector size. The block size is never smaller.
+    #[arg(long)]
+    sector_size: Option<u32>,
+
     /// Inode size in bytes.
     #[arg(short = 'I')]
     inode_size: Option<u16>,
@@ -111,6 +115,7 @@ async fn main() -> anyhow::Result<()> {
 
     let mut params = Params::new(profile);
     params.block_size = args.block_size;
+    params.sector_size = args.sector_size;
     params.inode_size = args.inode_size;
     params.inodes_count = args.inodes_count;
     params.inode_ratio = args.inode_ratio;
@@ -148,6 +153,10 @@ async fn main() -> anyhow::Result<()> {
         let size = args.blocks_count.map_or(device.size(), |b| {
             b * params.block_size.unwrap_or(4096) as u64
         });
+        let mut params = params.clone();
+        if params.sector_size.is_none() {
+            params.sector_size = Some(device.logical_sector_size());
+        }
         let geom = mkfs_ext4::layout::Geometry::compute(size, &params)?;
         println!("Filesystem type:      {}", profile.name());
         println!("Block size:           {}", geom.block_size);

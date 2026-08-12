@@ -162,6 +162,9 @@ pub struct Params {
     pub profile: Profile,
     /// Block size in bytes. `mke2fs -b`.
     pub block_size: Option<u32>,
+    /// The device's logical sector size, which sets the floor for the block
+    /// size. Taken from the device when not given.
+    pub sector_size: Option<u32>,
     /// Inode size in bytes. `mke2fs -I`.
     pub inode_size: Option<u16>,
     /// Total inodes. `mke2fs -N`.
@@ -211,6 +214,7 @@ impl Default for Params {
         Self {
             profile: Profile::Ext4,
             block_size: None,
+            sector_size: None,
             inode_size: None,
             inodes_count: None,
             inode_ratio: None,
@@ -257,6 +261,16 @@ impl Params {
     /// Set the block size.
     pub fn block_size(mut self, size: u32) -> Self {
         self.block_size = Some(size);
+        self
+    }
+
+    /// Declare the device's logical sector size.
+    ///
+    /// The block size can never be smaller than this: a filesystem laid out in
+    /// 1 KiB blocks on a device that only accepts 4 KiB writes cannot be
+    /// written a block at a time.
+    pub fn sector_size(mut self, size: u32) -> Self {
+        self.sector_size = Some(size);
         self
     }
 
