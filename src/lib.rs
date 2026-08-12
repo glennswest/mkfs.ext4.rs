@@ -45,7 +45,14 @@ pub mod mmp;
 pub mod params;
 pub mod structs;
 
+// The things a caller reaches for first, so a simple use looks simple.
+pub use compare::{compare, CompareOptions, ComparisonReport};
 pub use device::{BlockDevice, FileDevice, MemDevice};
+pub use format::{format, Report};
+pub use fs::Filesystem;
+pub use fsck::{FsckOptions, FsckReport};
+pub use layout::Geometry;
+pub use params::{JournalSize, Params, Profile};
 pub use error::{Error, Result};
 pub use features::{CompatFeatures, FeatureMasks, IncompatFeatures, RoCompatFeatures};
 pub use structs::{
