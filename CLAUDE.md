@@ -39,20 +39,40 @@ to point at, not an open-ended guess about feature flags.
 
 - [x] Study the e2fsprogs source (`ext2_fs.h`, `mke2fs.c`, `initialize.c`,
       `alloc_tables.c`, `csum.c`, `mkjournal.c`, `mke2fs.conf.in`)
-- [ ] Scaffold the crate
-- [ ] `device` — async `BlockDevice` trait, file / memory implementations
-- [ ] `structs` — superblock, group descriptors, inode, dirent, extents, JBD2
-- [ ] `csum` — crc32c metadata_csum, crc16 legacy GDT, checksum seed
-- [ ] `layout` — mke2fs geometry: block/inode sizing, groups, flex_bg,
+- [x] Scaffold the crate
+- [x] `device` — async `BlockDevice` trait, file / memory implementations
+- [x] `structs` — superblock, group descriptors, inode, dirent, extents
+- [x] `csum` — crc32c metadata_csum, crc16 legacy GDT, checksum seed
+- [x] `layout` — mke2fs geometry: block/inode sizing, groups, flex_bg,
       sparse_super backups, reserved GDT blocks
-- [ ] `format` — parallel async formatter
-- [ ] `journal` — ext3/ext4 journal creation
-- [ ] `params` — mke2fs option and profile parity
+- [x] `format` — parallel async formatter
+- [x] `journal` — ext3/ext4 journal creation (JBD2 superblock, mke2fs sizing)
+- [x] `params` — mke2fs profiles, size-class defaults, `-O` feature parsing
+- [x] Golden references captured from real mke2fs; geometry and features
+      asserted against all six
+- [x] `tests/verify-on-linux.sh` — e2fsck, mount, write, unmount, e2fsck on a
+      real kernel. All eight configurations pass.
+- [ ] `compare` — structural diff between two filesystems
 - [ ] `fsck` — check passes plus repair
 - [ ] CLI binaries `mkfs.ext4`, `fsck.ext4`
-- [ ] Tests: round-trip, concurrent formats, golden comparison against mke2fs
+- [ ] `../fio.ext4.rs` — async userspace read/write into the image, no kernel
+- [ ] `meta_bg` (past ~200 TiB) and `orphan_file` (last feature gap)
 - [ ] stormblock integration path (file against stormblock#39, do not edit it
       from this repo)
+
+## Verified
+
+`./tests/verify-on-linux.sh` builds images and puts them in front of a real
+Linux kernel on dev.g8.lo (Fedora 43, e2fsprogs 1.47.3). As of the formatter
+landing, all eight configurations pass every stage — ext2, ext3, ext4 with and
+without a journal, 1 KiB and 4 KiB blocks, 16 MiB to 1 GiB:
+
+    e2fsck -fn -> loop mount rw -> write -> mkdir -> 4 MiB write
+      -> unmount -> e2fsck -fn
+
+The second e2fsck is the one that counts. "Mounts read-write" and "is writable"
+are different claims (stormblock#39), and only a completed write proves the
+second.
 
 ## Conventions
 
