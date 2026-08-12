@@ -2,6 +2,103 @@
 
 ## [Unreleased]
 
+## [v1.0.0] — 2026-08-12
+
+First stable release. The public API is settled and the full semver contract
+applies from here: a breaking change needs a major bump.
+
+**What 1.0 claims.** The formatter produces filesystems with *zero structural
+differences* from real `mke2fs` 1.47.3 across seven golden references — ext2,
+ext3 and ext4, at 1 KiB and 4 KiB blocks, with and without a journal, on
+512-byte and 4 KiB-sector devices. Every configuration is mounted and written
+by a real Linux kernel before release. Feature parity with `mke2fs` is exact:
+the known-gaps list in the parity test is empty.
+
+**What 1.0 does not claim.** Feature completeness. `meta_bg` is written but only
+reachable past ~200 TiB; triple indirection is read but not written; journal
+*replay* is not implemented, only journal creation. None of those require an
+API change to add.
+
+### Added
+
+- **Async, parallel formatter.** `BlockDevice` takes `&self` for reads *and*
+  writes, so one format fans out across block groups and many formats run at
+  once. File, raw-device and in-memory implementations; a consumer can plug in
+  storage that is not a block device at all.
+- **ext2, ext3 and ext4** from one code path, with `mke2fs.conf` size-class
+  defaults, profiles and `-O` feature parsing.
+- **Byte-exact on-disk structures** — superblock, group descriptors, inode,
+  directory entries, extents, JBD2 — with offsets asserted against `ext2_fs.h`
+  rather than assumed. No `unsafe` in the library.
+- **Geometry** matching `mke2fs`: block and inode sizing, `sparse_super`
+  backups, reserved GDT blocks, `flex_bg` table placement allocated around
+  superblock backups, and `meta_bg` distribution past ~200 TiB. Group placement
+  is computed, never materialised — 64 TiB yields 524 288 groups and any one of
+  them is O(1) to place.
+- **Journal** creation: JBD2 superblock, `mke2fs` sizing, fragmented allocation
+  where no contiguous run exists, and the `s_jnl_blocks` inode backup.
+- **`orphan_file`**, `resize_inode`, `64bit`, `huge_file`, `dir_nlink`,
+  `extra_isize`, `metadata_csum` and `metadata_csum_seed`.
+- **`fsck`** — the six e2fsck passes, check and repair. Checking never writes;
+  repair writes only what a pass proved wrong and records every change.
+  `e2fsck`-compatible exit codes.
+- **`compare`** — a field-by-field structural diff between two filesystems,
+  classing each difference as identity, incidental or structural so a real
+  divergence is not lost among the UUIDs and timestamps that always differ.
+- **`mmp`** — multiple mount protection: the race-and-wait fence that stops two
+  hosts mounting one shared volume read-write. A refusal names the holder.
+- **`mkfs-ext4` and `fsck-ext4` binaries** with `mke2fs`- and `e2fsck`-compatible
+  flags and exit codes. Install them as `mkfs.ext4` and `fsck.ext4`.
+
+### Fixed
+
+Every one of these was found by diffing against real `mke2fs`, by `e2fsck`, or
+by a kernel mount — not by inspection:
+
+- **crc32c convention.** `ext2fs_crc32c_le` is the bare table update with no
+  complement at either end; the `crc32c` crate's `crc32c_append` complements on
+  both. Every metadata checksum was wrong and e2fsck rejected the superblock.
+- **Journal checksums** are not written at format time, even with
+  `metadata_csum`. Setting `csum_v3` produced "Journal superblock is corrupt".
+- **Reserved GDT blocks** are the resize inode's indirect blocks, listing their
+  own backup locations — not padding to be zeroed.
+- **`flex_bg` placement** allocates around superblock backups rather than laying
+  metadata out as one contiguous run, which overlapped group 1's backup at
+  256 MiB.
+- **`meta_bg`**: a group can hold a descriptor block copy and no superblock
+  backup, so the placement guard must not test `has_super` first.
+- **`BLOCK_UNINIT`, `INODE_ZEROED` and `s_lpf_ino`** now match what `mke2fs`
+  writes.
+- **Journal placement** follows `get_midpoint_journal_block()` — the emptiest
+  group beside the midpoint, not the midpoint — and a block-mapped journal
+  interleaves its indirect blocks with its data.
+- **The device's logical sector size sets the floor for the block size.** The
+  same 256 MiB filesystem gets 1 KiB blocks on a 512-byte-sector device and
+  4 KiB blocks on a 4 KiB one. A filesystem whose blocks are smaller than the
+  device's sector cannot be written a block at a time.
+- **Special files**: an inode's `i_block` is not always a block map. For a
+  device it holds the device number and for a fast symlink the target path;
+  walking those as block pointers reads a major/minor pair as a physical block.
+
+### Verified
+
+- `tests/golden_compare.rs` — zero structural differences from real `mke2fs`
+  across seven reference filesystems, diffing the images themselves rather than
+  their `dumpe2fs` text.
+- `tests/verify-on-linux.sh` — eleven configurations put through
+  `e2fsck -fn` → loop mount → write → unmount → `e2fsck -fn` on Fedora 43,
+  Linux 6.17; plus five named corruptions repaired by our checker and accepted
+  by e2fsprogs.
+- A 1 TiB filesystem, where `meta_bg` triggers on its own, formats in 7 seconds
+  using 353 MiB of actual allocation, mounts showing 957 GiB free, and checks
+  clean.
+- The kernel takes our MMP fence: the sequence moves off `SEQ_CLEAN` and it sets
+  its own check interval.
+
+### Development history
+
+The entries below record how the above was reached, newest last.
+
 ### 2026-08-12
 - **docs:** Add `mmp` (multiple mount protection) to the work plan. On shared
   block storage — which is exactly what stormblock exports — two hosts can be
