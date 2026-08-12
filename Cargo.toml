@@ -1,0 +1,58 @@
+[package]
+name = "mkfs-ext4"
+version = "0.1.0"
+edition = "2021"
+authors = ["Glenn West"]
+description = "Async, parallel ext2/ext3/ext4 formatter and checker in pure Rust — a from-scratch reimplementation of mke2fs and e2fsck"
+repository = "https://github.com/glennswest/mkfs.ext4.rs"
+license = "GPL-2.0-or-later"
+rust-version = "1.75"
+keywords = ["ext4", "mkfs", "filesystem", "fsck", "async"]
+categories = ["filesystem", "asynchronous"]
+
+[lib]
+name = "mkfs_ext4"
+path = "src/lib.rs"
+
+[dependencies]
+# Async runtime. The crate needs only these features; a consumer running a
+# full tokio (stormblock does) is unaffected.
+tokio = { version = "1", features = ["fs", "io-util", "rt", "sync", "macros"] }
+async-trait = "0.1"
+futures = "0.3"
+
+# CRC32c drives every metadata_csum checksum; crc16 for legacy GDT_CSUM is
+# implemented here since no crate matches the ext4 polynomial usage exactly.
+crc32c = "0.6"
+
+uuid = { version = "1", features = ["v4"] }
+thiserror = "2"
+bitflags = "2"
+tracing = "0.1"
+
+# CLI binaries only.
+clap = { version = "4", features = ["derive"], optional = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
+anyhow = { version = "1", optional = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
+tempfile = "3"
+
+[features]
+default = ["cli"]
+# The mkfs.ext4 / fsck.ext4 binaries. Library consumers turn this off.
+cli = ["dep:clap", "dep:tracing-subscriber", "dep:anyhow", "tokio/rt-multi-thread"]
+
+[[bin]]
+name = "mkfs.ext4"
+path = "src/bin/mkfs_ext4.rs"
+required-features = ["cli"]
+
+[[bin]]
+name = "fsck.ext4"
+path = "src/bin/fsck_ext4.rs"
+required-features = ["cli"]
+
+[profile.release]
+lto = true
