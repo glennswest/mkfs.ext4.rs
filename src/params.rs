@@ -43,7 +43,7 @@ impl Profile {
                 m.compat |= CompatFeatures::HAS_JOURNAL;
             }
             Profile::Ext4 => {
-                m.compat |= CompatFeatures::HAS_JOURNAL;
+                m.compat |= CompatFeatures::HAS_JOURNAL | CompatFeatures::ORPHAN_FILE;
                 m.incompat |= IncompatFeatures::EXTENTS
                     | IncompatFeatures::FLEX_BG
                     | IncompatFeatures::SIXTY_FOUR_BIT
@@ -338,6 +338,13 @@ pub fn normalise(m: &mut FeatureMasks) -> Result<(), String> {
     {
         return Err("metadata_csum and uninit_bg cannot both be set".into());
     }
+    // The orphan file tracks inodes awaiting deletion across a crash, which is
+    // a journal's job to replay. mke2fs drops the feature without a journal
+    // rather than writing a file nothing will ever read.
+    if !m.compat.contains(CompatFeatures::HAS_JOURNAL) {
+        m.compat.remove(CompatFeatures::ORPHAN_FILE);
+    }
+
     // A checksum seed only means anything alongside the checksums it seeds.
     if m.incompat.contains(IncompatFeatures::CSUM_SEED)
         && !m.ro_compat.contains(RoCompatFeatures::METADATA_CSUM)

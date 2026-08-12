@@ -91,3 +91,13 @@
   that block marked free; e2fsck reported thousands of block bitmap
   differences. `super_overhead` already accounts for both, so the guard was
   simply wrong.
+- **feat:** Implement `orphan_file`, closing the last feature gap against real
+  `mke2fs`. The ext4 profile now creates an orphan-tracking file at inode 12,
+  sized as `ext2fs_default_orphan_file_blocks()` computes, each block carrying
+  the `EXT4_ORPHAN_BLOCK_MAGIC` tail and a checksum bound to the inode, its
+  generation and the block number. Silently dropped when there is no journal,
+  as `mke2fs` does — the orphan list exists for a journal to replay.
+  `tests/golden_geometry.rs` no longer needs a known-gaps list.
+- **fix:** fsck no longer reports the orphan file as an unreferenced inode. It
+  sits outside the directory tree by design, reachable only through
+  `s_orphan_file_inum`, so having no name is its normal state.

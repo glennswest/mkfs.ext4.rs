@@ -95,6 +95,16 @@ struct Plan {
     journal_indirect: IndirectMap,
     /// The journal inode's `i_block` image, backed up into `s_jnl_blocks`.
     journal_i_block: [u8; crate::structs::inode::I_BLOCK_LEN],
+    /// Inode holding the orphan file, when the feature is on.
+    orphan_inode: Option<u32>,
+    /// The orphan file's blocks.
+    orphan_runs: Vec<Run>,
+    /// The orphan inode's `i_block` image.
+    orphan_i_block: [u8; crate::structs::inode::I_BLOCK_LEN],
+    /// Extent leaf for the orphan file, if it needed one.
+    orphan_extent_leaf: Option<u64>,
+    /// Indirect blocks mapping the orphan file without extents.
+    orphan_indirect: IndirectMap,
     csum_scheme: GroupDescCsum,
     csum_seed: u32,
     lazy_itable: bool,
@@ -317,6 +327,57 @@ fn build_indirect(
     Ok(map)
 }
 
+/// `EXT4_ORPHAN_BLOCK_MAGIC`
+pub const ORPHAN_BLOCK_MAGIC: u32 = 0x0b10_ca04;
+
+/// `EXT4_MAX_ORPHAN_FILE_BLOCKS`
+pub const MAX_ORPHAN_FILE_BLOCKS: u32 = 512;
+
+/// Bytes of `ext4_orphan_block_tail`, at the end of every orphan file block.
+pub const ORPHAN_TAIL_LEN: usize = 8;
+
+/// `ext2fs_default_orphan_file_blocks()` — how large an orphan file to make.
+pub fn default_orphan_file_blocks(blocks_count: u64) -> u32 {
+    let blks = if blocks_count < 128 * 1024 {
+        32
+    } else if blocks_count < 2 * 1024 * 1024 {
+        (blocks_count / 4096) as u32
+    } else {
+        512
+    };
+    blks.min(MAX_ORPHAN_FILE_BLOCKS)
+}
+
+/// Inode slots one orphan block can track.
+fn inodes_per_orphan_block(block_size: u32) -> usize {
+    (block_size as usize - ORPHAN_TAIL_LEN) / 4
+}
+
+/// Build one orphan file block: zeroed slots, then the magic and checksum.
+fn orphan_block(
+    block_size: u32,
+    seed: u32,
+    inum: u32,
+    generation: u32,
+    physical: u64,
+    metadata_csum: bool,
+) -> Vec<u8> {
+    let mut buf = vec![0u8; block_size as usize];
+    let tail = block_size as usize - ORPHAN_TAIL_LEN;
+    put_u32(&mut buf, tail, ORPHAN_BLOCK_MAGIC);
+
+    if metadata_csum {
+        // Seeded with the inode, its generation and the block's own number, so
+        // a block cannot be moved or replayed somewhere else unnoticed.
+        let mut crc = csum::crc32c(seed, &inum.to_le_bytes());
+        crc = csum::crc32c(crc, &generation.to_le_bytes());
+        crc = csum::crc32c(crc, &physical.to_le_bytes());
+        crc = csum::crc32c(crc, &buf[..inodes_per_orphan_block(block_size) * 4]);
+        put_u32(&mut buf, tail + 4, crc);
+    }
+    buf
+}
+
 /// The `i_block` image for an extent-mapped journal.
 ///
 /// Four extents fit inside the inode. Beyond that the inode holds a depth-1
@@ -532,6 +593,42 @@ fn plan(device_size: u64, params: &Params) -> Result<Plan> {
         None
     };
 
+    // The orphan file tracks inodes awaiting deletion so a crash does not
+    // strand them. It takes the first inode after lost+found.
+    let orphan_blocks = if geom.features.compat.contains(CompatFeatures::ORPHAN_FILE) {
+        default_orphan_file_blocks(geom.blocks_count)
+    } else {
+        0
+    };
+    let mut orphan_runs: Vec<Run> = Vec::new();
+    let mut orphan_extents: Vec<Extent> = Vec::new();
+    let mut orphan_indirect = IndirectMap::default();
+    let orphan_inode = if orphan_blocks > 0 {
+        orphan_runs = alloc.alloc_runs(geom.first_data_block as u64, orphan_blocks as u64)?;
+        let ordered: Vec<u64> = orphan_runs
+            .iter()
+            .flat_map(|r| (r.start..r.start + r.len))
+            .collect();
+        if extents {
+            let mut logical = 0u32;
+            for run in &orphan_runs {
+                orphan_extents.push(Extent {
+                    block: logical,
+                    len: run.len as u16,
+                    start: run.start,
+                });
+                logical += run.len as u32;
+            }
+        } else {
+            let first_data = geom.first_data_block as u64;
+            orphan_indirect =
+                build_indirect(&ordered, geom.block_size, || alloc.alloc(first_data, 1))?;
+        }
+        Some(superblock::GOOD_OLD_FIRST_INO + 1)
+    } else {
+        None
+    };
+
     // Four extents fit inside an inode. More than that needs a leaf block, and
     // the inode becomes a one-level tree pointing at it.
     let inline_max = extent::ExtentHeader::max_entries(extent::INLINE_LEN, false) as usize;
@@ -540,6 +637,23 @@ fn plan(device_size: u64, params: &Params) -> Result<Plan> {
     } else {
         None
     };
+
+    let orphan_extent_leaf = if extents && orphan_extents.len() > inline_max {
+        Some(alloc.alloc(geom.first_data_block as u64, 1)?)
+    } else {
+        None
+    };
+    let mut orphan_i_block = [0u8; crate::structs::inode::I_BLOCK_LEN];
+    if orphan_inode.is_some() {
+        if extents {
+            orphan_i_block =
+                journal_inode_i_block(&orphan_extents, orphan_extent_leaf, geom.block_size)?;
+        } else {
+            let mut probe = Inode::default();
+            probe.set_block_pointers(&orphan_indirect.pointers);
+            orphan_i_block = probe.block;
+        }
+    }
 
     // The journal inode's block map, computed here so the superblock can carry
     // the backup copy of it that mke2fs records in s_jnl_blocks.
@@ -576,6 +690,11 @@ fn plan(device_size: u64, params: &Params) -> Result<Plan> {
         journal_extent_leaf,
         journal_indirect,
         journal_i_block,
+        orphan_inode,
+        orphan_runs,
+        orphan_i_block,
+        orphan_extent_leaf,
+        orphan_indirect,
         csum_scheme,
         csum_seed,
         lazy_itable: params.lazy_itable_init,
@@ -672,6 +791,13 @@ fn build_group(plan: &Plan, group: u32) -> Result<GroupState> {
         inode_bitmap[(lpf / 8) as usize] |= 1 << (lpf % 8);
         free_inodes -= 1;
         used_dirs = 2; // root and lost+found
+
+        // The orphan file, inode 12, is a regular file and not a directory.
+        if let Some(orphan) = plan.orphan_inode {
+            let bit = (orphan - 1) as u64;
+            inode_bitmap[(bit / 8) as usize] |= 1 << (bit % 8);
+            free_inodes -= 1;
+        }
     }
     for bit in g.inodes_per_group as usize..block_size * 8 {
         inode_bitmap[bit / 8] |= 1 << (bit % 8);
@@ -794,6 +920,9 @@ async fn write_filesystem<D: BlockDevice + ?Sized>(dev: &D, plan: &Plan) -> Resu
     }
     if plan.resize_dind.is_some() {
         write_resize_inode_blocks(dev, plan).await?;
+    }
+    if plan.orphan_inode.is_some() {
+        write_orphan_file(dev, plan).await?;
     }
     write_reserved_inodes(dev, plan).await?;
 
@@ -1027,7 +1156,7 @@ fn build_superblock(plan: &Plan, free_blocks: u64, free_inodes: u32) -> Superblo
         },
         encoding: 0,
         encoding_flags: 0,
-        orphan_file_inum: 0,
+        orphan_file_inum: plan.orphan_inode.unwrap_or(0),
         checksum: 0,
     }
 }
@@ -1203,6 +1332,62 @@ async fn write_resize_inode_blocks<D: BlockDevice + ?Sized>(dev: &D, plan: &Plan
     Ok(())
 }
 
+/// Write the orphan file's blocks, and its extent leaf or indirect blocks.
+///
+/// Every block is empty slots plus an `ext4_orphan_block_tail` carrying the
+/// magic and, on a checksummed filesystem, a checksum bound to the inode, its
+/// generation and the block's own number.
+async fn write_orphan_file<D: BlockDevice + ?Sized>(dev: &D, plan: &Plan) -> Result<()> {
+    let g = &plan.geom;
+    let Some(inum) = plan.orphan_inode else {
+        return Ok(());
+    };
+    let block_size = g.block_size as u64;
+    let metadata_csum = plan.csum_scheme == GroupDescCsum::Crc32c;
+
+    for run in &plan.orphan_runs {
+        for block in run.start..run.start + run.len {
+            let buf = orphan_block(
+                g.block_size,
+                plan.csum_seed,
+                inum,
+                0,
+                block,
+                metadata_csum,
+            );
+            dev.write_at(block * block_size, &buf).await?;
+        }
+    }
+
+    if let Some(leaf) = plan.orphan_extent_leaf {
+        let extents: Vec<Extent> = plan
+            .orphan_runs
+            .iter()
+            .scan(0u32, |logical, run| {
+                let e = Extent {
+                    block: *logical,
+                    len: run.len as u16,
+                    start: run.start,
+                };
+                *logical += run.len as u32;
+                Some(e)
+            })
+            .collect();
+        let buf = journal_extent_leaf_block(&extents, g.block_size, false);
+        dev.write_at(leaf * block_size, &buf).await?;
+    }
+
+    for (block, entries) in &plan.orphan_indirect.blocks {
+        let mut buf = vec![0u8; g.block_size as usize];
+        for (i, entry) in entries.iter().enumerate() {
+            put_u32(&mut buf, i * 4, *entry);
+        }
+        dev.write_at(block * block_size, &buf).await?;
+    }
+
+    Ok(())
+}
+
 /// Write inodes 1 through 11 into group 0's inode table.
 async fn write_reserved_inodes<D: BlockDevice + ?Sized>(dev: &D, plan: &Plan) -> Result<()> {
     let g = &plan.geom;
@@ -1318,6 +1503,31 @@ async fn write_reserved_inodes<D: BlockDevice + ?Sized>(dev: &D, plan: &Plan) ->
         extents,
     )?;
     write(superblock::GOOD_OLD_FIRST_INO, &lpf, &mut writes);
+
+    // Inode 12, the orphan file: a plain regular file, unreferenced by any
+    // directory, found through s_orphan_file_inum alone.
+    if let Some(orphan_ino) = plan.orphan_inode {
+        let blocks: u64 = plan.orphan_runs.iter().map(|r| r.len).sum();
+        let map_overhead = if extents {
+            plan.orphan_extent_leaf.is_some() as u64
+        } else {
+            plan.orphan_indirect.overhead()
+        };
+        let mut orphan = Inode::new(inode_size, extra_isize);
+        orphan.mode = mode::IFREG | 0o600;
+        orphan.links_count = 1;
+        orphan.size = blocks * block_size;
+        orphan.blocks = (blocks + map_overhead) * sectors_per_block;
+        orphan.atime = plan.mkfs_time as u32;
+        orphan.ctime = plan.mkfs_time as u32;
+        orphan.mtime = plan.mkfs_time as u32;
+        orphan.crtime = plan.mkfs_time as u32;
+        if extents {
+            orphan.flags |= iflags::EXTENTS;
+        }
+        orphan.block = plan.orphan_i_block;
+        write(orphan_ino, &orphan, &mut writes);
+    }
 
     for (at, buf) in writes {
         dev.write_at(at, &buf).await?;

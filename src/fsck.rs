@@ -810,10 +810,18 @@ async fn pass4_link_counts<D: BlockDevice>(
 ) -> Result<()> {
     let inodes: Vec<u32> = state.inodes_in_use.iter().copied().collect();
 
+    let orphan_file = fs.superblock().orphan_file_inum;
+
     for inum in inodes {
         // Reserved inodes are not referenced by any name, so there is nothing
         // to compare them against.
         if inum < state.first_ino && inum != ino::ROOT {
+            continue;
+        }
+        // Nor is the orphan file. It sits outside the directory tree by
+        // design, reachable only through s_orphan_file_inum, so "no directory
+        // entry refers to it" is its normal state rather than a fault.
+        if orphan_file != 0 && inum == orphan_file {
             continue;
         }
         let mut inode = fs.read_inode(inum).await?;
@@ -1080,7 +1088,17 @@ mod tests {
                 );
                 assert_eq!(report.exit_code(), 0);
                 assert_eq!(report.directories, 2, "root and lost+found");
-                assert_eq!(report.inodes_used, 11);
+
+                // Ten reserved inodes plus lost+found, and on ext4 the orphan
+                // file as well. Only the ext4 profile asks for orphan_file —
+                // ext3 has a journal but mke2fs.conf does not give it one.
+                let expect = if profile == Profile::Ext4 { 12 } else { 11 };
+                assert_eq!(
+                    report.inodes_used,
+                    expect,
+                    "{} at {size} bytes",
+                    profile.name()
+                );
             }
         }
     }
@@ -1104,13 +1122,39 @@ mod tests {
         assert_eq!(report.inodes_used, 11);
     }
 
-    /// A journal is 4096 more blocks, and they are accounted the same way.
+    /// A journalled ext4 filesystem costs 4096 blocks of journal and a further
+    /// 32 for the orphan file, and both are accounted the same way.
     #[tokio::test]
-    async fn a_journal_is_counted_too() {
+    async fn a_journal_and_orphan_file_are_counted_too() {
         let dev = formatted(Profile::Ext4, 64 * MIB).await;
         let report = check(&dev, &FsckOptions::check_only()).await.unwrap();
         assert!(report.is_clean(), "{}", describe(&report));
-        assert_eq!(report.blocks_used, 5417 + 4096);
+        assert_eq!(report.blocks_used, 5417 + 4096 + 32);
+        assert_eq!(report.inodes_used, 12);
+    }
+
+    /// The orphan file lives outside the directory tree, so pass 4 must not
+    /// call it unreferenced — the fault it would otherwise report on every
+    /// journalled ext4 filesystem in existence.
+    #[tokio::test]
+    async fn the_orphan_file_is_not_an_unreferenced_inode() {
+        let dev = formatted(Profile::Ext4, 16 * MIB).await;
+        let fs = Filesystem::open(&dev).await.unwrap();
+        let orphan = fs.superblock().orphan_file_inum;
+        assert_ne!(orphan, 0, "ext4 should carry an orphan file");
+
+        let inode = fs.read_inode(orphan).await.unwrap();
+        assert!(inode.is_reg());
+        assert_eq!(inode.links_count, 1);
+        assert!(inode.size > 0);
+
+        // And no directory names it.
+        let root = fs.read_inode(ino::ROOT).await.unwrap();
+        let names = fs.read_dir(&root).await.unwrap();
+        assert!(names.iter().all(|e| e.inode != orphan));
+
+        let report = check(&dev, &FsckOptions::check_only()).await.unwrap();
+        assert!(report.is_clean(), "{}", describe(&report));
     }
 
     #[tokio::test]

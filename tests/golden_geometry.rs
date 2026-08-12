@@ -172,10 +172,8 @@ fn geometry_matches_every_golden_reference() {
 /// Features real `mke2fs` sets that this implementation does not write yet.
 ///
 /// Listed rather than quietly tolerated, so the gap is visible and shrinks on
-/// purpose. `orphan_file` needs a dedicated orphan-tracking inode to be created
-/// at format time; it is a `compat` feature, so a filesystem without it is
-/// mounted read-write by everything that would have used it.
-const KNOWN_GAPS: &[&str] = &["orphan_file"];
+/// purpose. Empty: every feature `mke2fs` sets on these references, we set too.
+const KNOWN_GAPS: &[&str] = &[];
 
 /// The feature masks we resolve must be the ones `mke2fs` wrote.
 #[test]
