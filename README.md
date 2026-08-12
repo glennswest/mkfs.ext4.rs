@@ -6,6 +6,15 @@ A from-scratch reimplementation of `mke2fs` and `e2fsck`, written against the
 [e2fsprogs](https://github.com/tytso/e2fsprogs) source as the reference for
 every on-disk field, default and geometry rule.
 
+## Using it
+
+Not on crates.io; take it by git, pinned to a tag so builds are reproducible:
+
+```toml
+[dependencies]
+mkfs-ext4 = { git = "https://github.com/glennswest/mkfs.ext4.rs", tag = "v1.0.0" }
+```
+
 ```rust
 use mkfs_ext4::{format, FileDevice, Params, Profile};
 
