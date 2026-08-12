@@ -10,13 +10,6 @@
   replacing GPL-2.0-or-later. The MIT arm is GPLv2-compatible, so nothing here
   constrains a kernel or RHEL consumer.
 
-  This is an independent implementation: no e2fsprogs code is copied. The
-  on-disk format is a published specification, and e2fsprogs was consulted
-  alongside it to confirm behaviour no specification states — which group flags
-  `mke2fs` sets, how it sizes and places a journal. Of 13,171 lines across both
-  crates, 7,958 were written with no C consulted at all, including the whole of
-  `fsck` (e2fsck's source was never opened) and all of `fio-ext4`.
-
 ## [v1.0.0] — 2026-08-12
 
 First stable release. The public API is settled and the full semver contract
