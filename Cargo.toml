@@ -1,11 +1,11 @@
 [package]
 name = "mkfs-ext4"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2021"
 authors = ["Glenn West"]
 description = "Async, parallel ext2/ext3/ext4 formatter and checker in pure Rust — a from-scratch reimplementation of mke2fs and e2fsck"
 repository = "https://github.com/glennswest/mkfs.ext4.rs"
-license = "GPL-2.0-or-later"
+license = "MIT OR Apache-2.0"
 rust-version = "1.75"
 keywords = ["ext4", "mkfs", "filesystem", "fsck", "async"]
 categories = ["filesystem", "asynchronous"]

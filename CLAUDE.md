@@ -4,8 +4,8 @@ Async, parallel ext2/ext3/ext4 formatter and checker in pure Rust. Reimplements
 `mke2fs` and `e2fsck` from the e2fsprogs source as the reference.
 
 - **Crate:** `mkfs-ext4` (lib `mkfs_ext4`)
-- **Version:** 1.0.0 — see `Cargo.toml` (single version location)
-- **License:** GPL-2.0-or-later
+- **Version:** 1.0.1 — see `Cargo.toml` (single version location)
+- **License:** MIT OR Apache-2.0
 - **Repo:** https://github.com/glennswest/mkfs.ext4.rs
 - **Directory:** `~/projects/mkfs.ext4.rs`. The crate covers ext2/ext3/ext4
   from one code path, exactly as `mke2fs` does.

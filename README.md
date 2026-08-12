@@ -60,5 +60,17 @@ See `CLAUDE.md` for the work plan and what is still outstanding.
 
 ## Licence
 
-GPL-2.0-or-later, matching e2fsprogs, from which the on-disk format details and
-defaults are derived.
+`MIT OR Apache-2.0`, at your option — the Rust ecosystem's usual pair. The MIT
+arm is GPLv2-compatible, so this imposes nothing on a kernel or RHEL consumer.
+
+### Provenance
+
+This is an independent implementation. No e2fsprogs code is copied. The on-disk
+format — field offsets, magic numbers, feature bits, checksum seeding — is a
+published specification, documented in the kernel's
+`Documentation/filesystems/ext4/` and the ext4 wiki, and e2fsprogs was consulted
+alongside it to confirm behavioural details that no specification states: which
+group flags `mke2fs` sets, how it sizes a journal, where it places one.
+
+The `tests/golden/` fixtures are filesystems produced by `mke2fs` and used as
+test inputs, the same way a conformance suite uses a reference output.
