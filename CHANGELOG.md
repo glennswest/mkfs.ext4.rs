@@ -13,3 +13,11 @@
   and without a journal), plus their `dumpe2fs` output. Pinning `-U`,
   `-E hash_seed` and `SOURCE_DATE_EPOCH` makes `mke2fs` byte-reproducible,
   which turns "match the reference" into an exact test rather than a judgement.
+- **feat:** Add `params` (mke2fs profiles, size-class defaults, feature
+  resolution) and `layout` (block/inode geometry, sparse_super backups,
+  reserved GDT blocks, flex_bg table placement). Group placement is computed on
+  demand rather than materialised, so a 64 TiB filesystem with 524 288 groups
+  costs nothing to describe.
+- **test:** Geometry and feature masks are asserted against all six golden
+  `mke2fs` references, plus every size class from floppy to 128 TiB, the 16 TiB
+  `64bit` boundary and the `meta_bg` limit.

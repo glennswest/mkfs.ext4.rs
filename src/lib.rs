@@ -35,6 +35,8 @@ pub mod csum;
 pub mod device;
 pub mod error;
 pub mod features;
+pub mod layout;
+pub mod params;
 pub mod structs;
 
 pub use device::{BlockDevice, FileDevice, MemDevice};
