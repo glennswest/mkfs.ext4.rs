@@ -242,6 +242,33 @@ impl BlockDevice for MemDevice {
     }
 }
 
+/// Blanket implementation so `&D` is itself a device.
+///
+/// Lets a caller check or format a device it only borrowed, and run several
+/// operations over one device in sequence without giving up ownership.
+#[async_trait::async_trait]
+impl<D: BlockDevice + ?Sized> BlockDevice for &D {
+    fn size(&self) -> u64 {
+        (**self).size()
+    }
+
+    async fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<()> {
+        (**self).read_at(offset, buf).await
+    }
+
+    async fn write_at(&self, offset: u64, buf: &[u8]) -> Result<()> {
+        (**self).write_at(offset, buf).await
+    }
+
+    async fn flush(&self) -> Result<()> {
+        (**self).flush().await
+    }
+
+    async fn write_zeroes(&self, offset: u64, len: u64) -> Result<()> {
+        (**self).write_zeroes(offset, len).await
+    }
+}
+
 /// Blanket implementation so `Arc<D>` is itself a device — the formatter hands
 /// clones to each concurrent task.
 #[async_trait::async_trait]

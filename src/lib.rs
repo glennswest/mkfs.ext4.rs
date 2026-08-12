@@ -37,6 +37,7 @@ pub mod error;
 pub mod features;
 pub mod format;
 pub mod fs;
+pub mod fsck;
 pub mod journal;
 pub mod layout;
 pub mod params;

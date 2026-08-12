@@ -84,6 +84,13 @@ struct Plan {
     resize_dind: Option<u64>,
     journal_start: Option<u64>,
     journal_blocks: u32,
+    /// The journal's blocks, which need not be one contiguous run.
+    journal_runs: Vec<Run>,
+    /// Extents mapping the journal on a filesystem with extents.
+    journal_extents: Vec<Extent>,
+    /// Block holding the journal's extent leaf, when more extents are needed
+    /// than the four that fit inside the inode.
+    journal_extent_leaf: Option<u64>,
     /// Indirect blocks mapping the journal on a filesystem without extents.
     journal_indirect: IndirectMap,
     /// The journal inode's `i_block` image, backed up into `s_jnl_blocks`.
@@ -134,6 +141,56 @@ impl<F: Fn(u64) -> bool> Allocator<F> {
         (self.metadata)(block) || self.runs.iter().any(|r| r.contains(block))
     }
 
+    /// Allocate `count` free blocks at or after `goal`, in as few runs as the
+    /// free space allows.
+    ///
+    /// A large file need not be contiguous, and on a filesystem without
+    /// `flex_bg` it usually cannot be: every group opens with its own
+    /// superblock copy, bitmaps and inode table, so the longest free run is
+    /// always shorter than a group. An 8192-block journal on a 256 MiB ext3
+    /// filesystem has nowhere contiguous to go, and demanding one run fails a
+    /// format that should succeed.
+    fn alloc_runs(&mut self, goal: u64, count: u64) -> Result<Vec<Run>> {
+        let mut runs: Vec<Run> = Vec::new();
+        let mut found = 0u64;
+
+        for start in [goal, self.first_data_block] {
+            let mut block = start;
+            while found < count && block < self.blocks_count {
+                if self.taken(block) {
+                    block += 1;
+                    continue;
+                }
+                // Extend this run as far as the free space goes.
+                let run_start = block;
+                let mut len = 0u64;
+                while block < self.blocks_count && !self.taken(block) && found + len < count {
+                    len += 1;
+                    block += 1;
+                }
+                runs.push(Run {
+                    start: run_start,
+                    len,
+                });
+                // Record it so the next probe sees these blocks as taken.
+                self.runs.push(Run {
+                    start: run_start,
+                    len,
+                });
+                found += len;
+            }
+            if found >= count {
+                return Ok(runs);
+            }
+        }
+
+        Err(Error::DeviceTooSmall {
+            available: self.blocks_count,
+            needed: count,
+            block_size: self.block_size,
+        })
+    }
+
     /// Allocate `len` contiguous free blocks at or after `goal`, falling back
     /// to the start of the filesystem if the tail cannot hold them.
     fn alloc(&mut self, goal: u64, len: u64) -> Result<u64> {
@@ -178,16 +235,16 @@ impl IndirectMap {
     }
 }
 
-/// Map a contiguous run of `len` blocks starting at `start` through direct and
-/// indirect pointers, allocating indirect blocks with `alloc_one`.
+/// Map `blocks` — a file's physical blocks in logical order — through direct
+/// and indirect pointers, allocating indirect blocks with `alloc_one`.
 fn build_indirect(
-    start: u64,
-    len: u32,
+    blocks: &[u64],
     block_size: u32,
     mut alloc_one: impl FnMut() -> Result<u64>,
 ) -> Result<IndirectMap> {
     use crate::structs::inode::{N_BLOCKS, NDIR_BLOCKS};
 
+    let len = blocks.len() as u32;
     let per_block = (block_size / 4) as usize;
     let mut map = IndirectMap {
         pointers: [0u32; N_BLOCKS],
@@ -198,7 +255,7 @@ fn build_indirect(
     let take = |n: usize, next: &mut u32| -> Vec<u32> {
         let mut out = Vec::new();
         while out.len() < n && *next < len {
-            out.push((start + *next as u64) as u32);
+            out.push(blocks[*next as usize] as u32);
             *next += 1;
         }
         out
@@ -208,7 +265,7 @@ fn build_indirect(
         if next >= len {
             break;
         }
-        *slot = (start + next as u64) as u32;
+        *slot = blocks[next as usize] as u32;
         next += 1;
     }
 
@@ -258,6 +315,54 @@ fn build_indirect(
     }
 
     Ok(map)
+}
+
+/// The `i_block` image for an extent-mapped journal.
+///
+/// Four extents fit inside the inode. Beyond that the inode holds a depth-1
+/// header and a single index pointing at `leaf`, which carries the extents.
+fn journal_inode_i_block(
+    extents: &[Extent],
+    leaf: Option<u64>,
+    block_size: u32,
+) -> Result<[u8; crate::structs::inode::I_BLOCK_LEN]> {
+    match leaf {
+        None => extent::build_inline(extents),
+        Some(leaf_block) => {
+            let mut out = [0u8; crate::structs::inode::I_BLOCK_LEN];
+            let header = extent::ExtentHeader {
+                entries: 1,
+                max: extent::ExtentHeader::max_entries(extent::INLINE_LEN, false),
+                depth: 1,
+                generation: 0,
+            };
+            header.encode_into(&mut out);
+            let idx = extent::ExtentIdx {
+                block: 0,
+                leaf: leaf_block,
+            };
+            idx.encode_into(&mut out[extent::HEADER_LEN..extent::HEADER_LEN + extent::ENTRY_LEN]);
+            let _ = block_size;
+            Ok(out)
+        }
+    }
+}
+
+/// The extent leaf block's contents, when the journal needs one.
+fn journal_extent_leaf_block(extents: &[Extent], block_size: u32, with_tail: bool) -> Vec<u8> {
+    let mut buf = vec![0u8; block_size as usize];
+    let header = extent::ExtentHeader {
+        entries: extents.len() as u16,
+        max: extent::ExtentHeader::max_entries(block_size as usize, with_tail),
+        depth: 0,
+        generation: 0,
+    };
+    header.encode_into(&mut buf);
+    for (i, ext) in extents.iter().enumerate() {
+        let at = extent::HEADER_LEN + i * extent::ENTRY_LEN;
+        ext.encode_into(&mut buf[at..at + extent::ENTRY_LEN]);
+    }
+    buf
 }
 
 /// Format `dev` according to `params`.
@@ -387,19 +492,51 @@ fn plan(device_size: u64, params: &Params) -> Result<Plan> {
     };
     let extents = geom.features.incompat.contains(IncompatFeatures::EXTENTS);
     let mut journal_indirect = IndirectMap::default();
+    let mut journal_runs: Vec<Run> = Vec::new();
+    let mut journal_extents: Vec<Extent> = Vec::new();
     let journal_start = if journal_blocks > 0 {
         // mke2fs aims for the middle of the filesystem so the journal is never
         // far from whatever it is protecting.
         let goal = (geom.blocks_count - journal_blocks as u64) / 2;
-        let start = alloc.alloc(goal, journal_blocks as u64)?;
-        if !extents {
+        journal_runs = alloc.alloc_runs(goal, journal_blocks as u64)?;
+
+        // The journal's blocks in logical order, however many runs they took.
+        let ordered: Vec<u64> = journal_runs
+            .iter()
+            .flat_map(|r| (r.start..r.start + r.len))
+            .collect();
+
+        if extents {
+            let mut logical = 0u32;
+            for run in &journal_runs {
+                let mut done = 0u64;
+                while done < run.len {
+                    let chunk = (run.len - done).min(extent::INIT_MAX_LEN as u64 - 1);
+                    journal_extents.push(Extent {
+                        block: logical,
+                        len: chunk as u16,
+                        start: run.start + done,
+                    });
+                    logical += chunk as u32;
+                    done += chunk;
+                }
+            }
+        } else {
             let first_data = geom.first_data_block as u64;
-            journal_indirect =
-                build_indirect(start, journal_blocks, geom.block_size, || {
-                    alloc.alloc(first_data, 1)
-                })?;
+            journal_indirect = build_indirect(&ordered, geom.block_size, || {
+                alloc.alloc(first_data, 1)
+            })?;
         }
-        Some(start)
+        ordered.first().copied()
+    } else {
+        None
+    };
+
+    // Four extents fit inside an inode. More than that needs a leaf block, and
+    // the inode becomes a one-level tree pointing at it.
+    let inline_max = extent::ExtentHeader::max_entries(extent::INLINE_LEN, false) as usize;
+    let journal_extent_leaf = if extents && journal_extents.len() > inline_max {
+        Some(alloc.alloc(geom.first_data_block as u64, 1)?)
     } else {
         None
     };
@@ -407,11 +544,13 @@ fn plan(device_size: u64, params: &Params) -> Result<Plan> {
     // The journal inode's block map, computed here so the superblock can carry
     // the backup copy of it that mke2fs records in s_jnl_blocks.
     let mut journal_i_block = [0u8; crate::structs::inode::I_BLOCK_LEN];
-    if let Some(start) = journal_start {
+    if journal_start.is_some() {
         if extents {
-            let mut probe = Inode::default();
-            set_run(&mut probe, start, journal_blocks, true)?;
-            journal_i_block = probe.block;
+            journal_i_block = journal_inode_i_block(
+                &journal_extents,
+                journal_extent_leaf,
+                geom.block_size,
+            )?;
         } else {
             let mut probe = Inode::default();
             probe.set_block_pointers(&journal_indirect.pointers);
@@ -432,6 +571,9 @@ fn plan(device_size: u64, params: &Params) -> Result<Plan> {
         resize_dind,
         journal_start,
         journal_blocks,
+        journal_runs,
+        journal_extents,
+        journal_extent_leaf,
         journal_indirect,
         journal_i_block,
         csum_scheme,
@@ -950,12 +1092,24 @@ async fn write_journal<D: BlockDevice + ?Sized>(dev: &D, plan: &Plan, start: u64
     dev.write_at(start * block_size, &buf).await?;
 
     // The rest of the journal must be zero: a stale block with a plausible
-    // magic would be replayed as a transaction.
-    dev.write_zeroes(
-        (start + 1) * block_size,
-        (plan.journal_blocks as u64 - 1) * block_size,
-    )
-    .await?;
+    // magic would be replayed as a transaction. The journal need not be one
+    // run, so every run is cleared.
+    for (i, run) in plan.journal_runs.iter().enumerate() {
+        let (from, len) = if i == 0 {
+            (run.start + 1, run.len - 1)
+        } else {
+            (run.start, run.len)
+        };
+        if len > 0 {
+            dev.write_zeroes(from * block_size, len * block_size).await?;
+        }
+    }
+
+    // The extent leaf, when the journal needed more extents than fit inline.
+    if let Some(leaf) = plan.journal_extent_leaf {
+        let buf = journal_extent_leaf_block(&plan.journal_extents, g.block_size, false);
+        dev.write_at(leaf * block_size, &buf).await?;
+    }
 
     // Indirect blocks mapping the journal, on a filesystem without extents.
     for (block, entries) in &plan.journal_indirect.blocks {
@@ -1109,19 +1263,23 @@ async fn write_reserved_inodes<D: BlockDevice + ?Sized>(dev: &D, plan: &Plan) ->
     if let Some(start) = plan.journal_start {
         journal_inode.mode = mode::IFREG | 0o600;
         journal_inode.links_count = 1;
+        let _ = start;
         journal_inode.size = plan.journal_blocks as u64 * block_size;
-        // Indirect blocks are the inode's own blocks too, so they count.
-        journal_inode.blocks = (plan.journal_blocks as u64
-            + plan.journal_indirect.overhead())
-            * sectors_per_block;
+        // Extent leaves and indirect blocks are the inode's own blocks too, so
+        // they count against i_blocks alongside the journal's data blocks.
+        let map_overhead = if extents {
+            plan.journal_extent_leaf.is_some() as u64
+        } else {
+            plan.journal_indirect.overhead()
+        };
+        journal_inode.blocks = (plan.journal_blocks as u64 + map_overhead) * sectors_per_block;
         journal_inode.atime = plan.mkfs_time as u32;
         journal_inode.ctime = plan.mkfs_time as u32;
         journal_inode.mtime = plan.mkfs_time as u32;
         if extents {
-            set_run(&mut journal_inode, start, plan.journal_blocks, true)?;
-        } else {
-            journal_inode.set_block_pointers(&plan.journal_indirect.pointers);
+            journal_inode.flags |= iflags::EXTENTS;
         }
+        journal_inode.block = plan.journal_i_block;
     }
     write(ino::JOURNAL, &journal_inode, &mut writes);
 

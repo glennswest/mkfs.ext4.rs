@@ -51,3 +51,19 @@
 - **perf:** Build block bitmaps by marking ranges instead of querying placement
   once per block. The unit suite went from 7.7s back to 0.05s; the per-block
   form would have dominated the cost of formatting anything large.
+- **feat:** Add `fs` — an opened filesystem: superblock and group descriptor
+  decoding, inode lookup, logical-to-physical resolution through extent trees
+  and indirect blocks, directory walking, path resolution, and opening from a
+  superblock backup. Shared by `fsck` and the forthcoming `fio.ext4.rs`.
+- **feat:** Add `fsck` — the six e2fsck passes, check and repair. Detects and
+  corrects wrong free counts, wrong bitmaps, wrong link counts, bad checksums,
+  duplicate block claims, malformed directories and disconnected trees.
+  Checking never writes; repair records every change and re-checks clean.
+- **fix:** Allocate the journal in as many runs as the free space allows. A
+  filesystem without `flex_bg` opens every group with its own metadata, so the
+  longest contiguous run is shorter than a group — an 8192-block journal on a
+  256 MiB ext3 filesystem had nowhere to go and the format failed outright.
+  Extent-mapped journals gain a leaf block when more than four extents are
+  needed.
+- **feat:** `BlockDevice` is now implemented for `&D`, so a device can be
+  formatted and then checked without giving up ownership.

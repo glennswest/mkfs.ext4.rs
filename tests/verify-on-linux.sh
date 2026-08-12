@@ -40,6 +40,10 @@ CASES=(
     "ext3-64m:64:ext3:"
     "ext2-64m:64:ext2:"
     "ext4-1g:1024:ext4:"
+    # No flex_bg, so no contiguous run long enough for an 8192-block journal.
+    # The journal has to be allocated in pieces.
+    "ext3-256m:256:ext3:"
+    "ext2-256m:256:ext2:"
 )
 
 WORK="$(mktemp -d)"
