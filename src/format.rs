@@ -607,7 +607,7 @@ fn plan(device_size: u64, params: &Params) -> Result<Plan> {
         orphan_runs = alloc.alloc_runs(geom.first_data_block as u64, orphan_blocks as u64)?;
         let ordered: Vec<u64> = orphan_runs
             .iter()
-            .flat_map(|r| (r.start..r.start + r.len))
+            .flat_map(|r| r.start..r.start + r.len)
             .collect();
         if extents {
             let mut logical = 0u32;

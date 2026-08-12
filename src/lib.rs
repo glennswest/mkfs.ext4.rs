@@ -29,7 +29,7 @@
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
 
-pub(crate) mod bytes;
+pub mod bytes;
 
 pub mod csum;
 pub mod device;

@@ -44,6 +44,8 @@ See `CLAUDE.md` for the work plan and what is still outstanding.
 
 ## Consumers
 
+- [`fio-ext4`](https://github.com/glennswest/fio.ext4.rs) — reads and writes
+  files inside the filesystems this crate creates, in userspace
 - [`stormblock`](https://github.com/glennswest/stormblock) — filesystem
   templates ("mkfs once, clone forever")
 
