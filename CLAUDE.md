@@ -56,6 +56,14 @@ to point at, not an open-ended guess about feature flags.
 - [ ] `fsck` — check passes plus repair
 - [ ] CLI binaries `mkfs.ext4`, `fsck.ext4`
 - [ ] `../fio.ext4.rs` — async userspace read/write into the image, no kernel
+- [ ] `mmp` — multiple mount protection (`EXT4_FEATURE_INCOMPAT_MMP`, 0x100).
+      Format-time: allocate `s_mmp_block`, write `mmp_struct` with
+      `EXT4_MMP_SEQ_CLEAN`, honour `-O mmp` and `-E mmp_update_interval`.
+      Open-time: the race-and-wait protocol — stamp a sequence, sleep
+      `2 × mmp_check_interval`, re-read, refuse if it moved; then heartbeat
+      while the device is held. This is the fence that stops two hosts from
+      mounting one stormblock volume read-write and destroying it, and
+      `mmp_nodename` makes the refusal name the holder instead of guessing.
 - [ ] `meta_bg` (past ~200 TiB) and `orphan_file` (last feature gap)
 - [ ] stormblock integration path (file against stormblock#39, do not edit it
       from this repo)

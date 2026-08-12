@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### 2026-08-12
+- **docs:** Add `mmp` (multiple mount protection) to the work plan. On shared
+  block storage — which is exactly what stormblock exports — two hosts can be
+  handed the same device, and ext4 has no way to notice. MMP is the only
+  multi-host primitive the on-disk format has, and it exists to prevent
+  concurrent read-write mounts rather than to arbitrate them.
 - **feat:** Scaffold the `mkfs-ext4` crate — async, parallel ext2/ext3/ext4
   formatter and checker, written from the e2fsprogs source as reference rather
   than derived from any existing in-tree formatter.
