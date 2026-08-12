@@ -52,11 +52,12 @@ to point at, not an open-ended guess about feature flags.
       asserted against all six
 - [x] `tests/verify-on-linux.sh` — e2fsck, mount, write, unmount, e2fsck on a
       real kernel. All eight configurations pass.
-- [ ] `compare` — structural diff between two filesystems
+- [x] `compare` — structural diff between two filesystems; zero structural
+      difference from real mke2fs across all six golden references
 - [x] `fsck` — check passes plus repair
 - [x] CLI binaries `mkfs-ext4`, `fsck-ext4`
 - [x] `../fio.ext4.rs` — async userspace read/write into the image, no kernel
-- [ ] `mmp` — multiple mount protection (`EXT4_FEATURE_INCOMPAT_MMP`, 0x100).
+- [x] `mmp` — multiple mount protection (`EXT4_FEATURE_INCOMPAT_MMP`, 0x100).
       Format-time: allocate `s_mmp_block`, write `mmp_struct` with
       `EXT4_MMP_SEQ_CLEAN`, honour `-O mmp` and `-E mmp_update_interval`.
       Open-time: the race-and-wait protocol — stamp a sequence, sleep
