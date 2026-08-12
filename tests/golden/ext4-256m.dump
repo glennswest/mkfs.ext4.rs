@@ -1,0 +1,298 @@
+Filesystem volume name:   <none>
+Last mounted on:          <not available>
+Filesystem UUID:          12345678-1234-5678-9abc-123456789abc
+Filesystem magic number:  0xEF53
+Filesystem revision #:    1 (dynamic)
+Filesystem features:      has_journal ext_attr resize_inode dir_index orphan_file filetype extent 64bit flex_bg metadata_csum_seed sparse_super large_file huge_file dir_nlink extra_isize metadata_csum
+Filesystem flags:         signed_directory_hash 
+Default mount options:    user_xattr acl
+Filesystem state:         clean
+Errors behavior:          Continue
+Filesystem OS type:       Linux
+Inode count:              65536
+Block count:              262144
+Reserved block count:     13107
+Overhead clusters:        26713
+Free blocks:              235353
+Free inodes:              65524
+First block:              1
+Block size:               1024
+Fragment size:            1024
+Group descriptor size:    64
+Reserved GDT blocks:      256
+Blocks per group:         8192
+Fragments per group:      8192
+Inodes per group:         2048
+Inode blocks per group:   512
+Flex block group size:    16
+Filesystem created:       Tue Nov 14 22:13:20 2023
+Last mount time:          n/a
+Last write time:          Tue Nov 14 22:13:20 2023
+Mount count:              0
+Maximum mount count:      -1
+Last checked:             Tue Nov 14 22:13:20 2023
+Check interval:           0 (<none>)
+Lifetime writes:          354 kB
+Reserved blocks uid:      0 (user root)
+Reserved blocks gid:      0 (group root)
+First inode:              11
+Inode size:               256
+Required extra isize:     32
+Desired extra isize:      32
+Journal inode:            8
+Default directory hash:   half_md4
+Directory Hash Seed:      87654321-4321-8765-cba9-987654321cba
+Journal backup:           inode blocks
+Checksum type:            crc32c
+Checksum:                 0xa8c65022
+Checksum seed:            0xf053b497
+Orphan file inode:        12
+Journal features:         (none)
+Total journal size:       8M
+Total journal blocks:     8192
+Max transaction length:   8192
+Fast commit length:       0
+Journal sequence:         0x00000001
+Journal start:            0
+
+
+Group 0: (Blocks 1-8192) csum 0x4dd7 [ITABLE_ZEROED]
+  Primary superblock at 1, Group descriptors at 2-3
+  Reserved GDT blocks at 4-259
+  Block bitmap at 260 (+259), csum 0x15b3ad19
+  Inode bitmap at 276 (+275), csum 0x53232cd0
+  Inode table at 292-803 (+291)
+  143 free blocks, 2036 free inodes, 2 directories, 2036 unused inodes
+  Free blocks: 8050-8192
+  Free inodes: 13-2048
+Group 1: (Blocks 8193-16384) csum 0xee7c [INODE_UNINIT, ITABLE_ZEROED]
+  Backup superblock at 8193, Group descriptors at 8194-8195
+  Reserved GDT blocks at 8196-8451
+  Block bitmap at 261 (bg #0 + 260), csum 0x1b3c3518
+  Inode bitmap at 277 (bg #0 + 276), csum 0x00000000
+  Inode table at 804-1315 (bg #0 + 803)
+  7421 free blocks, 2048 free inodes, 0 directories, 2048 unused inodes
+  Free blocks: 8964-16384
+  Free inodes: 2049-4096
+Group 2: (Blocks 16385-24576) csum 0x8d14 [INODE_UNINIT, BLOCK_UNINIT, ITABLE_ZEROED]
+  Block bitmap at 262 (bg #0 + 261), csum 0x00000000
+  Inode bitmap at 278 (bg #0 + 277), csum 0x00000000
+  Inode table at 1316-1827 (bg #0 + 1315)
+  8192 free blocks, 2048 free inodes, 0 directories, 2048 unused inodes
+  Free blocks: 16385-24576
+  Free inodes: 4097-6144
+Group 3: (Blocks 24577-32768) csum 0x044b [INODE_UNINIT, ITABLE_ZEROED]
+  Backup superblock at 24577, Group descriptors at 24578-24579
+  Reserved GDT blocks at 24580-24835
+  Block bitmap at 263 (bg #0 + 262), csum 0x40601cb1
+  Inode bitmap at 279 (bg #0 + 278), csum 0x00000000
+  Inode table at 1828-2339 (bg #0 + 1827)
+  7933 free blocks, 2048 free inodes, 0 directories, 2048 unused inodes
+  Free blocks: 24836-32768
+  Free inodes: 6145-8192
+Group 4: (Blocks 32769-40960) csum 0x0835 [INODE_UNINIT, BLOCK_UNINIT, ITABLE_ZEROED]
+  Block bitmap at 264 (bg #0 + 263), csum 0x00000000
+  Inode bitmap at 280 (bg #0 + 279), csum 0x00000000
+  Inode table at 2340-2851 (bg #0 + 2339)
+  8192 free blocks, 2048 free inodes, 0 directories, 2048 unused inodes
+  Free blocks: 32769-40960
+  Free inodes: 8193-10240
+Group 5: (Blocks 40961-49152) csum 0x816a [INODE_UNINIT, ITABLE_ZEROED]
+  Backup superblock at 40961, Group descriptors at 40962-40963
+  Reserved GDT blocks at 40964-41219
+  Block bitmap at 265 (bg #0 + 264), csum 0x40601cb1
+  Inode bitmap at 281 (bg #0 + 280), csum 0x00000000
+  Inode table at 2852-3363 (bg #0 + 2851)
+  7933 free blocks, 2048 free inodes, 0 directories, 2048 unused inodes
+  Free blocks: 41220-49152
+  Free inodes: 10241-12288
+Group 6: (Blocks 49153-57344) csum 0x4292 [INODE_UNINIT, BLOCK_UNINIT, ITABLE_ZEROED]
+  Block bitmap at 266 (bg #0 + 265), csum 0x00000000
+  Inode bitmap at 282 (bg #0 + 281), csum 0x00000000
+  Inode table at 3364-3875 (bg #0 + 3363)
+  8192 free blocks, 2048 free inodes, 0 directories, 2048 unused inodes
+  Free blocks: 49153-57344
+  Free inodes: 12289-14336
+Group 7: (Blocks 57345-65536) csum 0xcbcd [INODE_UNINIT, ITABLE_ZEROED]
+  Backup superblock at 57345, Group descriptors at 57346-57347
+  Reserved GDT blocks at 57348-57603
+  Block bitmap at 267 (bg #0 + 266), csum 0x40601cb1
+  Inode bitmap at 283 (bg #0 + 282), csum 0x00000000
+  Inode table at 3876-4387 (bg #0 + 3875)
+  7933 free blocks, 2048 free inodes, 0 directories, 2048 unused inodes
+  Free blocks: 57604-65536
+  Free inodes: 14337-16384
+Group 8: (Blocks 65537-73728) csum 0x9bde [INODE_UNINIT, BLOCK_UNINIT, ITABLE_ZEROED]
+  Block bitmap at 268 (bg #0 + 267), csum 0x00000000
+  Inode bitmap at 284 (bg #0 + 283), csum 0x00000000
+  Inode table at 4388-4899 (bg #0 + 4387)
+  8192 free blocks, 2048 free inodes, 0 directories, 2048 unused inodes
+  Free blocks: 65537-73728
+  Free inodes: 16385-18432
+Group 9: (Blocks 73729-81920) csum 0x1281 [INODE_UNINIT, ITABLE_ZEROED]
+  Backup superblock at 73729, Group descriptors at 73730-73731
+  Reserved GDT blocks at 73732-73987
+  Block bitmap at 269 (bg #0 + 268), csum 0x40601cb1
+  Inode bitmap at 285 (bg #0 + 284), csum 0x00000000
+  Inode table at 4900-5411 (bg #0 + 4899)
+  7933 free blocks, 2048 free inodes, 0 directories, 2048 unused inodes
+  Free blocks: 73988-81920
+  Free inodes: 18433-20480
+Group 10: (Blocks 81921-90112) csum 0xd179 [INODE_UNINIT, BLOCK_UNINIT, ITABLE_ZEROED]
+  Block bitmap at 270 (bg #0 + 269), csum 0x00000000
+  Inode bitmap at 286 (bg #0 + 285), csum 0x00000000
+  Inode table at 5412-5923 (bg #0 + 5411)
+  8192 free blocks, 2048 free inodes, 0 directories, 2048 unused inodes
+  Free blocks: 81921-90112
+  Free inodes: 20481-22528
+Group 11: (Blocks 90113-98304) csum 0xcf52 [INODE_UNINIT, BLOCK_UNINIT, ITABLE_ZEROED]
+  Block bitmap at 271 (bg #0 + 270), csum 0x00000000
+  Inode bitmap at 287 (bg #0 + 286), csum 0x00000000
+  Inode table at 5924-6435 (bg #0 + 5923)
+  8192 free blocks, 2048 free inodes, 0 directories, 2048 unused inodes
+  Free blocks: 90113-98304
+  Free inodes: 22529-24576
+Group 12: (Blocks 98305-106496) csum 0xeb06 [INODE_UNINIT, BLOCK_UNINIT, ITABLE_ZEROED]
+  Block bitmap at 272 (bg #0 + 271), csum 0x00000000
+  Inode bitmap at 288 (bg #0 + 287), csum 0x00000000
+  Inode table at 6436-6947 (bg #0 + 6435)
+  8192 free blocks, 2048 free inodes, 0 directories, 2048 unused inodes
+  Free blocks: 98305-106496
+  Free inodes: 24577-26624
+Group 13: (Blocks 106497-114688) csum 0xf52d [INODE_UNINIT, BLOCK_UNINIT, ITABLE_ZEROED]
+  Block bitmap at 273 (bg #0 + 272), csum 0x00000000
+  Inode bitmap at 289 (bg #0 + 288), csum 0x00000000
+  Inode table at 6948-7459 (bg #0 + 6947)
+  8192 free blocks, 2048 free inodes, 0 directories, 2048 unused inodes
+  Free blocks: 106497-114688
+  Free inodes: 26625-28672
+Group 14: (Blocks 114689-122880) csum 0x6dc6 [INODE_UNINIT, ITABLE_ZEROED]
+  Block bitmap at 274 (bg #0 + 273), csum 0x1ffdaed4
+  Inode bitmap at 290 (bg #0 + 289), csum 0x00000000
+  Inode table at 7460-7971 (bg #0 + 7459)
+  0 free blocks, 2048 free inodes, 0 directories, 2048 unused inodes
+  Free blocks: 
+  Free inodes: 28673-30720
+Group 15: (Blocks 122881-131072) csum 0x2613 [INODE_UNINIT, BLOCK_UNINIT, ITABLE_ZEROED]
+  Block bitmap at 275 (bg #0 + 274), csum 0x00000000
+  Inode bitmap at 291 (bg #0 + 290), csum 0x00000000
+  Inode table at 8452-8963 (bg #1 + 259)
+  8192 free blocks, 2048 free inodes, 0 directories, 2048 unused inodes
+  Free blocks: 122881-131072
+  Free inodes: 30721-32768
+Group 16: (Blocks 131073-139264) csum 0x0278 [INODE_UNINIT, ITABLE_ZEROED]
+  Block bitmap at 131073 (+0), csum 0x1ffdaed4
+  Inode bitmap at 131089 (+16), csum 0x00000000
+  Inode table at 131105-131616 (+32)
+  0 free blocks, 2048 free inodes, 0 directories, 2048 unused inodes
+  Free blocks: 
+  Free inodes: 32769-34816
+Group 17: (Blocks 139265-147456) csum 0x5856 [INODE_UNINIT, ITABLE_ZEROED]
+  Block bitmap at 131074 (bg #16 + 1), csum 0xa7e79ccf
+  Inode bitmap at 131090 (bg #16 + 17), csum 0x00000000
+  Inode table at 131617-132128 (bg #16 + 544)
+  8160 free blocks, 2048 free inodes, 0 directories, 2048 unused inodes
+  Free blocks: 139297-147456
+  Free inodes: 34817-36864
+Group 18: (Blocks 147457-155648) csum 0x84b8 [INODE_UNINIT, BLOCK_UNINIT, ITABLE_ZEROED]
+  Block bitmap at 131075 (bg #16 + 2), csum 0x00000000
+  Inode bitmap at 131091 (bg #16 + 18), csum 0x00000000
+  Inode table at 132129-132640 (bg #16 + 1056)
+  8192 free blocks, 2048 free inodes, 0 directories, 2048 unused inodes
+  Free blocks: 147457-155648
+  Free inodes: 36865-38912
+Group 19: (Blocks 155649-163840) csum 0x2145 [INODE_UNINIT, BLOCK_UNINIT, ITABLE_ZEROED]
+  Block bitmap at 131076 (bg #16 + 3), csum 0x00000000
+  Inode bitmap at 131092 (bg #16 + 19), csum 0x00000000
+  Inode table at 132641-133152 (bg #16 + 1568)
+  8192 free blocks, 2048 free inodes, 0 directories, 2048 unused inodes
+  Free blocks: 155649-163840
+  Free inodes: 38913-40960
+Group 20: (Blocks 163841-172032) csum 0x5b51 [INODE_UNINIT, BLOCK_UNINIT, ITABLE_ZEROED]
+  Block bitmap at 131077 (bg #16 + 4), csum 0x00000000
+  Inode bitmap at 131093 (bg #16 + 20), csum 0x00000000
+  Inode table at 133153-133664 (bg #16 + 2080)
+  8192 free blocks, 2048 free inodes, 0 directories, 2048 unused inodes
+  Free blocks: 163841-172032
+  Free inodes: 40961-43008
+Group 21: (Blocks 172033-180224) csum 0xd3c8 [INODE_UNINIT, BLOCK_UNINIT, ITABLE_ZEROED]
+  Block bitmap at 131078 (bg #16 + 5), csum 0x00000000
+  Inode bitmap at 131094 (bg #16 + 21), csum 0x00000000
+  Inode table at 133665-134176 (bg #16 + 2592)
+  8192 free blocks, 2048 free inodes, 0 directories, 2048 unused inodes
+  Free blocks: 172033-180224
+  Free inodes: 43009-45056
+Group 22: (Blocks 180225-188416) csum 0x11f6 [INODE_UNINIT, BLOCK_UNINIT, ITABLE_ZEROED]
+  Block bitmap at 131079 (bg #16 + 6), csum 0x00000000
+  Inode bitmap at 131095 (bg #16 + 22), csum 0x00000000
+  Inode table at 134177-134688 (bg #16 + 3104)
+  8192 free blocks, 2048 free inodes, 0 directories, 2048 unused inodes
+  Free blocks: 180225-188416
+  Free inodes: 45057-47104
+Group 23: (Blocks 188417-196608) csum 0xeec3 [INODE_UNINIT, BLOCK_UNINIT, ITABLE_ZEROED]
+  Block bitmap at 131080 (bg #16 + 7), csum 0x00000000
+  Inode bitmap at 131096 (bg #16 + 23), csum 0x00000000
+  Inode table at 134689-135200 (bg #16 + 3616)
+  8192 free blocks, 2048 free inodes, 0 directories, 2048 unused inodes
+  Free blocks: 188417-196608
+  Free inodes: 47105-49152
+Group 24: (Blocks 196609-204800) csum 0x9272 [INODE_UNINIT, BLOCK_UNINIT, ITABLE_ZEROED]
+  Block bitmap at 131081 (bg #16 + 8), csum 0x00000000
+  Inode bitmap at 131097 (bg #16 + 24), csum 0x00000000
+  Inode table at 135201-135712 (bg #16 + 4128)
+  8192 free blocks, 2048 free inodes, 0 directories, 2048 unused inodes
+  Free blocks: 196609-204800
+  Free inodes: 49153-51200
+Group 25: (Blocks 204801-212992) csum 0x8d9f [INODE_UNINIT, ITABLE_ZEROED]
+  Backup superblock at 204801, Group descriptors at 204802-204803
+  Reserved GDT blocks at 204804-205059
+  Block bitmap at 131082 (bg #16 + 9), csum 0x40601cb1
+  Inode bitmap at 131098 (bg #16 + 25), csum 0x00000000
+  Inode table at 135713-136224 (bg #16 + 4640)
+  7933 free blocks, 2048 free inodes, 0 directories, 2048 unused inodes
+  Free blocks: 205060-212992
+  Free inodes: 51201-53248
+Group 26: (Blocks 212993-221184) csum 0xd8d5 [INODE_UNINIT, BLOCK_UNINIT, ITABLE_ZEROED]
+  Block bitmap at 131083 (bg #16 + 10), csum 0x00000000
+  Inode bitmap at 131099 (bg #16 + 26), csum 0x00000000
+  Inode table at 136225-136736 (bg #16 + 5152)
+  8192 free blocks, 2048 free inodes, 0 directories, 2048 unused inodes
+  Free blocks: 212993-221184
+  Free inodes: 53249-55296
+Group 27: (Blocks 221185-229376) csum 0xea5c [INODE_UNINIT, ITABLE_ZEROED]
+  Backup superblock at 221185, Group descriptors at 221186-221187
+  Reserved GDT blocks at 221188-221443
+  Block bitmap at 131084 (bg #16 + 11), csum 0x40601cb1
+  Inode bitmap at 131100 (bg #16 + 27), csum 0x00000000
+  Inode table at 136737-137248 (bg #16 + 5664)
+  7933 free blocks, 2048 free inodes, 0 directories, 2048 unused inodes
+  Free blocks: 221444-229376
+  Free inodes: 55297-57344
+Group 28: (Blocks 229377-237568) csum 0x073c [INODE_UNINIT, BLOCK_UNINIT, ITABLE_ZEROED]
+  Block bitmap at 131085 (bg #16 + 12), csum 0x00000000
+  Inode bitmap at 131101 (bg #16 + 28), csum 0x00000000
+  Inode table at 137249-137760 (bg #16 + 6176)
+  8192 free blocks, 2048 free inodes, 0 directories, 2048 unused inodes
+  Free blocks: 229377-237568
+  Free inodes: 57345-59392
+Group 29: (Blocks 237569-245760) csum 0x8fa5 [INODE_UNINIT, BLOCK_UNINIT, ITABLE_ZEROED]
+  Block bitmap at 131086 (bg #16 + 13), csum 0x00000000
+  Inode bitmap at 131102 (bg #16 + 29), csum 0x00000000
+  Inode table at 137761-138272 (bg #16 + 6688)
+  8192 free blocks, 2048 free inodes, 0 directories, 2048 unused inodes
+  Free blocks: 237569-245760
+  Free inodes: 59393-61440
+Group 30: (Blocks 245761-253952) csum 0x4d9b [INODE_UNINIT, BLOCK_UNINIT, ITABLE_ZEROED]
+  Block bitmap at 131087 (bg #16 + 14), csum 0x00000000
+  Inode bitmap at 131103 (bg #16 + 30), csum 0x00000000
+  Inode table at 138273-138784 (bg #16 + 7200)
+  8192 free blocks, 2048 free inodes, 0 directories, 2048 unused inodes
+  Free blocks: 245761-253952
+  Free inodes: 61441-63488
+Group 31: (Blocks 253953-262143) csum 0x6e4a [INODE_UNINIT, ITABLE_ZEROED]
+  Block bitmap at 131088 (bg #16 + 15), csum 0x34408634
+  Inode bitmap at 131104 (bg #16 + 31), csum 0x00000000
+  Inode table at 138785-139296 (bg #16 + 7712)
+  8191 free blocks, 2048 free inodes, 0 directories, 2048 unused inodes
+  Free blocks: 253953-262143
+  Free inodes: 63489-65536

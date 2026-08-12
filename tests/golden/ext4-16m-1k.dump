@@ -1,0 +1,66 @@
+Filesystem volume name:   <none>
+Last mounted on:          <not available>
+Filesystem UUID:          12345678-1234-5678-9abc-123456789abc
+Filesystem magic number:  0xEF53
+Filesystem revision #:    1 (dynamic)
+Filesystem features:      ext_attr resize_inode dir_index filetype extent 64bit flex_bg metadata_csum_seed sparse_super large_file huge_file dir_nlink extra_isize metadata_csum
+Filesystem flags:         signed_directory_hash 
+Default mount options:    user_xattr acl
+Filesystem state:         clean
+Errors behavior:          Continue
+Filesystem OS type:       Linux
+Inode count:              4096
+Block count:              16384
+Reserved block count:     819
+Overhead clusters:        1287
+Free blocks:              15083
+Free inodes:              4085
+First block:              1
+Block size:               1024
+Fragment size:            1024
+Group descriptor size:    64
+Reserved GDT blocks:      127
+Blocks per group:         8192
+Fragments per group:      8192
+Inodes per group:         2048
+Inode blocks per group:   512
+Flex block group size:    16
+Filesystem created:       Tue Nov 14 22:13:20 2023
+Last mount time:          n/a
+Last write time:          Tue Nov 14 22:13:20 2023
+Mount count:              0
+Maximum mount count:      -1
+Last checked:             Tue Nov 14 22:13:20 2023
+Check interval:           0 (<none>)
+Lifetime writes:          148 kB
+Reserved blocks uid:      0 (user root)
+Reserved blocks gid:      0 (group root)
+First inode:              11
+Inode size:               256
+Required extra isize:     32
+Desired extra isize:      32
+Default directory hash:   half_md4
+Directory Hash Seed:      87654321-4321-8765-cba9-987654321cba
+Checksum type:            crc32c
+Checksum:                 0x1c3b978a
+Checksum seed:            0xf053b497
+
+
+Group 0: (Blocks 1-8192) csum 0x6776 [ITABLE_ZEROED]
+  Primary superblock at 1, Group descriptors at 2-2
+  Reserved GDT blocks at 3-129
+  Block bitmap at 130 (+129), csum 0x9bf96217
+  Inode bitmap at 132 (+131), csum 0xfb14054a
+  Inode table at 134-645 (+133)
+  7021 free blocks, 2037 free inodes, 2 directories, 2037 unused inodes
+  Free blocks: 1172-8192
+  Free inodes: 12-2048
+Group 1: (Blocks 8193-16383) csum 0x9f61 [INODE_UNINIT, ITABLE_ZEROED]
+  Backup superblock at 8193, Group descriptors at 8194-8194
+  Reserved GDT blocks at 8195-8321
+  Block bitmap at 131 (bg #0 + 130), csum 0x2992f782
+  Inode bitmap at 133 (bg #0 + 132), csum 0x00000000
+  Inode table at 646-1157 (bg #0 + 645)
+  8062 free blocks, 2048 free inodes, 0 directories, 2048 unused inodes
+  Free blocks: 8322-16383
+  Free inodes: 2049-4096
