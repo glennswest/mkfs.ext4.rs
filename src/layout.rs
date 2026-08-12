@@ -371,7 +371,7 @@ impl Geometry {
         let mut cursor = self.group_first_block(flex_first);
 
         // The next single free block.
-        let mut take_one = |cursor: &mut u64| -> Result<u64> {
+        let take_one = |cursor: &mut u64| -> Result<u64> {
             while *cursor < self.blocks_count && self.in_super_region(*cursor) {
                 *cursor += 1;
             }

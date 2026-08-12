@@ -43,3 +43,6 @@
   filesystem and e2fsck rejected the descriptors.
 - **feat:** Record `s_jnl_blocks` and `s_jnl_backup_type`, the journal inode
   backup `mke2fs` writes ("Journal backup: inode blocks").
+- **perf:** Build block bitmaps by marking ranges instead of querying placement
+  once per block. The unit suite went from 7.7s back to 0.05s; the per-block
+  form would have dominated the cost of formatting anything large.

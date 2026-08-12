@@ -96,32 +96,6 @@ struct Plan {
 }
 
 impl Plan {
-    /// Whether a block is spoken for by group metadata.
-    ///
-    /// Computed rather than looked up in a bitmap: a 64 TiB filesystem's block
-    /// bitmap would be two gigabytes, and every question here is answerable in
-    /// constant time from the geometry.
-    fn is_metadata(&self, block: u64) -> bool {
-        let g = &self.geom;
-        if g.in_super_region(block) {
-            return true;
-        }
-        let group = ((block - g.first_data_block as u64) / g.blocks_per_group as u64) as u32;
-        match g.flex_metadata_runs(group) {
-            Ok(runs) => runs
-                .iter()
-                .any(|&(start, len)| block >= start && block < start + len),
-            // A geometry that cannot place its own tables has no free blocks
-            // to offer; treating everything as taken fails safely.
-            Err(_) => true,
-        }
-    }
-
-    /// Whether a block is free — neither metadata nor already allocated.
-    fn is_free(&self, block: u64) -> bool {
-        !self.is_metadata(block) && !self.runs.iter().any(|r| r.contains(block))
-    }
-
     /// `s_jnl_blocks` — a copy of the journal inode's block map and size.
     ///
     /// Fifteen words of `i_block`, then the high and low halves of the size.
@@ -484,17 +458,55 @@ fn build_group(plan: &Plan, group: u32) -> Result<GroupState> {
 
     // Block bitmap: one bit per block in the group, padded to a full block with
     // ones so nothing past the end of the group is ever considered free.
+    //
+    // Built by marking ranges rather than asking a predicate per block. The
+    // difference is not cosmetic: a 1 TiB filesystem has 268 million blocks,
+    // and one placement query each would dominate the whole format.
     let mut block_bitmap = vec![0u8; block_size];
-    let mut free_blocks = 0u32;
-    for i in 0..g.blocks_per_group as u64 {
-        let block = layout.first_block + i;
-        let used = block > layout.last_block || !plan.is_free(block);
-        if used {
-            block_bitmap[(i / 8) as usize] |= 1 << (i % 8);
-        } else {
-            free_blocks += 1;
+    let group_blocks = g.blocks_per_group as u64;
+
+    let mark = |from: u64, to_exclusive: u64, bitmap: &mut Vec<u8>| {
+        // Clamp to this group's own window before setting anything.
+        let lo = from.max(layout.first_block);
+        let hi = to_exclusive.min(layout.first_block + group_blocks);
+        for block in lo..hi {
+            let i = block - layout.first_block;
+            bitmap[(i / 8) as usize] |= 1 << (i % 8);
         }
+    };
+
+    // Superblock copies, descriptor tables and reserved descriptor blocks of
+    // every group overlapping this one — which is only ever this group.
+    if g.has_super(layout.group) {
+        let start = g.group_first_block(layout.group);
+        mark(
+            start,
+            start + g.super_overhead(layout.group) as u64,
+            &mut block_bitmap,
+        );
     }
+    // Bitmaps and inode tables of this group's flex group.
+    for (start, len) in g.flex_metadata_runs(layout.group)? {
+        mark(start, start + len, &mut block_bitmap);
+    }
+    // The root directory, lost+found, resize indirect block and journal.
+    for run in &plan.runs {
+        mark(run.start, run.start + run.len, &mut block_bitmap);
+    }
+    // Anything past the end of a short final group is not a block at all.
+    mark(
+        layout.last_block + 1,
+        layout.first_block + group_blocks,
+        &mut block_bitmap,
+    );
+
+    let used_blocks: u32 = block_bitmap
+        .iter()
+        .take((group_blocks as usize).div_ceil(8))
+        .map(|b| b.count_ones())
+        .sum::<u32>();
+    let free_blocks = g.blocks_per_group - used_blocks;
+
     // Bits past blocks_per_group in the final bitmap block belong to no block.
     for bit in g.blocks_per_group as usize..block_size * 8 {
         block_bitmap[bit / 8] |= 1 << (bit % 8);
