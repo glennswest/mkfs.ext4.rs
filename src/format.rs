@@ -617,9 +617,11 @@ fn build_group(plan: &Plan, group: u32) -> Result<GroupState> {
         }
     };
 
-    // Superblock copies, descriptor tables and reserved descriptor blocks of
-    // every group overlapping this one — which is only ever this group.
-    if g.has_super(layout.group) {
+    // Superblock copy, descriptor blocks and reserved descriptor blocks at the
+    // front of this group. Not guarded on `has_super`: under meta_bg the last
+    // group of a meta block group holds a descriptor block copy without
+    // carrying a superblock backup, and that block is in use all the same.
+    {
         let start = g.group_first_block(layout.group);
         mark(
             start,
@@ -849,15 +851,31 @@ async fn write_group<D: BlockDevice + ?Sized>(
     let state = &states[group as usize];
     let layout = g.group(group)?;
 
-    // The descriptor table follows the superblock copy in every group that has
-    // one. The superblock itself is written at the end of the format.
-    if g.has_super(group) {
-        let gdt_at = (g.group_first_block(group) + 1) * block_size;
-        dev.write_at(gdt_at, &gdt).await?;
-        if g.reserved_gdt_blocks > 0 {
-            let rsv_at = gdt_at + gdt.len() as u64;
-            dev.write_zeroes(rsv_at, g.reserved_gdt_blocks as u64 * block_size)
+    // Descriptors follow the superblock copy. Under the classic layout that is
+    // the whole table; under meta_bg it is the one block covering this group's
+    // meta block group, which is why a filesystem too large for a contiguous
+    // table can still describe itself.
+    if let Some(desc_at) = g.desc_block_location(group) {
+        let at = desc_at * block_size;
+        if g.meta_bg && g.meta_bg_of(group) >= g.first_meta_bg {
+            let dpb = g.desc_per_block() as usize;
+            let meta = g.meta_bg_of(group) as usize;
+            let bytes = g.block_size as usize;
+            let from = meta * bytes;
+            let mut one = vec![0u8; bytes];
+            let available = gdt.len().saturating_sub(from).min(bytes);
+            one[..available].copy_from_slice(&gdt[from..from + available]);
+            let _ = dpb;
+            dev.write_at(at, &one).await?;
+        } else {
+            dev.write_at(at, &gdt).await?;
+            if g.reserved_gdt_blocks > 0 {
+                dev.write_zeroes(
+                    at + gdt.len() as u64,
+                    g.reserved_gdt_blocks as u64 * block_size,
+                )
                 .await?;
+            }
         }
     }
 
@@ -958,7 +976,7 @@ fn build_superblock(plan: &Plan, free_blocks: u64, free_inodes: u32) -> Superblo
             0
         },
         default_mount_opts: crate::params::DEFAULT_MNTOPTS,
-        first_meta_bg: 0,
+        first_meta_bg: g.first_meta_bg,
         mkfs_time: plan.mkfs_time,
         jnl_blocks: plan.jnl_blocks_backup(),
         min_extra_isize: extra_isize,

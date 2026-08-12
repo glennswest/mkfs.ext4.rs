@@ -219,22 +219,75 @@ impl<D: BlockDevice> Filesystem<D> {
     }
 
     /// Read the group descriptor table.
+    ///
+    /// Under meta_bg the table is not contiguous: each meta block group keeps
+    /// its own descriptor block near the groups it describes, so the table is
+    /// gathered a block at a time rather than read in one go.
     async fn read_group_descs(&self) -> Result<Vec<GroupDesc>> {
         let sb = &self.superblock;
         let desc_size = sb.desc_size() as usize;
         let group_count = sb.group_count();
-        let gdt_block = if sb.block_size() == 1024 { 2 } else { 1 };
-        let total = group_count as usize * desc_size;
-        let blocks = (total as u64).div_ceil(sb.block_size() as u64);
+        let block_size = sb.block_size() as usize;
+        let desc_per_block = (block_size / desc_size) as u32;
+        let meta_bg = sb
+            .feature_incompat
+            .contains(IncompatFeatures::META_BG);
 
-        let mut raw = vec![0u8; (blocks * sb.block_size() as u64) as usize];
-        self.device
-            .read_at(self.block_offset(gdt_block), &mut raw)
-            .await?;
+        let mut raw = Vec::with_capacity(group_count as usize * desc_size);
+
+        if !meta_bg {
+            let gdt_block = if sb.block_size() == 1024 { 2 } else { 1 };
+            let blocks = (group_count as usize * desc_size)
+                .div_ceil(block_size) as u64;
+            raw.resize((blocks * block_size as u64) as usize, 0);
+            self.device
+                .read_at(self.block_offset(gdt_block), &mut raw)
+                .await?;
+        } else {
+            let meta_groups = group_count.div_ceil(desc_per_block);
+            for meta in 0..meta_groups {
+                // The block lives in the meta group's first group, after that
+                // group's superblock copy if it has one.
+                let leader = meta * desc_per_block;
+                let at = self.group_first_block_for(leader, sb)
+                    + self.group_has_super_for(leader, sb) as u64;
+                let mut block = vec![0u8; block_size];
+                self.device.read_at(self.block_offset(at), &mut block).await?;
+                raw.extend_from_slice(&block);
+            }
+        }
 
         Ok((0..group_count as usize)
             .map(|g| GroupDesc::decode(&raw[g * desc_size..], desc_size))
             .collect())
+    }
+
+    /// First block of a group, without needing `self.superblock` to be set.
+    fn group_first_block_for(&self, group: u32, sb: &Superblock) -> u64 {
+        sb.first_data_block as u64 + group as u64 * sb.blocks_per_group as u64
+    }
+
+    /// Whether a group carries a superblock backup, given a superblock.
+    fn group_has_super_for(&self, group: u32, sb: &Superblock) -> bool {
+        if !sb
+            .feature_ro_compat
+            .contains(RoCompatFeatures::SPARSE_SUPER)
+        {
+            return true;
+        }
+        if group <= 1 {
+            return true;
+        }
+        if group % 2 == 0 {
+            return false;
+        }
+        [3u32, 5, 7].iter().any(|&base| {
+            let mut n = group;
+            while n % base == 0 {
+                n /= base;
+            }
+            n == 1
+        })
     }
 
     /// Where an inode lives: its group, block and byte offset within it.
@@ -326,6 +379,51 @@ impl<D: BlockDevice> Filesystem<D> {
                 .await?;
         }
         Ok(())
+    }
+
+    /// Whether descriptors are distributed per meta block group.
+    pub fn meta_bg(&self) -> bool {
+        self.superblock
+            .feature_incompat
+            .contains(IncompatFeatures::META_BG)
+    }
+
+    /// Group descriptors that fit in one block.
+    pub fn desc_per_block(&self) -> u32 {
+        self.block_size() / self.superblock.desc_size() as u32
+    }
+
+    /// Whether `group` stores a copy of a descriptor block.
+    ///
+    /// Under meta_bg that is the first, second and last group of each meta
+    /// block group — not every group that carries a superblock backup. A
+    /// checker that assumes the two coincide counts a block too many in every
+    /// backup group that is not also a descriptor group.
+    pub fn group_has_desc(&self, group: u32) -> bool {
+        if !self.meta_bg() || group / self.desc_per_block() < self.superblock.first_meta_bg {
+            return self.group_has_super(group);
+        }
+        let size = self.desc_per_block();
+        let within = group % size;
+        within == 0 || within == 1 || within == size - 1
+    }
+
+    /// Descriptor blocks stored in `group`.
+    pub fn desc_blocks_in_group(&self, group: u32) -> u32 {
+        if !self.group_has_desc(group) {
+            return 0;
+        }
+        if !self.meta_bg() || group / self.desc_per_block() < self.superblock.first_meta_bg {
+            self.superblock.gdt_blocks() + self.superblock.reserved_gdt_blocks as u32
+        } else {
+            1
+        }
+    }
+
+    /// Blocks at the front of `group` holding its superblock copy and
+    /// descriptors.
+    pub fn super_overhead(&self, group: u32) -> u32 {
+        self.group_has_super(group) as u32 + self.desc_blocks_in_group(group)
     }
 
     /// Whether a group carries a superblock backup.

@@ -77,3 +77,17 @@
   reference implementation rejects is worse than no checker.
 - **fix:** A plain `cargo build` failed: the default feature declared two
   binaries that did not exist.
+- **feat:** Implement `meta_bg`. Past the point where a contiguous descriptor
+  table would take three quarters of a block group, the table is distributed:
+  one descriptor block per meta block group, kept in that group's first, second
+  and last group, and the resize inode is dropped. Geometry turns it on the way
+  `mke2fs` does, and `-O meta_bg` forces it at any size.
+  Verified at scale: a 1 TiB filesystem formats in 7 seconds, occupies 353 MiB
+  on a sparse file, passes `e2fsck -fn`, mounts, takes writes, and checks clean
+  again.
+- **fix:** A group can hold a descriptor block copy and no superblock backup —
+  under meta_bg the last group of a meta block group does exactly that. Both
+  the bitmap builder and `in_super_region` tested `has_super` first and so left
+  that block marked free; e2fsck reported thousands of block bitmap
+  differences. `super_overhead` already accounts for both, so the guard was
+  simply wrong.

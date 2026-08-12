@@ -180,6 +180,8 @@ pub struct Params {
     pub blocks_per_group: Option<u32>,
     /// Groups per flex group, as a count not a log. `mke2fs -G`.
     pub flex_bg_size: Option<u32>,
+    /// First meta block group. `mke2fs -E first_meta_bg=`.
+    pub first_meta_bg: Option<u32>,
     /// Journal sizing. `mke2fs -J size=`.
     pub journal: JournalSize,
     /// Feature overrides applied after the profile's own. `mke2fs -O`.
@@ -215,6 +217,7 @@ impl Default for Params {
             hash_seed: None,
             blocks_per_group: None,
             flex_bg_size: None,
+            first_meta_bg: None,
             journal: JournalSize::Default,
             feature_spec: None,
             mkfs_time: None,

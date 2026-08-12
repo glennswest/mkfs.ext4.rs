@@ -328,13 +328,13 @@ async fn pass0_superblock<D: BlockDevice>(
     // Claim the blocks the filesystem's own structure occupies. Doing it here
     // rather than in pass 5 means pass 1 can notice a file that claims a block
     // metadata already owns.
-    let desc_blocks = sb.gdt_blocks() as u64;
     for group in 0..sb.group_count() {
         let first = fs.group_first_block(group);
-        if fs.group_has_super(group) {
-            for b in first..first + 1 + desc_blocks + sb.reserved_gdt_blocks as u64 {
-                state.claim(b);
-            }
+        // Superblock copy and descriptors, however many this group holds.
+        // Under meta_bg a group can carry a superblock backup and no
+        // descriptor block, or a descriptor block and no superblock.
+        for b in first..first + fs.super_overhead(group) as u64 {
+            state.claim(b);
         }
 
         let Some(desc) = fs.group_descs().get(group as usize) else {

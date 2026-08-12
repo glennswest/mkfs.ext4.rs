@@ -73,6 +73,10 @@ pub struct Geometry {
     pub reserved_gdt_blocks: u16,
     /// `s_log_groups_per_flex`, zero when `flex_bg` is off.
     pub log_groups_per_flex: u8,
+    /// Whether descriptors are distributed per meta block group.
+    pub meta_bg: bool,
+    /// `s_first_meta_bg` — the first meta block group using the new layout.
+    pub first_meta_bg: u32,
     /// The resolved feature masks.
     pub features: FeatureMasks,
 }
@@ -212,13 +216,34 @@ impl Geometry {
             .checked_mul(group_count)
             .ok_or_else(|| Error::invalid("inode count overflows 32 bits"))?;
 
-        // Reserved GDT blocks plus the descriptor table must not swallow the
-        // group. mke2fs switches to meta_bg here; refusing is honest until
-        // meta_bg is implemented, and it only triggers on extreme geometries.
+        // A descriptor table that would swallow three quarters of a block group
+        // is the point at which a contiguous table stops being workable, and
+        // `mke2fs` switches to meta_bg: one descriptor block per meta block
+        // group, kept in that meta group rather than copied whole into every
+        // superblock backup. The resize inode goes with it, since there is no
+        // longer a contiguous table for reserved blocks to extend.
+        let mut features = features;
+        let mut reserved_gdt = reserved_gdt;
+        let mut meta_bg = features.incompat.contains(IncompatFeatures::META_BG);
         if reserved_gdt as u32 + desc_blocks > blocks_per_group * 3 / 4 {
-            return Err(Error::UnsupportedFeature(
-                "meta_bg (this geometry would spend over three quarters of a group on descriptors)"
-                    .into(),
+            meta_bg = true;
+        }
+        if meta_bg {
+            features.incompat |= IncompatFeatures::META_BG;
+            features.compat.remove(CompatFeatures::RESIZE_INODE);
+            reserved_gdt = 0;
+        }
+        let first_meta_bg = if meta_bg {
+            params.first_meta_bg.unwrap_or(0)
+        } else {
+            0
+        };
+
+        // Even distributed, a single descriptor block plus a superblock copy
+        // has to fit in a group.
+        if meta_bg && 2 + itable_blocks_per_group + 2 > blocks_per_group {
+            return Err(Error::invalid(
+                "block groups are too small to hold their own metadata",
             ));
         }
 
@@ -271,6 +296,8 @@ impl Geometry {
             desc_blocks,
             reserved_gdt_blocks: reserved_gdt,
             log_groups_per_flex,
+            meta_bg,
+            first_meta_bg,
             features,
         };
 
@@ -297,13 +324,62 @@ impl Geometry {
             .min(self.blocks_count - 1)
     }
 
-    /// Blocks group `group` spends on a superblock copy and descriptors.
-    pub fn super_overhead(&self, group: u32) -> u32 {
-        if self.has_super(group) {
-            1 + self.desc_blocks + self.reserved_gdt_blocks as u32
-        } else {
-            0
+    /// Group descriptors that fit in one block.
+    pub fn desc_per_block(&self) -> u32 {
+        self.block_size / self.desc_size as u32
+    }
+
+    /// Groups covered by one descriptor block — a meta block group.
+    pub fn meta_bg_size(&self) -> u32 {
+        self.desc_per_block()
+    }
+
+    /// Which meta block group a group belongs to.
+    pub fn meta_bg_of(&self, group: u32) -> u32 {
+        group / self.meta_bg_size()
+    }
+
+    /// Whether `group` keeps a copy of a descriptor block.
+    ///
+    /// Under meta_bg, a meta block group's single descriptor block is kept in
+    /// its first, second and last group — three copies near the descriptors
+    /// they describe, rather than the whole table repeated in every superblock
+    /// backup. `ext2fs_super_and_bgd_loc2()`.
+    pub fn group_has_desc(&self, group: u32) -> bool {
+        if !self.meta_bg || self.meta_bg_of(group) < self.first_meta_bg {
+            return self.has_super(group);
         }
+        let size = self.meta_bg_size();
+        let within = group % size;
+        within == 0 || within == 1 || within == size - 1
+    }
+
+    /// Descriptor blocks group `group` stores: the whole table under the
+    /// classic layout, a single block under meta_bg.
+    pub fn desc_blocks_in_group(&self, group: u32) -> u32 {
+        if !self.group_has_desc(group) {
+            return 0;
+        }
+        if !self.meta_bg || self.meta_bg_of(group) < self.first_meta_bg {
+            self.desc_blocks + self.reserved_gdt_blocks as u32
+        } else {
+            1
+        }
+    }
+
+    /// Where group `group`'s descriptor block copy starts, if it has one.
+    pub fn desc_block_location(&self, group: u32) -> Option<u64> {
+        if !self.group_has_desc(group) {
+            return None;
+        }
+        Some(self.group_first_block(group) + self.has_super(group) as u64)
+    }
+
+    /// Blocks group `group` spends on a superblock copy and descriptors.
+    ///
+    /// Always a contiguous prefix of the group, under either layout.
+    pub fn super_overhead(&self, group: u32) -> u32 {
+        self.has_super(group) as u32 + self.desc_blocks_in_group(group)
     }
 
     /// Groups per flex group.
@@ -331,8 +407,11 @@ impl Geometry {
         if group >= self.group_count {
             return true;
         }
-        self.has_super(group)
-            && block < self.group_first_block(group) + self.super_overhead(group) as u64
+        // Not guarded on `has_super`: under meta_bg a group can hold a
+        // descriptor block copy and no superblock backup at all, and the
+        // descriptor still occupies the front of the group. `super_overhead`
+        // is already zero when the group holds neither.
+        block < self.group_first_block(group) + self.super_overhead(group) as u64
     }
 
     /// The first group of the flex group `group` belongs to.
@@ -750,21 +829,87 @@ mod tests {
     }
 
     /// Past roughly 200 TiB the group descriptor table outgrows three quarters
-    /// of a block group and `mke2fs` switches to `meta_bg`, which this
-    /// implementation does not write. The limit is reported rather than
-    /// silently producing a filesystem with the wrong layout.
+    /// of a block group, and `mke2fs` switches to `meta_bg`: one descriptor
+    /// block per meta block group, kept near the groups it describes.
     #[test]
-    fn beyond_the_meta_bg_threshold_the_limit_is_reported() {
+    fn beyond_the_threshold_meta_bg_turns_itself_on() {
         const TIB: u64 = 1024 * 1024 * MIB;
         let params = Params::new(Profile::Ext4).no_journal();
 
-        assert!(Geometry::compute(128 * TIB, &params).is_ok());
+        // Below the threshold, the classic contiguous table. Reserved GDT
+        // blocks are already zero at this size — they exist to let the
+        // filesystem grow a thousandfold, and 128 TiB is past the 2^32-block
+        // ceiling that growth would have to stay under.
+        let small = Geometry::compute(128 * TIB, &params).unwrap();
+        assert!(!small.meta_bg);
+        assert!(small.features.compat.contains(CompatFeatures::RESIZE_INODE));
 
-        let err = Geometry::compute(256 * TIB, &params).unwrap_err();
-        assert!(
-            matches!(err, Error::UnsupportedFeature(ref m) if m.contains("meta_bg")),
-            "unexpected error: {err}"
-        );
+        // A more ordinary size does reserve them.
+        let ordinary = Geometry::compute(64 * MIB, &params).unwrap();
+        assert!(!ordinary.meta_bg);
+        assert!(ordinary.reserved_gdt_blocks > 0);
+
+        // Above it, meta_bg — and the resize inode goes, since there is no
+        // longer a contiguous table for reserved blocks to extend.
+        let huge = Geometry::compute(256 * TIB, &params).unwrap();
+        assert!(huge.meta_bg);
+        assert!(huge.features.incompat.contains(IncompatFeatures::META_BG));
+        assert!(!huge.features.compat.contains(CompatFeatures::RESIZE_INODE));
+        assert_eq!(huge.reserved_gdt_blocks, 0);
+        assert_eq!(huge.first_meta_bg, 0);
+    }
+
+    /// Under meta_bg a descriptor block is kept in the first, second and last
+    /// group of its meta block group, and nowhere else.
+    #[test]
+    fn meta_bg_keeps_three_copies_per_meta_group() {
+        const TIB: u64 = 1024 * 1024 * MIB;
+        let params = Params::new(Profile::Ext4).no_journal();
+        let g = Geometry::compute(256 * TIB, &params).unwrap();
+
+        let size = g.meta_bg_size();
+        assert_eq!(size, 64, "4096-byte blocks of 64-byte descriptors");
+
+        // First, second and last group of meta group 0.
+        assert!(g.group_has_desc(0));
+        assert!(g.group_has_desc(1));
+        assert!(g.group_has_desc(size - 1));
+        // And nothing in between.
+        assert!(!g.group_has_desc(2));
+        assert!(!g.group_has_desc(size / 2));
+
+        // The same pattern in a later meta group.
+        assert!(g.group_has_desc(size));
+        assert!(g.group_has_desc(size + 1));
+        assert!(g.group_has_desc(2 * size - 1));
+        assert!(!g.group_has_desc(size + 2));
+
+        // One block each, not the whole table.
+        assert_eq!(g.desc_blocks_in_group(0), 1);
+        assert_eq!(g.desc_blocks_in_group(1), 1);
+        assert_eq!(g.desc_blocks_in_group(2), 0);
+
+        // Which is the point: the classic layout would need this many.
+        assert!(g.desc_blocks > 1000);
+    }
+
+    #[test]
+    fn meta_bg_descriptor_blocks_sit_after_the_superblock_copy() {
+        const TIB: u64 = 1024 * 1024 * MIB;
+        let params = Params::new(Profile::Ext4).no_journal();
+        let g = Geometry::compute(256 * TIB, &params).unwrap();
+
+        // Group 0 has a superblock, so its descriptor block follows it.
+        assert_eq!(g.desc_block_location(0), Some(g.group_first_block(0) + 1));
+        assert_eq!(g.desc_block_location(1), Some(g.group_first_block(1) + 1));
+
+        // The last group of meta group 0 is even, so it carries no superblock
+        // backup and its descriptor block starts the group.
+        let last = g.meta_bg_size() - 1;
+        assert!(!g.has_super(last), "group {last} should have no superblock");
+        assert_eq!(g.desc_block_location(last), Some(g.group_first_block(last)));
+
+        assert_eq!(g.desc_block_location(2), None);
     }
 
     #[test]
