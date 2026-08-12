@@ -320,18 +320,121 @@ impl Geometry {
             .sum()
     }
 
+    /// Whether a block belongs to some group's superblock copy, group
+    /// descriptor table or reserved descriptor blocks.
+    pub fn in_super_region(&self, block: u64) -> bool {
+        if block < self.first_data_block as u64 || block >= self.blocks_count {
+            return true;
+        }
+        let group =
+            ((block - self.first_data_block as u64) / self.blocks_per_group as u64) as u32;
+        if group >= self.group_count {
+            return true;
+        }
+        self.has_super(group)
+            && block < self.group_first_block(group) + self.super_overhead(group) as u64
+    }
+
+    /// The first group of the flex group `group` belongs to.
+    pub fn flex_first_group(&self, group: u32) -> u32 {
+        if self.log_groups_per_flex == 0 {
+            return group;
+        }
+        let flex = self.flex_bg_size();
+        (group / flex) * flex
+    }
+
+    /// How many groups that flex group actually has — the last may be short.
+    pub fn flex_members(&self, flex_first: u32) -> u32 {
+        if self.log_groups_per_flex == 0 {
+            return 1;
+        }
+        self.flex_bg_size().min(self.group_count - flex_first)
+    }
+
+    /// Place the bitmaps and inode tables for one flex group.
+    ///
+    /// Not arithmetic: metadata is *allocated*, taking the next free blocks and
+    /// stepping over any superblock copy, descriptor table or reserved
+    /// descriptor blocks in the way. A flex group's inode tables can run past
+    /// the end of its leading group, and when they meet the next group's
+    /// superblock backup they resume after it.
+    ///
+    /// The golden 256 MiB reference shows exactly this: fifteen inode tables
+    /// run contiguously from block 292, and the sixteenth — which would have
+    /// landed on group 1's backup superblock at 8193 — starts at 8452 instead.
+    /// Treating the region as one contiguous run instead produces group
+    /// descriptors e2fsck rejects with "bad block for inode table".
+    fn place_flex(&self, flex_first: u32) -> Result<Vec<(u64, u64, u64)>> {
+        let members = self.flex_members(flex_first) as usize;
+        let itable_len = self.itable_blocks_per_group as u64;
+        let mut cursor = self.group_first_block(flex_first);
+
+        // The next single free block.
+        let mut take_one = |cursor: &mut u64| -> Result<u64> {
+            while *cursor < self.blocks_count && self.in_super_region(*cursor) {
+                *cursor += 1;
+            }
+            if *cursor >= self.blocks_count {
+                return Err(Error::DeviceTooSmall {
+                    available: self.blocks_count,
+                    needed: *cursor + 1,
+                    block_size: self.block_size,
+                });
+            }
+            let block = *cursor;
+            *cursor += 1;
+            Ok(block)
+        };
+
+        let mut block_bitmaps = Vec::with_capacity(members);
+        for _ in 0..members {
+            block_bitmaps.push(take_one(&mut cursor)?);
+        }
+        let mut inode_bitmaps = Vec::with_capacity(members);
+        for _ in 0..members {
+            inode_bitmaps.push(take_one(&mut cursor)?);
+        }
+
+        // An inode table is one contiguous run, so a partial gap is no use.
+        let mut inode_tables = Vec::with_capacity(members);
+        for _ in 0..members {
+            let start = loop {
+                while cursor < self.blocks_count && self.in_super_region(cursor) {
+                    cursor += 1;
+                }
+                if cursor + itable_len > self.blocks_count {
+                    return Err(Error::DeviceTooSmall {
+                        available: self.blocks_count,
+                        needed: cursor + itable_len,
+                        block_size: self.block_size,
+                    });
+                }
+                // Does the whole run clear the obstructions?
+                match (cursor..cursor + itable_len).find(|&b| self.in_super_region(b)) {
+                    None => break cursor,
+                    Some(blocked) => cursor = blocked + 1,
+                }
+            };
+            inode_tables.push(start);
+            cursor = start + itable_len;
+        }
+
+        Ok((0..members)
+            .map(|i| (block_bitmaps[i], inode_bitmaps[i], inode_tables[i]))
+            .collect())
+    }
+
     /// Where group `g` keeps its bitmaps and inode table.
     ///
     /// Without `flex_bg` a group's metadata sits at the front of that group.
     /// With it, the metadata for every group in a flex group is packed together
-    /// at the front of the flex group's first group: all the block bitmaps,
-    /// then all the inode bitmaps, then all the inode tables. That is what
-    /// makes a large sequential read of metadata possible, and it is what the
-    /// golden reference filesystems show.
+    /// at the front of the flex group: all the block bitmaps, then all the
+    /// inode bitmaps, then all the inode tables.
     ///
-    /// Computed rather than stored: a 64 TiB filesystem has over half a million
-    /// groups, and the formatter streams through them rather than holding them
-    /// all at once.
+    /// Computed rather than stored — a 64 TiB filesystem has over half a
+    /// million groups. The cost is bounded by the flex group size, not by the
+    /// filesystem, so any single group is cheap to place.
     pub fn group(&self, g: u32) -> Result<GroupLayout> {
         if g >= self.group_count {
             return Err(Error::invalid(format!(
@@ -340,49 +443,38 @@ impl Geometry {
             )));
         }
 
-        let first_block = self.group_first_block(g);
-        let last_block = self.group_last_block(g);
-        let has_super = self.has_super(g);
-
-        let (block_bitmap, inode_bitmap, inode_table) = if self.log_groups_per_flex > 0 {
-            let flex = self.flex_bg_size() as u64;
-            // Metadata for the whole flex group starts after the leading
-            // group's own superblock and descriptors.
-            let flex_first_group = (g as u64 / flex) * flex;
-            let flex_start = self.group_first_block(flex_first_group as u32)
-                + self.super_overhead(flex_first_group as u32) as u64;
-            // How many groups this flex group actually has — the last one may
-            // be short.
-            let members = flex.min(self.group_count as u64 - flex_first_group);
-            let index = g as u64 - flex_first_group;
-
-            let bb = flex_start + index;
-            let ib = flex_start + members + index;
-            let it = flex_start + 2 * members + index * self.itable_blocks_per_group as u64;
-            (bb, ib, it)
-        } else {
-            let start = first_block + self.super_overhead(g) as u64;
-            (start, start + 1, start + 2)
-        };
-
-        let itable_end = inode_table + self.itable_blocks_per_group as u64 - 1;
-        if itable_end > self.blocks_count - 1 {
-            return Err(Error::DeviceTooSmall {
-                available: self.blocks_count,
-                needed: itable_end + 1,
-                block_size: self.block_size,
-            });
-        }
+        let flex_first = self.flex_first_group(g);
+        let placement = self.place_flex(flex_first)?;
+        let (block_bitmap, inode_bitmap, inode_table) = placement[(g - flex_first) as usize];
 
         Ok(GroupLayout {
             group: g,
-            first_block,
-            last_block,
-            has_super,
+            first_block: self.group_first_block(g),
+            last_block: self.group_last_block(g),
+            has_super: self.has_super(g),
             block_bitmap,
             inode_bitmap,
             inode_table,
         })
+    }
+
+    /// Every metadata block belonging to the flex group containing `group`.
+    ///
+    /// Returned as `(start, len)` runs, which is what a bitmap builder wants:
+    /// marking ranges rather than testing every block keeps a large filesystem
+    /// from costing one predicate call per block.
+    pub fn flex_metadata_runs(&self, group: u32) -> Result<Vec<(u64, u64)>> {
+        let flex_first = self.flex_first_group(group);
+        let placement = self.place_flex(flex_first)?;
+        let itable_len = self.itable_blocks_per_group as u64;
+
+        let mut runs = Vec::with_capacity(placement.len() * 3);
+        for (bb, ib, it) in placement {
+            runs.push((bb, 1));
+            runs.push((ib, 1));
+            runs.push((it, itable_len));
+        }
+        Ok(runs)
     }
 
     /// Every group's layout, computed as the iterator advances.

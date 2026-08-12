@@ -21,3 +21,25 @@
 - **test:** Geometry and feature masks are asserted against all six golden
   `mke2fs` references, plus every size class from floppy to 128 TiB, the 16 TiB
   `64bit` boundary and the `meta_bg` limit.
+- **feat:** Add `journal` (JBD2 superblock, mke2fs journal sizing) and `format`
+  (the parallel async formatter). ext2, ext3 and ext4 images now pass real
+  `e2fsck -fn`, mount read-write under a Linux 6.17 kernel, accept writes, and
+  stay clean after unmount — verified for 16 MiB to 1 GiB at 1 KiB and 4 KiB
+  blocks by `tests/verify-on-linux.sh`.
+- **fix:** `csum::crc32c` now matches `ext2fs_crc32c_le`, which is the bare
+  table update with no complement at either end. The `crc32c` crate's
+  `crc32c_append` complements on entry and exit, so every metadata checksum was
+  wrong and e2fsck rejected the superblock outright.
+- **fix:** Write no journal features and no journal checksum at format time.
+  `mke2fs` leaves "Journal features: (none)" even on a `metadata_csum`
+  filesystem; setting `csum_v3` made e2fsck report "Journal superblock is
+  corrupt".
+- **fix:** Reserved GDT blocks are the resize inode's indirect blocks, each
+  listing where its own backup copies live — not padding to be zeroed.
+  Zeroing them left e2fsck with "Resize inode not valid".
+- **fix:** Place flex_bg bitmaps and inode tables by allocation rather than
+  arithmetic, stepping over superblock backups and descriptor tables in the
+  way. A contiguous run overlapped group 1's backup superblock on a 256 MiB
+  filesystem and e2fsck rejected the descriptors.
+- **feat:** Record `s_jnl_blocks` and `s_jnl_backup_type`, the journal inode
+  backup `mke2fs` writes ("Journal backup: inode blocks").

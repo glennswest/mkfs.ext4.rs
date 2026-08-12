@@ -135,6 +135,10 @@ pub mod hash {
 /// `EXT2_CRC32C_CHKSUM` — the only metadata checksum algorithm defined.
 pub const CRC32C_CHKSUM: u8 = 1;
 
+/// `EXT3_JNL_BACKUP_BLOCKS` — `s_jnl_blocks` holds the journal inode's block
+/// map, which is what `dumpe2fs` reports as "Journal backup: inode blocks".
+pub const JNL_BACKUP_BLOCKS: u8 = 1;
+
 /// Field offsets within the superblock, named as in `ext2_fs.h`.
 #[allow(missing_docs)]
 pub mod off {
@@ -612,7 +616,7 @@ impl Superblock {
         {
             self.checksum_seed
         } else {
-            crc32c::crc32c_append(!0, &self.uuid)
+            crate::csum::crc32c(!0, &self.uuid)
         }
     }
 
@@ -921,7 +925,7 @@ impl Superblock {
         // Written last, and only when the feature is on — a filesystem without
         // metadata_csum must leave these four bytes zero.
         let csum = if self.has_metadata_csum() {
-            crc32c::crc32c_append(!0, &buf[..off::S_CHECKSUM])
+            crate::csum::crc32c(!0, &buf[..off::S_CHECKSUM])
         } else {
             0
         };
@@ -933,7 +937,7 @@ impl Superblock {
         if !self.has_metadata_csum() {
             return true;
         }
-        let expect = crc32c::crc32c_append(!0, &buf[..off::S_CHECKSUM]);
+        let expect = crate::csum::crc32c(!0, &buf[..off::S_CHECKSUM]);
         expect == get_u32(buf, off::S_CHECKSUM)
     }
 }

@@ -23,10 +23,26 @@ pub fn crc16(mut crc: u16, data: &[u8]) -> u16 {
 }
 
 /// crc32c, seeded. Equivalent to `ext2fs_crc32c_le`.
+///
+/// **Not** the same as `crc32c::crc32c_append`. That function implements the
+/// CRC-32C *message* checksum, which complements the running value on the way
+/// in and on the way out, so that appending to a chunk continues a single
+/// logical CRC. `ext2fs_crc32c_le` is the bare table-driven update with no
+/// complement at either end, and ext4 seeds it with values (`~0`, and the
+/// filesystem checksum seed) that assume exactly that.
+///
+/// Wrapping the complements back off is what makes the two agree:
+/// `raw(seed, data) == !append(!seed, data)`. The golden references settle it —
+/// a filesystem with `s_uuid` `12345678-…` has `s_checksum_seed` `0xf053b497`,
+/// which is `raw(~0, uuid)` and not `append(~0, uuid)`.
 #[inline]
 pub fn crc32c(seed: u32, data: &[u8]) -> u32 {
-    crc32c::crc32c_append(seed, data)
+    !crc32c::crc32c_append(!seed, data)
 }
+
+/// `EXT2_CRC32C_CHKSUM` — the only metadata checksum algorithm defined, and the
+/// value stored in `s_checksum_type` and the journal's `s_checksum_type`.
+pub const CRC32C_CHKSUM_TYPE: u8 = 1;
 
 /// Offset of `bg_checksum` within a group descriptor.
 pub const BG_CHECKSUM_OFFSET: usize = 0x1e;
