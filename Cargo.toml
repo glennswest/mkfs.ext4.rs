@@ -38,6 +38,8 @@ anyhow = { version = "1", optional = true }
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
 tempfile = "3"
+# The golden reference filesystems are stored compressed.
+flate2 = "1"
 
 [features]
 default = ["cli"]

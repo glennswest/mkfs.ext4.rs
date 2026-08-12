@@ -31,6 +31,7 @@
 
 pub mod bytes;
 
+pub mod compare;
 pub mod csum;
 pub mod device;
 pub mod error;

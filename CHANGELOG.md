@@ -101,3 +101,24 @@
 - **fix:** fsck no longer reports the orphan file as an unreferenced inode. It
   sits outside the directory tree by design, reachable only through
   `s_orphan_file_inum`, so having no name is its normal state.
+- **feat:** Add `compare` — a structural diff between two filesystems, field by
+  field, with differences classed as identity, incidental or structural so a
+  real divergence is not lost among expected ones. Features are named rather
+  than printed as hexadecimal masks.
+- **test:** `tests/golden_compare.rs` diffs our output against the golden
+  `mke2fs` images themselves, not just their `dumpe2fs` text. **Zero structural
+  differences** across all six references.
+- **fix:** Four divergences from `mke2fs` that the compare module found on its
+  first run:
+  - `s_lpf_ino` is left zero; `mke2fs` never sets it.
+  - `INODE_ZEROED` is set whenever the inode table was written, checksums or
+    not — which is why a plain ext2 filesystem carries it and nothing else.
+  - `BLOCK_UNINIT` is set on checksummed filesystems for any group with no
+    blocks in use, except the last, whose bitmap carries padding.
+  - The journal goes where `get_midpoint_journal_block()` puts it: the emptiest
+    of the groups either side of the midpoint, not the midpoint itself. On a
+    64 MiB ext4 filesystem that is block 16385, not 30720.
+- **fix:** A block-mapped journal is allocated block by block with its indirect
+  blocks interleaved, as `mke2fs` does, rather than all data first and the
+  indirect blocks after. Same file, and each indirect block now sits beside the
+  data it describes.

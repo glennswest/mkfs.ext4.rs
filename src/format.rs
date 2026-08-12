@@ -245,6 +245,103 @@ impl IndirectMap {
     }
 }
 
+/// Collapse a list of blocks into contiguous runs.
+fn runs_of(blocks: &[u64]) -> Vec<Run> {
+    let mut runs: Vec<Run> = Vec::new();
+    for &block in blocks {
+        match runs.last_mut() {
+            Some(last) if last.start + last.len == block => last.len += 1,
+            _ => runs.push(Run {
+                start: block,
+                len: 1,
+            }),
+        }
+    }
+    runs
+}
+
+/// Allocate a block-mapped file, interleaving its indirect blocks with its
+/// data the way `mke2fs` does.
+///
+/// The order is not incidental. Walking the file logically and taking the next
+/// free block each time — data, then the indirect block at the moment it is
+/// first needed, then more data — is what produces a map like
+/// `(0-11):786-797, (IND):798, (12-267):799-1054, (DIND):1055, …`, and it keeps
+/// each indirect block next to the data it points at. Allocating all the data
+/// first and the indirect blocks afterwards is equally valid and reads worse.
+fn alloc_indirect_file<F: Fn(u64) -> bool>(
+    alloc: &mut Allocator<F>,
+    goal: u64,
+    count: u32,
+    block_size: u32,
+) -> Result<(Vec<u64>, IndirectMap)> {
+    use crate::structs::inode::{N_BLOCKS, NDIR_BLOCKS};
+
+    let per_block = (block_size / 4) as usize;
+    let mut data: Vec<u64> = Vec::with_capacity(count as usize);
+    let mut map = IndirectMap {
+        pointers: [0u32; N_BLOCKS],
+        blocks: Vec::new(),
+    };
+    let mut cursor = goal;
+    let take = |alloc: &mut Allocator<F>, cursor: &mut u64| -> Result<u64> {
+        let block = alloc.alloc(*cursor, 1)?;
+        *cursor = block + 1;
+        Ok(block)
+    };
+
+    // The twelve direct blocks.
+    for i in 0..NDIR_BLOCKS.min(count as usize) {
+        let block = take(alloc, &mut cursor)?;
+        map.pointers[i] = block as u32;
+        data.push(block);
+    }
+    if data.len() as u32 >= count {
+        return Ok((data, map));
+    }
+
+    // One single indirect block, then the data it covers.
+    let ind = take(alloc, &mut cursor)?;
+    map.pointers[NDIR_BLOCKS] = ind as u32;
+    let mut entries = Vec::new();
+    while entries.len() < per_block && (data.len() as u32) < count {
+        let block = take(alloc, &mut cursor)?;
+        entries.push(block as u32);
+        data.push(block);
+    }
+    map.blocks.push((ind, entries));
+    if data.len() as u32 >= count {
+        return Ok((data, map));
+    }
+
+    // A double indirect block, then a single indirect block and its data,
+    // repeatedly.
+    let dind = take(alloc, &mut cursor)?;
+    map.pointers[NDIR_BLOCKS + 1] = dind as u32;
+    let mut children = Vec::new();
+    while (data.len() as u32) < count && children.len() < per_block {
+        let child = take(alloc, &mut cursor)?;
+        let mut child_entries = Vec::new();
+        while child_entries.len() < per_block && (data.len() as u32) < count {
+            let block = take(alloc, &mut cursor)?;
+            child_entries.push(block as u32);
+            data.push(block);
+        }
+        map.blocks.push((child, child_entries));
+        children.push(child as u32);
+    }
+    map.blocks.push((dind, children));
+
+    if (data.len() as u32) < count {
+        return Err(Error::invalid(format!(
+            "a {count}-block file exceeds what double indirection addresses at \
+             {block_size}-byte blocks"
+        )));
+    }
+
+    Ok((data, map))
+}
+
 /// Map `blocks` — a file's physical blocks in logical order — through direct
 /// and indirect pointers, allocating indirect blocks with `alloc_one`.
 fn build_indirect(
@@ -325,6 +422,65 @@ fn build_indirect(
     }
 
     Ok(map)
+}
+
+/// Where to start looking for room for the journal.
+///
+/// `get_midpoint_journal_block()` in `lib/ext2fs/mkjournal.c`. Not simply the
+/// middle of the filesystem: it takes the group the midpoint falls in, looks at
+/// that group and its neighbours, and picks whichever has the most free blocks.
+/// On a 64 MiB ext4 filesystem that lands the journal at block 16385 rather
+/// than 30720 — the group either side of the midpoint carries a superblock
+/// backup, and the emptier neighbour wins.
+fn midpoint_journal_block<F: Fn(u64) -> bool>(geom: &Geometry, alloc: &Allocator<F>) -> u64 {
+    // Free blocks in a group, counted the way things stand right now: after
+    // the root directory, lost+found and the resize inode have been placed,
+    // and before the journal is.
+    let free_in = |group: u32| -> u64 {
+        let first = geom.group_first_block(group);
+        let last = geom.group_last_block(group);
+        (first..=last).filter(|&b| !alloc.taken(b)).count() as u64
+    };
+
+    let midpoint = (geom.blocks_count - geom.first_data_block as u64) / 2;
+    let mut group = ((midpoint.saturating_sub(geom.first_data_block as u64))
+        / geom.blocks_per_group as u64) as u32;
+    group = group.min(geom.group_count - 1);
+
+    let log_flex = 1u32 << geom.log_groups_per_flex;
+    let start;
+    if geom.log_groups_per_flex > 0 && group > log_flex {
+        // Snap to the start of the flex group, then walk forward past any that
+        // are entirely full.
+        group &= !(log_flex - 1);
+        while group < geom.group_count && free_in(group) == 0 {
+            group += 1;
+        }
+        if group == geom.group_count {
+            group = 0;
+        }
+        start = group;
+    } else {
+        start = if group > 0 { group - 1 } else { group };
+    }
+    let end = if group + 1 < geom.group_count {
+        group + 1
+    } else {
+        group
+    };
+
+    // The emptiest of the candidates, ties going to the earliest.
+    let mut best = start;
+    let mut best_free = free_in(start);
+    for candidate in start + 1..=end {
+        let free = free_in(candidate);
+        if free > best_free {
+            best = candidate;
+            best_free = free;
+        }
+    }
+
+    geom.group_first_block(best)
 }
 
 /// `EXT4_ORPHAN_BLOCK_MAGIC`
@@ -556,18 +712,15 @@ fn plan(device_size: u64, params: &Params) -> Result<Plan> {
     let mut journal_runs: Vec<Run> = Vec::new();
     let mut journal_extents: Vec<Extent> = Vec::new();
     let journal_start = if journal_blocks > 0 {
-        // mke2fs aims for the middle of the filesystem so the journal is never
-        // far from whatever it is protecting.
-        let goal = (geom.blocks_count - journal_blocks as u64) / 2;
-        journal_runs = alloc.alloc_runs(goal, journal_blocks as u64)?;
+        // An extent-mapped journal is one contiguous run placed near the middle
+        // of the filesystem. A block-mapped one is allocated block by block
+        // from the first free block with its indirect blocks interleaved,
+        // which is what mke2fs produces and what keeps each indirect block
+        // beside the data it describes.
+        let ordered: Vec<u64> = if extents {
+            let goal = midpoint_journal_block(&geom, &alloc);
+            journal_runs = alloc.alloc_runs(goal, journal_blocks as u64)?;
 
-        // The journal's blocks in logical order, however many runs they took.
-        let ordered: Vec<u64> = journal_runs
-            .iter()
-            .flat_map(|r| r.start..r.start + r.len)
-            .collect();
-
-        if extents {
             let mut logical = 0u32;
             for run in &journal_runs {
                 let mut done = 0u64;
@@ -582,12 +735,21 @@ fn plan(device_size: u64, params: &Params) -> Result<Plan> {
                     done += chunk;
                 }
             }
+            journal_runs
+                .iter()
+                .flat_map(|r| r.start..r.start + r.len)
+                .collect()
         } else {
-            let first_data = geom.first_data_block as u64;
-            journal_indirect = build_indirect(&ordered, geom.block_size, || {
-                alloc.alloc(first_data, 1)
-            })?;
-        }
+            let (data, map) = alloc_indirect_file(
+                &mut alloc,
+                geom.first_data_block as u64,
+                journal_blocks,
+                geom.block_size,
+            )?;
+            journal_indirect = map;
+            journal_runs = runs_of(&data);
+            data
+        };
         ordered.first().copied()
     } else {
         None
@@ -813,13 +975,27 @@ fn build_group(plan: &Plan, group: u32) -> Result<GroupState> {
         g.inodes_per_group - used_inodes
     };
 
+    // Group flags, exactly as `ext2fs_initialize()` and `mke2fs.c` set them.
     let mut flags = 0u16;
+
+    // INODE_ZEROED says the table on disk really is zeroed, so the kernel need
+    // not do it. Set whenever the table was written, checksums or not — which
+    // is why a plain ext2 filesystem carries it and nothing else.
+    if !plan.lazy_itable {
+        flags |= bg_flags::INODE_ZEROED;
+    }
+
+    // The UNINIT flags only mean anything where a group descriptor checksum
+    // can vouch for them.
     if plan.csum_scheme != GroupDescCsum::None {
-        if group != 0 {
+        if used_inodes == 0 {
             flags |= bg_flags::INODE_UNINIT;
         }
-        if !plan.lazy_itable {
-            flags |= bg_flags::INODE_ZEROED;
+        // Never on the last group: its bitmap carries padding bits for the
+        // blocks past the end of the filesystem, so it cannot be reconstructed
+        // from the geometry alone.
+        if used_blocks == 0 && layout.group != g.group_count - 1 {
+            flags |= bg_flags::BLOCK_UNINIT;
         }
     }
 
@@ -1147,7 +1323,8 @@ fn build_superblock(plan: &Plan, free_blocks: u64, free_inodes: u32) -> Superblo
         backup_bgs: [0; 2],
         encrypt_algos: [0; 4],
         encrypt_pw_salt: [0; 16],
-        lpf_ino: superblock::GOOD_OLD_FIRST_INO,
+        // mke2fs leaves s_lpf_ino at zero; e2fsck finds lost+found by name.
+        lpf_ino: 0,
         prj_quota_inum: 0,
         checksum_seed: if g.features.incompat.contains(IncompatFeatures::CSUM_SEED) {
             plan.csum_seed
