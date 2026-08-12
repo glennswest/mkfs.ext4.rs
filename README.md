@@ -30,7 +30,17 @@ actually computes, not from a reading of the spec plus a guess.
 
 ## Status
 
-Early. See `CLAUDE.md` for the work plan and what is implemented.
+The formatter works and is verified against a real kernel. `tests/verify-on-linux.sh`
+builds images, ships them to a Linux host and runs each through
+`e2fsck -fn` -> loop mount read-write -> write -> unmount -> `e2fsck -fn`.
+All eight configurations pass: ext2, ext3 and ext4, with and without a journal,
+at 1 KiB and 4 KiB blocks, from 16 MiB to 1 GiB.
+
+Geometry and feature masks are asserted against golden filesystems produced by
+real `mke2fs` 1.47.3, which is byte-reproducible once the UUID, hash seed and
+`SOURCE_DATE_EPOCH` are pinned.
+
+See `CLAUDE.md` for the work plan and what is still outstanding.
 
 ## Consumers
 

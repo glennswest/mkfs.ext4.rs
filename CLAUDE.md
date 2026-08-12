@@ -6,9 +6,9 @@ Async, parallel ext2/ext3/ext4 formatter and checker in pure Rust. Reimplements
 - **Crate:** `mkfs-ext4` (lib `mkfs_ext4`)
 - **Version:** 0.1.0 — see `Cargo.toml` (single version location)
 - **License:** GPL-2.0-or-later
-- **Directory note:** the repo directory is still `mkfs.ext3.rs` from the
-  original ask. The crate covers ext2/ext3/ext4, exactly as `mke2fs` does, so
-  the directory name is stale rather than wrong. Rename when convenient.
+- **Repo:** https://github.com/glennswest/mkfs.ext4.rs
+- **Directory:** `~/projects/mkfs.ext4.rs`. The crate covers ext2/ext3/ext4
+  from one code path, exactly as `mke2fs` does.
 
 ## Why this exists
 
