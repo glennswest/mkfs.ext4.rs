@@ -67,3 +67,13 @@
   needed.
 - **feat:** `BlockDevice` is now implemented for `&D`, so a device can be
   formatted and then checked without giving up ownership.
+- **feat:** Add the `mkfs-ext4` and `fsck-ext4` binaries, with `mke2fs`- and
+  `e2fsck`-compatible flags and exit codes. Install them as `mkfs.ext4` and
+  `fsck.ext4` — Rust will not accept a `.` in a crate name, and those are the
+  names `mkfs -t ext4` and `fsck -t ext4` dispatch on.
+- **test:** `verify-on-linux.sh` now judges our repairs by real `e2fsck`. Five
+  named corruptions are introduced, repaired with our fsck, and handed to
+  e2fsprogs for a verdict; all five are accepted. A checker whose repairs the
+  reference implementation rejects is worse than no checker.
+- **fix:** A plain `cargo build` failed: the default feature declared two
+  binaries that did not exist.

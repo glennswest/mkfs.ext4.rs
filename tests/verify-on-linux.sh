@@ -145,6 +145,47 @@ EOF
     grep -E '_FAIL$' -A6 <<< "$output" | sed 's/^/    /' | head -20
 done
 
+hdr "repairs, judged by real e2fsck"
+# Our fsck is only worth having if its repairs are correct, and the only
+# authority on that is e2fsprogs. Break a filesystem in a known way, repair it
+# with our fsck, and require e2fsck to call the result clean.
+cargo build --quiet --example corrupt 2>/dev/null
+cargo build --quiet --bin mkfs-ext4 --bin fsck-ext4 2>/dev/null
+MKFS=target/debug/mkfs-ext4
+FSCK=target/debug/fsck-ext4
+
+ssh "$HOST" "rm -rf $REMOTE_DIR/repair && mkdir -p $REMOTE_DIR/repair" || exit 1
+
+for mode in free-count block-bitmap inode-bitmap link-count dir-count; do
+    img="$WORK/repair-$mode.img"
+    dd if=/dev/zero of="$img" bs=1M count=64 status=none
+    "$MKFS" -q -t ext4 "$img" || { bad "$mode: format"; continue; }
+    cargo run --quiet --example corrupt -- "$img" "$mode" >/dev/null 2>&1 \
+        || { bad "$mode: corrupt"; continue; }
+
+    "$FSCK" -n "$img" >/dev/null 2>&1
+    [ $? -eq 4 ] && ok "$mode: detected" || bad "$mode: not detected"
+
+    "$FSCK" -y "$img" >/dev/null 2>&1
+    [ $? -eq 1 ] && ok "$mode: repaired" || bad "$mode: not repaired"
+
+    "$FSCK" -n "$img" >/dev/null 2>&1
+    [ $? -eq 0 ] && ok "$mode: clean afterwards" || bad "$mode: still dirty"
+done
+
+scp -q "$WORK"/repair-*.img "$HOST:$REMOTE_DIR/repair/" || exit 1
+verdicts=$(ssh "$HOST" "for f in $REMOTE_DIR/repair/*.img; do
+    if e2fsck -fn \"\$f\" >/dev/null 2>&1; then echo \"CLEAN \$(basename \$f)\";
+    else echo \"DIRTY \$(basename \$f)\"; fi
+done")
+while read -r verdict name; do
+    if [ "$verdict" = "CLEAN" ]; then
+        ok "e2fsck accepts our repair of ${name#repair-}"
+    else
+        bad "e2fsck rejects our repair of ${name#repair-}"
+    fi
+done <<< "$verdicts"
+
 hdr "result"
 if [ "$FAILURES" -eq 0 ]; then
     echo -e "${GREEN}${BOLD}all checks passed${RESET}"

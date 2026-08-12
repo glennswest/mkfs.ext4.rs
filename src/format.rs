@@ -503,7 +503,7 @@ fn plan(device_size: u64, params: &Params) -> Result<Plan> {
         // The journal's blocks in logical order, however many runs they took.
         let ordered: Vec<u64> = journal_runs
             .iter()
-            .flat_map(|r| (r.start..r.start + r.len))
+            .flat_map(|r| r.start..r.start + r.len)
             .collect();
 
         if extents {

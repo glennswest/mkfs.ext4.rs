@@ -548,7 +548,6 @@ impl<D: BlockDevice> Filesystem<D> {
 
     async fn resolve_extent(&self, inode: &Inode, logical: u64) -> Result<Option<u64>> {
         let mut node = inode.block.to_vec();
-        let mut space = extent::INLINE_LEN;
 
         loop {
             let header = ExtentHeader::decode(&node)?;
@@ -580,8 +579,6 @@ impl<D: BlockDevice> Filesystem<D> {
                 return Ok(None);
             };
             node = self.read_block(child).await?;
-            space = self.block_size() as usize;
-            let _ = space;
         }
     }
 

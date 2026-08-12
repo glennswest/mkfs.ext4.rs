@@ -44,13 +44,16 @@ default = ["cli"]
 # The mkfs.ext4 / fsck.ext4 binaries. Library consumers turn this off.
 cli = ["dep:clap", "dep:tracing-subscriber", "dep:anyhow", "tokio/rt-multi-thread"]
 
+# Rust will not accept a "." in a crate name, so the binaries build as
+# mkfs-ext4 and fsck-ext4. Install them as mkfs.ext4 and fsck.ext4 — that is
+# the name `mkfs -t ext4` and `fsck -t ext4` dispatch on.
 [[bin]]
-name = "mkfs.ext4"
+name = "mkfs-ext4"
 path = "src/bin/mkfs_ext4.rs"
 required-features = ["cli"]
 
 [[bin]]
-name = "fsck.ext4"
+name = "fsck-ext4"
 path = "src/bin/fsck_ext4.rs"
 required-features = ["cli"]
 
