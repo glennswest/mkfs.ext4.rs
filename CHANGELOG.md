@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### 2026-08-13
+- **feat:** Extended attribute codecs — `structs::xattr`, covering both places
+  ext4 keeps them: in the spare room after the inode's fixed fields, and in a
+  block of their own when they do not fit. Handles the name-prefix indices
+  (`user.`, `security.`, `system.`, `trusted.`), the entry hash that block
+  storage requires, and the block's checksum.
+
 ## [v1.0.2] — 2026-08-12
 
 ### Fixed

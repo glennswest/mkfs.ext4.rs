@@ -15,9 +15,11 @@ pub mod extent;
 pub mod group_desc;
 pub mod inode;
 pub mod superblock;
+pub mod xattr;
 
 pub use dirent::DirEntry;
 pub use extent::{Extent, ExtentHeader, ExtentIdx};
 pub use group_desc::GroupDesc;
 pub use inode::Inode;
 pub use superblock::{Superblock, SUPERBLOCK_LEN, SUPERBLOCK_OFFSET};
+pub use xattr::Xattr;
