@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### 2026-08-13
+- **feat:** `structs::htree` — the `dir_index` on-disk format: the directory
+  hash (legacy, half-MD4 and TEA, in both the signed and unsigned conventions),
+  the root and interior node layouts, and the index block checksum. Hash values
+  are asserted against `debugfs -R "dx_hash ..."` from e2fsprogs 1.47.3 rather
+  than against this implementation, because a wrong hash builds a filesystem
+  that is structurally perfect and still broken.
+
 ## [v1.1.0] — 2026-08-13
 
 ### Added
