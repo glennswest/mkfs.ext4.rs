@@ -2,12 +2,16 @@
 
 ## [Unreleased]
 
-### 2026-08-13
-- **feat:** Extended attribute codecs — `structs::xattr`, covering both places
+## [v1.1.0] — 2026-08-13
+
+### Added
+- **Extended attribute codecs** — `structs::xattr`, covering both places
   ext4 keeps them: in the spare room after the inode's fixed fields, and in a
   block of their own when they do not fit. Handles the name-prefix indices
   (`user.`, `security.`, `system.`, `trusted.`), the entry hash that block
-  storage requires, and the block's checksum.
+  storage requires, and the block's checksum. This is what lets a filesystem
+  carry SELinux labels and POSIX ACLs, and so what lets a container image or
+  an unpacked tarball work rather than merely exist.
 
 ## [v1.0.2] — 2026-08-12
 
