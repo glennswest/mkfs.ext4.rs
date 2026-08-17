@@ -132,6 +132,35 @@
   .rung span { font-size: 1.95vh; color: var(--rh-gray); }
   .dark .rung span { color: #B8BBBE; }
   .rung.own { border-left-color: var(--rh-gray); }
+
+  /* The loop, drawn as panels rather than a cycle — because what it actually
+     felt like was a strip of confident attempts with hours between them. */
+  .strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.6vh 1.6vw; margin: 1vh 0; }
+  .panel {
+    position: relative; border: 2px solid #3C3F42; padding: 1.5vh 1.6vh 1.3vh;
+    display: flex; flex-direction: column; min-height: 19vh;
+  }
+  .panel .clock {
+    position: absolute; top: -1.35vh; right: 1.2vh; background: var(--rh-red);
+    color: #fff; font-size: 1.5vh; font-weight: 900; padding: 0.15vh 0.9vh;
+    letter-spacing: 0.06em;
+  }
+  .panel .who { font-size: 1.6vh; font-weight: 900; letter-spacing: 0.1em;
+    text-transform: uppercase; color: #B8BBBE; margin-bottom: 0.9vh; }
+  .panel .bubble {
+    background: #fff; color: var(--rh-black); padding: 1vh 1.3vh; font-size: 1.95vh;
+    line-height: 1.35; border-radius: 1.2vh; position: relative; font-weight: 700;
+  }
+  .panel .bubble::after {
+    content: ""; position: absolute; left: 2.2vh; bottom: -1.1vh;
+    border: 0.6vh solid transparent; border-top-color: #fff; border-bottom: 0;
+  }
+  .panel.ai .bubble { background: var(--rh-red); color: #fff; }
+  .panel.ai .bubble::after { border-top-color: var(--rh-red); }
+  .panel.human .bubble { background: #F2F2F2; }
+  .panel.human .bubble::after { border-top-color: #F2F2F2; }
+  .panel .beat { margin-top: auto; padding-top: 1.2vh; font-size: 1.8vh; color: #B8BBBE; }
+  .panel .beat b { color: var(--rh-red); }
   @media print {
     @page { size: 338.7mm 190.5mm; margin: 0; }
     html, body { overflow: visible; background: var(--rh-white); }
@@ -200,31 +229,79 @@
 <!-- 4 · THE ANALYSIS LOOP -->
 <section class="slide dark">
   <div class="kicker">The failure mode</div>
-  <h2>The analysis loop</h2>
+  <h2>Three days, six confident answers</h2>
   <div class="grow">
-    <div class="flow">
-      <div class="node">Symptom<small>writes rejected</small></div>
-      <div class="arrow">→</div>
-      <div class="node">Hypothesis<small>"it's a feature flag"</small></div>
-      <div class="arrow">→</div>
-      <div class="node">Tweak<small>change a bit, rebuild</small></div>
-      <div class="arrow">→</div>
-      <div class="node">Re-test<small>still rejected</small></div>
-      <div class="arrow">→</div>
-      <div class="node">Analyse again<small>a new hypothesis</small></div>
-    </div>
-    <p class="loop-note">↺ &nbsp; three days &nbsp; ↺</p>
-    <p style="margin-top:1.5vh">Every pass round the loop feels like progress. You learn something each time.
-       The code gets a little different each time. Nothing gets fixed, because the loop
-       never questions its own starting point: that the existing code is nearly right and
-       needs adjusting.</p>
-    <div class="plain">
-      <b>An AI will run this loop with you, indefinitely, and never get bored.</b>
-      That is the danger. It will happily produce a twentieth hypothesis as
-      confidently as the first. The loop has to be broken from outside.
+    <div class="strip">
+      <div class="panel">
+        <div class="clock">DAY 1</div>
+        <div class="who">RouterOS</div>
+        <div class="bubble">Mounted. Read-write. Healthy.</div>
+        <div class="beat">…and every write refused.</div>
+      </div>
+      <div class="panel ai">
+        <div class="clock">+2 h</div>
+        <div class="who">Claude</div>
+        <div class="bubble">It's the journal. It goes dirty and lwext4 won't replay it. Turn it off.</div>
+        <div class="beat">Journal off. <b>Still refused.</b></div>
+      </div>
+      <div class="panel ai">
+        <div class="clock">+5 h</div>
+        <div class="who">Claude</div>
+        <div class="bubble">Then it's <code>metadata_csum</code>. lwext4's support is partial.</div>
+        <div class="beat">Feature dropped. <b>Still refused.</b></div>
+      </div>
+      <div class="panel ai">
+        <div class="clock">DAY 2</div>
+        <div class="who">Claude</div>
+        <div class="bubble">This is a MikroTik bug. lwext4 is an incomplete implementation — we can't fix it from our side.</div>
+        <div class="beat">Blame assigned. <b>Nothing tested.</b></div>
+      </div>
+      <div class="panel ai">
+        <div class="clock">DAY 3</div>
+        <div class="who">Claude</div>
+        <div class="bubble">The formatter is proven — it's produced working filesystems for months. Look elsewhere.</div>
+        <div class="beat">The one place left unexamined.</div>
+      </div>
+      <div class="panel human">
+        <div class="clock">STOP</div>
+        <div class="who">Glenn</div>
+        <div class="bubble">We have wasted 3 days using "proven". Need a stepback.</div>
+        <div class="beat">The loop breaks from <b>outside</b>.</div>
+      </div>
     </div>
   </div>
   <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>The analysis loop</span><span class="counter"></span></div>
+</section>
+
+<!-- 4b · WHY THE LOOP HOLDS -->
+<section class="slide red-strip">
+  <div class="kicker">The failure mode</div>
+  <h2>Why that loop holds</h2>
+  <div class="grow">
+    <p>Every panel is a plausible hypothesis, argued well, and acted on. None of them
+       was tested against a reference — they were tested against the symptom, which
+       stayed the same either way.</p>
+    <div class="cols" style="margin-top:1vh">
+      <div>
+        <h3>What an AI adds to it</h3>
+        <p class="sub">An unlimited supply of confident, well-argued next hypotheses. It
+           will not tire, will not get bored, and will not spontaneously say
+           "I have been wrong five times, so my sixth answer is probably wrong too."
+           Two of those panels blamed a <em>third party's</em> code — the least
+           falsifiable answer available, and the most comfortable one.</p>
+      </div>
+      <div>
+        <h3>What "proven" did</h3>
+        <p class="sub">It made the formatter the one component nobody examined. Proven is
+           a claim about the past — it had produced filesystems the Linux kernel accepted
+           for months, and every one of those months was on 512-byte-sector storage.
+           The claim was true and irrelevant.</p>
+      </div>
+    </div>
+    <div class="plain"><b>Nothing in the loop could have found the answer</b>, because
+      every step took the existing formatter as given and varied something else.</div>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>Why it holds</span><span class="counter"></span></div>
 </section>
 
 <!-- 5 · THE BREAK -->
@@ -654,6 +731,91 @@ Hash of hello is 0x1746da32 (minor 0x420013b5)</pre>
   <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>Measure, don't assume</span><span class="counter"></span></div>
 </section>
 
+<!-- 20b · THE CULPRIT -->
+<section class="slide red-strip">
+  <div class="kicker">The culprit</div>
+  <h2>What was actually wrong</h2>
+  <div class="grow">
+    <p>Not lwext4. Not MikroTik. A 1,532-line hand-rolled formatter whose defaults were
+       <em>chosen</em> rather than derived — and which said so, in its own header comment:</p>
+    <pre><span class="c">//! <b>Feature set is deliberately conservative</b>: EXTENTS|FILETYPE incompat,
+//! SPARSE_SUPER|LARGE_FILE|EXTRA_ISIZE ro_compat. No metadata_csum, no
+//! 64bit, no bigalloc, no quota, no dir_index. That is the set verified
+//! to mount read-write on RouterOS 7.22.2 …</span>
+
+pub const BLOCK_SIZE: u32 = 4096;   <span class="c">← a constant, not a decision</span></pre>
+    <div class="cols">
+      <div>
+        <h3>Verified against the symptom</h3>
+        <p class="sub">"The set verified to mount read-write" — mounting was the test, and
+          mounting was never the problem. Every feature was picked by whether the symptom
+          moved, so the feature list encoded three days of guesses as settled fact.</p>
+      </div>
+      <div>
+        <h3>Nothing to compare against</h3>
+        <p class="sub">Its geometry, its inode counts, its feature list: all invented,
+          all plausible, none of them ever placed beside what a real formatter writes.
+          There was no way to be wrong, because there was nothing to be wrong
+          <em>against</em>.</p>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>The culprit</span><span class="counter"></span></div>
+</section>
+
+<!-- 20c · THE SECOND CULPRIT -->
+<section class="slide dark">
+  <div class="kicker">The culprit</div>
+  <h2>Then it happened <span class="accent">again</span></h2>
+  <div class="grow">
+    <p>The hand-rolled formatter was thrown away and replaced with this crate. The
+       templates worked. Weeks later, the same symptom came back — mounts, healthy,
+       every write refused.</p>
+    <p>Not a bug in the new formatter. <b>One method left to its default.</b></p>
+    <pre><span class="c">// implements BlockDevice for a thin volume</span>
+fn size(&amp;self)      -&gt; u64  { … }
+async fn read_at(…)         { … }
+async fn write_at(…)        { … }
+<span class="r">// logical_sector_size() — not implemented, so it answers 512</span></pre>
+    <p>The volume exported 4 KiB sectors. Nothing could ask the kernel, because a thin
+       volume is not a real block device — it has to <em>say</em>. It said nothing, so
+       the default spoke for it, and the filesystem got blocks smaller than the sectors
+       underneath them.</p>
+    <div class="plain"><b>A block smaller than a sector cannot be written a block at a
+      time.</b> The kernel hides that behind a read-modify-write. lwext4 does not, and is
+      entitled not to — so it mounts the filesystem, reports it perfectly healthy, and
+      refuses every write.</div>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>The second culprit</span><span class="counter"></span></div>
+</section>
+
+<!-- 20d · RESOLUTION -->
+<section class="slide">
+  <div class="kicker">The culprit</div>
+  <h2>Where the answer wasn't</h2>
+  <div class="grow">
+    <p>Three days produced six confident hypotheses. The answer was in none of the places
+       any of them pointed.</p>
+    <ul class="xlist" style="margin-top:0.5vh">
+      <li>Not the journal.</li>
+      <li>Not <code>metadata_csum</code>.</li>
+      <li>Not lwext4, and not MikroTik — the implementation everyone was ready to blame
+        was behaving correctly the whole time, and would have been within its rights
+        either way.</li>
+    </ul>
+    <p style="margin-top:0.8vh">It was a default nobody had compared against anything: first
+       a formatter whose feature list was chosen by whether the symptom moved, then a
+       sector size a volume never reported.</p>
+    <div class="plain"><b>Both issues are closed.</b> Not because the reference
+      implementation is cleverer than we are — because <code>mke2fs</code> had already
+      met a 4 KiB-sector drive, and we had not.</div>
+    <p class="sub">That is the whole argument for matching a reference field for field.
+       It is not about elegance. It is about inheriting every encounter someone else has
+       already had with the real world.</p>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>Resolution</span><span class="counter"></span></div>
+</section>
+
 <!-- 21 · NUMBERS -->
 <section class="slide dark">
   <div class="kicker">Effort</div>
@@ -722,6 +884,9 @@ Hash of hello is 0x1746da32 (minor 0x420013b5)</pre>
         a human job.</li>
       <li><b>Distrust "proven".</b> It is a description of history, not a test. It made the
         formatter the last place anyone looked.</li>
+      <li><b>Watch for the other implementation's fault.</b> Two of the six hypotheses
+        blamed MikroTik. It is the least falsifiable answer available and the most
+        comfortable one — and lwext4 had been behaving correctly the entire time.</li>
       <li><b>Write the definition before the code.</b> Four constraints that each rule
         something out beat any amount of "make it correct".</li>
       <li><b>Give it one rule that settles arguments.</b> "Match the reference, field for

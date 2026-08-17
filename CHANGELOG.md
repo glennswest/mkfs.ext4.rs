@@ -19,6 +19,14 @@
   references, in four kinds — `bg_flags` missing `INODE_ZEROED` (16), `bg_flags`
   missing `BLOCK_UNINIT` (8), `s_lpf_ino` recorded rather than left zero (6),
   and the resize inode's block map, which *is* the reserved GDT blocks (3).
+- **docs:** the deck now names the culprit instead of describing the mechanism
+  around it. The analysis loop is drawn as a cartoon strip — six panels, the
+  time between them, and the assistant's own confident wrong answers in full,
+  including twice blaming MikroTik for a correctly-behaving implementation.
+  Three new slides trace the actual fault: a hand-rolled formatter whose
+  feature list was chosen by whether the symptom moved, and then, after it was
+  replaced, a `logical_sector_size()` left to its 512-byte default by a thin
+  volume that is not a real block device and had to report it.
 - **docs:** `docs/presentation/thumbnail.html` and two rendered thumbnails.
 - **fix(docs):** the deck's table headers were invisible on dark slides. The
   file carries no doctype, so a browser opening it from disk renders it in
