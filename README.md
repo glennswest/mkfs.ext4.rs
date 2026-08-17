@@ -46,6 +46,24 @@ Or state it per-format, which overrides the device:
 Params::new(Profile::Ext4).sector_size(4096)
 ```
 
+Drives report one of two logical sector sizes, and both are covered. What we
+choose, measured against `mke2fs` 1.47.3 on real loop devices of each:
+
+| logical sector | 16 M | 64 M | 512 M | 1 G | 8 G | 64 G |
+|---|---|---|---|---|---|---|
+| **512** | 1024 | 1024 | 4096 | 4096 | 4096 | 4096 |
+| **4096** | 4096 | 4096 | 4096 | 4096 | 4096 | 4096 |
+
+Identical in every cell to what `mke2fs` chooses. The bottom-left corner is the
+one that matters: on a 4 KiB-sector drive a small volume gets 4 KiB blocks and
+not the 1 KiB its size class would otherwise call for. A 512-byte sector is a
+floor, not a block size — every block size from 1024 up works on such a device,
+and all of them pass `e2fsck`, a kernel mount, a write and a second `e2fsck`.
+
+Note that a 512-*byte block* is not a thing ext2/3/4 can express:
+`s_log_block_size` is an exponent above 1024, so 1024 is the format's floor.
+`mke2fs -b 512` refuses for the same reason.
+
 ## Why
 
 Two properties the C tools cannot offer a Rust storage engine:

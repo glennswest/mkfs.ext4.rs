@@ -3,6 +3,14 @@
 ## [Unreleased]
 
 ### 2026-08-17
+- **test:** `tests/sector_size.rs` — the block size we choose for each
+  combination of the two sector sizes real drives report (512 and 4096) and a
+  range of capacities, asserted against values measured from `mke2fs` 1.47.3 on
+  real loop devices. The row that matters is a small volume on 4 KiB sectors:
+  its size class asks for 1024-byte blocks and the sector size overrules it,
+  which is the case that produced a mountable, unwritable filesystem in
+  stormblock#39. `verify-on-linux.sh` now re-derives the table from a real
+  `mke2fs` on every run, so it cannot go stale unnoticed.
 - **docs:** `docs/presentation/ext4-rust.html` — a deck on how the two crates
   were built: the analysis loop that spent three days on the wrong code, the
   definition and the single rule that broke it, the features, and the seven

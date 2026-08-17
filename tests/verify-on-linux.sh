@@ -188,6 +188,59 @@ while read -r verdict name; do
     fi
 done <<< "$verdicts"
 
+# ---------------------------------------------------------------------------
+# Sector size. Real drives report 512 or 4096, and that number is a floor: a
+# filesystem whose blocks are smaller than a sector cannot be written a block
+# at a time. The kernel hides that behind a read-modify-write; lwext4 does not,
+# and refuses every write instead (stormblock#39).
+#
+# tests/sector_size.rs asserts our choice against a table of what mke2fs
+# chooses. A table is only worth what its source is, so this asks a real
+# mke2fs, on real devices of each sector size, whether the table is still
+# true. If e2fsprogs ever changes its size classes, this fails and the table
+# gets updated — rather than the test quietly asserting yesterday's answer.
+# ---------------------------------------------------------------------------
+hdr "sector size — is the table in tests/sector_size.rs still what mke2fs does?"
+
+sector_report=$(ssh "$HOST" "bash -s" <<'REMOTE'
+for sec in 512 4096; do
+    for sz in 64M 512M; do
+        img=/tmp/sector-check.img
+        rm -f "$img"; truncate -s "$sz" "$img"
+        dev=$(losetup -f --show -b "$sec" "$img" 2>/dev/null) || { echo "$sec $sz SKIP"; continue; }
+        mke2fs -qF -t ext4 "$dev" 2>/dev/null
+        theirs=$(dumpe2fs -h "$dev" 2>/dev/null | awk -F: '/Block size/ {gsub(/ /,"",$2); print $2}')
+        losetup -d "$dev"
+        rm -f "$img"
+        echo "$sec $sz ${theirs:-unknown}"
+    done
+done
+REMOTE
+)
+
+# The same values tests/sector_size.rs asserts we produce.
+expected_block_size() {
+    case "$1 $2" in
+        "512 64M")   echo 1024 ;;
+        "512 512M")  echo 4096 ;;
+        "4096 64M")  echo 4096 ;;
+        "4096 512M") echo 4096 ;;
+        *)           echo unknown ;;
+    esac
+}
+
+while read -r sec sz theirs; do
+    [ -z "$sec" ] && continue
+    want=$(expected_block_size "$sec" "$sz")
+    if [ "$theirs" = "SKIP" ]; then
+        bad "$sz on ${sec}-byte sectors: could not create a loop device"
+    elif [ "$theirs" = "$want" ]; then
+        ok "$sz on ${sec}-byte sectors: mke2fs chooses ${theirs}, as the table says"
+    else
+        bad "$sz on ${sec}-byte sectors: mke2fs now chooses $theirs, table says $want — update tests/sector_size.rs"
+    fi
+done <<< "$sector_report"
+
 hdr "result"
 if [ "$FAILURES" -eq 0 ]; then
     echo -e "${GREEN}${BOLD}all checks passed${RESET}"
