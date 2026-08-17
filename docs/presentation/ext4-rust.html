@@ -367,6 +367,10 @@
         <p class="sub">1 KiB to 4 KiB blocks. 16 MiB to 256 TiB. <code>meta_bg</code> past
           ~200 TiB, where the group descriptor table stops fitting. A 1 TiB sparse
           filesystem formats in 7 seconds and allocates 353 MiB.</p>
+        <h3>Sector size</h3>
+        <p class="sub">Drives report 512 or 4096, and it is a <em>floor</em>: a block
+          smaller than a sector cannot be written a block at a time. Our choice matches
+          <code>mke2fs</code> in every cell of the capacity × sector-size matrix.</p>
       </div>
       <div>
         <h3>MMP — multiple mount protection</h3>
@@ -613,8 +617,15 @@ Hash of hello is 0x1746da32 (minor 0x420013b5)</pre>
     <p>The fix was to ask the kernel — <code>ioctl_blksszget</code> — rather than assume 512.
        And the likely root cause of the three-day bug: a 256 MiB volume on 4 KiB sectors
        formatted with 1 KiB blocks, which lwext4 will not write to a block at a time.</p>
+    <pre>block size chosen, against mke2fs on real devices of each sector size:
+  sectors   16M    64M    512M   1G     8G     64G
+  <span class="c">512</span>       1024   1024   4096   4096   4096   4096
+  <span class="c">4096</span>      <span class="r">4096</span>   <span class="r">4096</span>   4096   4096   4096   4096      <span class="c">← the size class says 1024;</span>
+                                              <span class="c">   the sector overrules it</span></pre>
     <div class="plain"><b>No test would have found this.</b> Not one machine in the test set
-      had a 4 KiB sector. Someone had to ask the question and someone had to go and measure.</div>
+      had a 4 KiB sector. Someone had to ask the question and someone had to go and measure.
+      The matrix above is now a test, and the Linux run re-derives it from a real
+      <code>mke2fs</code> so it cannot go stale.</div>
   </div>
   <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>Measure, don't assume</span><span class="counter"></span></div>
 </section>
