@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Writing ext4 in Rust — thumbnails</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Red Hat Display", "Inter", "Helvetica Neue", Arial, sans-serif; background: #333; }
+  .thumb {
+    width: 1280px; height: 720px; position: relative; overflow: hidden;
+    background: #151515; color: #fff; display: none;
+  }
+  .thumb.active { display: block; }
+  .strip { position: absolute; left: 0; top: 0; bottom: 0; width: 18px; background: #EE0000; }
+  .wordmark { position: absolute; left: 80px; bottom: 34px; font-size: 38px; font-weight: 900; color: #B8BBBE; }
+  .wordmark .dot { color: #EE0000; }
+
+  /* Variant A — the contrast. Three days of analysis against one of building. */
+  .va .head { position: absolute; left: 80px; top: 62px; font-size: 82px; font-weight: 900; line-height: 1.05; }
+  .va .head .red { color: #EE0000; }
+  .va .box {
+    position: absolute; top: 300px; height: 250px; display: flex;
+    align-items: center; justify-content: center; flex-direction: column; font-weight: 900;
+  }
+  .va .lose { left: 80px; width: 470px; background: #EE0000; color: #fff; }
+  .va .win  { left: 700px; width: 470px; background: #fff; color: #151515; }
+  .va .box .n { font-size: 132px; line-height: 1; }
+  .va .box .l { font-size: 33px; letter-spacing: 0.06em; margin-top: 12px; }
+  .va .arrow { position: absolute; left: 570px; top: 372px; font-size: 112px; font-weight: 900; color: #fff; }
+  .va .badge {
+    position: absolute; right: 58px; top: 58px; background: #EE0000; color: #fff;
+    font-size: 40px; font-weight: 900; padding: 14px 26px; transform: rotate(4deg);
+  }
+  .va .foot { position: absolute; left: 80px; bottom: 96px; font-size: 30px; color: #B8BBBE; font-weight: 700; }
+
+  /* Variant B — the statement. The distinction that cost the three days. */
+  /* The red line runs to two lines, so every position below it is set from
+     that, not from where a single line would have ended. */
+  .vb .l1 { position: absolute; left: 80px; top: 66px; font-size: 112px; font-weight: 900; line-height: 1.02; }
+  .vb .l2 { position: absolute; left: 80px; top: 200px; font-size: 112px; font-weight: 900; color: #EE0000; line-height: 1.02; }
+  .vb .rule { position: absolute; left: 80px; top: 466px; width: 300px; height: 10px; background: #EE0000; }
+  .vb .l3 { position: absolute; left: 80px; top: 512px; font-size: 42px; font-weight: 700; line-height: 1.28; }
+  .vb .l3 span { color: #B8BBBE; font-weight: 400; }
+  .vb .chip {
+    position: absolute; right: -70px; top: -70px; width: 430px; height: 430px;
+    border: 24px solid #EE0000; transform: rotate(12deg); opacity: 0.3;
+  }
+</style>
+</head>
+<body>
+
+<!-- 1 · the contrast -->
+<div class="thumb va active" id="t1">
+  <div class="strip"></div>
+  <div class="head">Rewriting was<br>the <span class="red">cheap</span> option</div>
+  <div class="badge">ext4 in Rust</div>
+  <div class="box lose"><div class="n">3</div><div class="l">DAYS ANALYSING</div></div>
+  <div class="arrow">&rarr;</div>
+  <div class="box win"><div class="n">1</div><div class="l">DAY BUILDING</div></div>
+  <div class="foot">A formatter, a checker and a file writer — from the source</div>
+  <div class="wordmark">mkfs<span class="dot">.</span>ext4<span class="dot">.</span>rs</div>
+</div>
+
+<!-- 2 · the statement -->
+<div class="thumb vb" id="t2">
+  <div class="strip"></div>
+  <div class="chip"></div>
+  <div class="l1">It mounted.</div>
+  <div class="l2">It refused<br>every write.</div>
+  <div class="rule"></div>
+  <div class="l3">Three days on the wrong code.<br><span>What finally broke the loop.</span></div>
+  <div class="wordmark">mkfs<span class="dot">.</span>ext4<span class="dot">.</span>rs</div>
+</div>
+
+<script>
+  // #t1 / #t2 selects which thumbnail is shown, so each renders to its own PNG.
+  const want = location.hash.slice(1) || "t1";
+  document.querySelectorAll(".thumb").forEach(t => t.classList.toggle("active", t.id === want));
+</script>
+</body>
+</html>

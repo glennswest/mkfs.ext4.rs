@@ -11,6 +11,15 @@
   which is the case that produced a mountable, unwritable filesystem in
   stormblock#39. `verify-on-linux.sh` now re-derives the table from a real
   `mke2fs` on every run, so it cannot go stale unnoticed.
+- **docs:** `examples/replay.rs` — diffs a directory of raw images against the
+  golden `mke2fs` references, so the deck's claim about what the compare tool
+  first reported is a command that can be run rather than a recollection.
+  Replayed against the formatter as it stood at `6beafd3`, immediately before
+  those differences were fixed: 33 structural differences over the six
+  references, in four kinds — `bg_flags` missing `INODE_ZEROED` (16), `bg_flags`
+  missing `BLOCK_UNINIT` (8), `s_lpf_ino` recorded rather than left zero (6),
+  and the resize inode's block map, which *is* the reserved GDT blocks (3).
+- **docs:** `docs/presentation/thumbnail.html` and two rendered thumbnails.
 - **fix(docs):** the deck's table headers were invisible on dark slides. The
   file carries no doctype, so a browser opening it from disk renders it in
   quirks mode, where a table does not inherit colour from its ancestors — the

@@ -563,12 +563,22 @@ $ fio-ext4 disk.img tar -z backup.tar.gz</pre>
       <div class="stat"><h3>Structural</h3><p class="sub">Geometry, features, placement. Any difference here is a bug in one of the two.</p></div>
     </div>
     <div class="plain">
-      <b>The first run produced 16 differences.</b> Not one had shown up as a test failure,
-      because every test we owned was checking our output against our own expectations.
-      Reserved GDT blocks, the flex_bg overlap and the journal checksum flag were all on
-      that list.
+      <b>Not one of these had shown up as a test failure</b>, because every test we
+      owned checked our output against our own expectations. Replayed today against the
+      formatter as it stood before they were fixed: <b>33 structural differences over the
+      six references, in four kinds.</b>
     </div>
-    <p class="sub">Today: zero structural differences across all six golden references.</p>
+    <div class="scroll">
+    <table>
+      <tr><th style="width:30%">Field</th><th class="num" style="width:8%">×</th><th style="width:22%">ours / mke2fs</th><th>What it was</th></tr>
+      <tr><td><code>bg_flags</code></td><td class="num">16</td><td><code>0x0000</code> / <code>0x0004</code></td><td>Every ext2 and ext3 group missing <code>INODE_ZEROED</code></td></tr>
+      <tr><td><code>bg_flags</code></td><td class="num">8</td><td><code>0x0005</code> / <code>0x0007</code></td><td>ext4 groups missing <code>BLOCK_UNINIT</code> — the flag that lets a mount skip untouched groups</td></tr>
+      <tr><td><code>s_lpf_ino</code></td><td class="num">6</td><td><code>11</code> / <code>0</code></td><td>We recorded <code>lost+found</code>'s inode; <code>mke2fs</code> leaves the field zero</td></tr>
+      <tr><td><code>inode 8 i_block</code></td><td class="num">3</td><td colspan="2">The resize inode — its block map <em>is</em> the reserved GDT blocks, which we had zeroed</td></tr>
+    </table>
+    </div>
+    <p class="sub">Today: zero. The replay above is <code>examples/replay.rs</code> — the
+       claim on this slide is a command, not a memory.</p>
   </div>
   <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>Compare</span><span class="counter"></span></div>
 </section>
