@@ -1,3 +1,8 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Writing ext4 in Rust</title>
 <style>
   :root {
@@ -47,10 +52,18 @@
   .cols { display: flex; gap: 4vw; align-items: flex-start; }
   .cols > div { flex: 1; min-width: 0; }
   table { border-collapse: collapse; width: 100%; margin: 1.2vh 0; }
-  th, td { text-align: left; padding: 0.9vh 1.2vh; font-size: 2vh; border-bottom: 1px solid #D2D2D2; vertical-align: top; }
+  /* Colour is stated on th and td rather than inherited: a table does not
+     inherit it from its ancestors in quirks mode, so a header left to inherit
+     renders black on a dark slide and simply disappears. */
+  th, td {
+    text-align: left; padding: 0.9vh 1.2vh; font-size: 2vh;
+    border-bottom: 1px solid #D2D2D2; vertical-align: top;
+    color: var(--rh-black);
+  }
   th { border-bottom: 3px solid var(--rh-red); font-weight: 700; }
-  .dark th, .dark td { border-color: #3C3F42; }
+  .dark th, .dark td { border-color: #3C3F42; color: var(--rh-white); }
   .dark th { border-bottom-color: var(--rh-red); }
+  .dark td.sub, .dark .sub { color: #B8BBBE; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   .scroll { overflow-x: auto; }
   .hero-num { font-family: "Red Hat Display", Arial, sans-serif; font-weight: 900; font-size: 8vh; color: var(--rh-red); line-height: 1; }
@@ -125,7 +138,8 @@
     section.slide { display: flex !important; position: relative; height: 100vh; page-break-after: always; break-inside: avoid; }
   }
 </style>
-
+</head>
+<body>
 <div class="deck" id="deck">
 
 <!-- 1 · TITLE -->
@@ -759,3 +773,6 @@ $ fsck-ext4 -fn disk.img</pre>
   });
   show(cur);
 </script>
+
+</body>
+</html>

@@ -11,6 +11,13 @@
   which is the case that produced a mountable, unwritable filesystem in
   stormblock#39. `verify-on-linux.sh` now re-derives the table from a real
   `mke2fs` on every run, so it cannot go stale unnoticed.
+- **fix(docs):** the deck's table headers were invisible on dark slides. The
+  file carries no doctype, so a browser opening it from disk renders it in
+  quirks mode, where a table does not inherit colour from its ancestors — the
+  header fell back to black on a black slide. Colour is now stated on `th` and
+  `td` instead of inherited, and the copy in this repository is a complete
+  document rather than a fragment. Every slide is checked for overflow at four
+  aspect ratios.
 - **docs:** `docs/presentation/ext4-rust.html` — a deck on how the two crates
   were built: the analysis loop that spent three days on the wrong code, the
   definition and the single rule that broke it, the features, and the seven
