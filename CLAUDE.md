@@ -66,6 +66,9 @@ to point at, not an open-ended guess about feature flags.
       mounting one stormblock volume read-write and destroying it, and
       `mmp_nodename` makes the refusal name the holder instead of guessing.
 - [x] `meta_bg` (past ~200 TiB) and `orphan_file` (last feature gap)
+- [x] `dir_index` — the directory hash and htree format here, maintained in
+      `fio-ext4`. Hash values asserted against `debugfs -R "dx_hash"`; trees
+      checked by real `e2fsck` and walked by a real kernel.
 - [ ] stormblock integration path (file against stormblock#39, do not edit it
       from this repo)
 
