@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### 2026-08-17
+- **docs:** `docs/presentation/ext4-rust.html` — a deck on how the two crates
+  were built: the analysis loop that spent three days on the wrong code, the
+  definition and the single rule that broke it, the features, and the seven
+  kinds of verification with what each one caught that the others missed.
+
 ## [v1.2.0] — 2026-08-14
 
 ### Added

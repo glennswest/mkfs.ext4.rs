@@ -1,0 +1,750 @@
+<title>Writing ext4 in Rust</title>
+<style>
+  :root {
+    --rh-red: #EE0000;
+    --rh-dark-red: #A30000;
+    --rh-black: #151515;
+    --rh-gray: #6A6E73;
+    --rh-light: #F2F2F2;
+    --rh-white: #FFFFFF;
+    --ok: #3E8635;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; background: var(--rh-black); }
+  body {
+    font-family: "Red Hat Text", "Red Hat Display", "Inter", "Helvetica Neue", Arial, sans-serif;
+    color: var(--rh-black);
+    overflow: hidden;
+  }
+  .deck { height: 100vh; width: 100vw; position: relative; }
+  section.slide {
+    position: absolute; inset: 0;
+    display: none;
+    flex-direction: column;
+    padding: 4.5vh 5vw 7vh 5vw;
+    background: var(--rh-white);
+  }
+  section.slide.active { display: flex; }
+  section.dark { background: var(--rh-black); color: var(--rh-white); }
+  section.red-strip::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 10px;
+    background: var(--rh-red);
+  }
+  h1 { font-family: "Red Hat Display", "Inter", Arial, sans-serif; font-weight: 900; font-size: 5.2vh; line-height: 1.15; }
+  h2 { font-family: "Red Hat Display", "Inter", Arial, sans-serif; font-weight: 700; font-size: 4.2vh; margin-bottom: 2.2vh; }
+  h2 .accent { color: var(--rh-red); }
+  h3 { font-size: 2.5vh; font-weight: 700; margin: 1.4vh 0 0.7vh 0; }
+  p, li { font-size: 2.3vh; line-height: 1.5; }
+  li { margin-bottom: 1vh; }
+  ul { padding-left: 3.2vh; }
+  .sub { color: var(--rh-gray); }
+  .dark .sub { color: #B8BBBE; }
+  .kicker {
+    color: var(--rh-red); font-weight: 700; letter-spacing: 0.14em;
+    text-transform: uppercase; font-size: 1.9vh; margin-bottom: 1.4vh;
+  }
+  .grow { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+  .cols { display: flex; gap: 4vw; align-items: flex-start; }
+  .cols > div { flex: 1; min-width: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 1.2vh 0; }
+  th, td { text-align: left; padding: 0.9vh 1.2vh; font-size: 2vh; border-bottom: 1px solid #D2D2D2; vertical-align: top; }
+  th { border-bottom: 3px solid var(--rh-red); font-weight: 700; }
+  .dark th, .dark td { border-color: #3C3F42; }
+  .dark th { border-bottom-color: var(--rh-red); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .scroll { overflow-x: auto; }
+  .hero-num { font-family: "Red Hat Display", Arial, sans-serif; font-weight: 900; font-size: 8vh; color: var(--rh-red); line-height: 1; }
+  .hero-label { font-size: 2.1vh; color: var(--rh-gray); margin-top: 0.8vh; }
+  .dark .hero-label { color: #B8BBBE; }
+  .stat-row { display: flex; gap: 3vw; margin: 2.2vh 0; }
+  .stat { flex: 1; border-top: 4px solid var(--rh-red); padding-top: 1.2vh; }
+  code, pre {
+    font-family: "Red Hat Mono", "SF Mono", Menlo, Consolas, monospace;
+    font-size: 1.9vh;
+  }
+  pre {
+    background: var(--rh-black); color: #E8E8E8; padding: 1.6vh 2vh;
+    border-left: 5px solid var(--rh-red);
+    overflow-x: auto; line-height: 1.5; margin: 1.2vh 0;
+  }
+  .dark pre { background: #212427; }
+  pre .c { color: #8A8D90; }
+  pre .g { color: #5BA352; }
+  pre .r { color: #FF6B6B; }
+  .plain {
+    background: var(--rh-light); border-left: 6px solid var(--rh-gray);
+    padding: 1.1vh 2vh; margin: 1.4vh 0; font-size: 2.05vh; line-height: 1.5;
+  }
+  .plain b:first-child { color: var(--rh-red); }
+  .dark .plain { background: #212427; }
+  .quote {
+    border-left: 6px solid var(--rh-red); padding: 1vh 2.4vh; margin: 1.8vh 0;
+    font-size: 2.6vh; font-style: italic; background: var(--rh-light);
+  }
+  .dark .quote { background: #212427; }
+  .footer {
+    position: absolute; bottom: 0; left: 0; right: 0; height: 5vh;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 5vw; font-size: 1.7vh; color: var(--rh-gray);
+    border-top: 1px solid #E8E8E8;
+    background: inherit;
+  }
+  .dark .footer { border-top-color: #3C3F42; }
+  .brandmark { font-family: "Red Hat Display", Arial, sans-serif; font-weight: 900; }
+  .brandmark .hat { color: var(--rh-red); }
+  .counter { font-variant-numeric: tabular-nums; }
+  .pill {
+    display: inline-block; border: 2px solid var(--rh-red); color: var(--rh-red);
+    font-weight: 700; font-size: 1.8vh; padding: 0.3vh 1.3vh; border-radius: 3vh;
+    margin-right: 0.8vh; margin-bottom: 0.9vh;
+  }
+  .dark .pill { border-color: var(--rh-red); color: #fff; background: var(--rh-red); }
+  .pill.gray { border-color: var(--rh-gray); color: var(--rh-gray); }
+  .flow { display: flex; align-items: stretch; gap: 0; margin: 2.2vh 0; }
+  .flow .node {
+    flex: 1; border: 2px solid var(--rh-black); padding: 1.2vh; text-align: center;
+    font-size: 1.9vh; font-weight: 700; display: flex; flex-direction: column; justify-content: center;
+  }
+  .dark .flow .node { border-color: #B8BBBE; }
+  .flow .node small { font-weight: 400; font-size: 1.6vh; color: var(--rh-gray); margin-top: 0.4vh; }
+  .dark .flow .node small { color: #B8BBBE; }
+  .flow .arrow { display: flex; align-items: center; padding: 0 0.8vh; font-size: 2.6vh; color: var(--rh-red); font-weight: 900; }
+  .loop-note { text-align: center; color: var(--rh-red); font-weight: 700; font-size: 2vh; margin-top: -0.6vh; }
+  .checklist li::marker { content: "✔  "; color: var(--ok); }
+  .xlist li::marker { content: "✘  "; color: var(--rh-red); }
+  .ladder { display: flex; flex-direction: column; gap: 0.9vh; margin: 1.4vh 0; }
+  .rung { display: flex; align-items: baseline; gap: 1.4vh; border-left: 5px solid var(--rh-red); padding: 0.7vh 1.4vh; background: var(--rh-light); }
+  .dark .rung { background: #212427; }
+  .rung b { font-size: 2.1vh; min-width: 24vh; }
+  .rung span { font-size: 1.95vh; color: var(--rh-gray); }
+  .dark .rung span { color: #B8BBBE; }
+  .rung.own { border-left-color: var(--rh-gray); }
+  @media print {
+    @page { size: 338.7mm 190.5mm; margin: 0; }
+    html, body { overflow: visible; background: var(--rh-white); }
+    section.slide { display: flex !important; position: relative; height: 100vh; page-break-after: always; break-inside: avoid; }
+  }
+</style>
+
+<div class="deck" id="deck">
+
+<!-- 1 · TITLE -->
+<section class="slide dark active">
+  <div class="grow">
+    <div class="kicker">Rust · ext2/3/4 · Building with an AI</div>
+    <h1>Writing ext4 in Rust</h1>
+    <h1 style="color:#B8BBBE; font-weight:400; font-size:3.8vh; margin-top:1.5vh;">
+      Three days of analysis, one day of building —<br>and what made the difference
+    </h1>
+    <p class="sub" style="margin-top:4vh; font-size:2.2vh;">
+      Two crates: a formatter and checker that matches <code>mke2fs</code> field for field,<br>
+      and a userspace file writer that fills the filesystem in — no kernel, no mount, no root.
+    </p>
+    <p style="margin-top:4.5vh; font-size:2.1vh;">Glenn West &nbsp;·&nbsp; August 2026</p>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>github.com/glennswest</span><span class="counter"></span></div>
+</section>
+
+<!-- 2 · AGENDA -->
+<section class="slide red-strip">
+  <h2>What this covers</h2>
+  <div class="grow">
+    <div class="stat-row">
+      <div class="stat"><h3>The loop</h3><p class="sub">Three days trying to fix code that already existed</p></div>
+      <div class="stat"><h3>The focus</h3><p class="sub">The definition and the one rule that made it buildable</p></div>
+      <div class="stat"><h3>The library</h3><p class="sub">What it does, feature by feature</p></div>
+      <div class="stat"><h3>The proof</h3><p class="sub">Seven kinds of verification, and what each one alone missed</p></div>
+    </div>
+    <p class="sub" style="margin-top:2.5vh">
+      Every number here comes from the repositories: commit timestamps, test counts,
+      and the output of <code>e2fsck</code> and <code>debugfs</code> from e2fsprogs 1.47.3.
+    </p>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>Agenda</span><span class="counter"></span></div>
+</section>
+
+<!-- 3 · WHERE IT STARTED -->
+<section class="slide">
+  <div class="kicker">Where it started</div>
+  <h2>A filesystem that mounted <span class="accent">and refused every write</span></h2>
+  <div class="grow">
+    <p>An existing storage engine had a formatter. It produced filesystems that the
+       Linux kernel mounted and wrote to happily. RouterOS — running lwext4 — mounted
+       them too, and then rejected every single write.</p>
+    <div class="plain">
+      <b>The trap in that sentence:</b> "mounts read-write" and "is writable" are
+      different claims. Only the second one is a test. For three days the first one
+      was being treated as evidence.
+    </div>
+    <p class="sub">The formatter was described as proven. It had produced working
+       filesystems for months. That description was the problem — it made the
+       formatter the last place anyone looked.</p>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>The problem</span><span class="counter"></span></div>
+</section>
+
+<!-- 4 · THE ANALYSIS LOOP -->
+<section class="slide dark">
+  <div class="kicker">The failure mode</div>
+  <h2>The analysis loop</h2>
+  <div class="grow">
+    <div class="flow">
+      <div class="node">Symptom<small>writes rejected</small></div>
+      <div class="arrow">→</div>
+      <div class="node">Hypothesis<small>"it's a feature flag"</small></div>
+      <div class="arrow">→</div>
+      <div class="node">Tweak<small>change a bit, rebuild</small></div>
+      <div class="arrow">→</div>
+      <div class="node">Re-test<small>still rejected</small></div>
+      <div class="arrow">→</div>
+      <div class="node">Analyse again<small>a new hypothesis</small></div>
+    </div>
+    <p class="loop-note">↺ &nbsp; three days &nbsp; ↺</p>
+    <p style="margin-top:1.5vh">Every pass round the loop feels like progress. You learn something each time.
+       The code gets a little different each time. Nothing gets fixed, because the loop
+       never questions its own starting point: that the existing code is nearly right and
+       needs adjusting.</p>
+    <div class="plain">
+      <b>An AI will run this loop with you, indefinitely, and never get bored.</b>
+      That is the danger. It will happily produce a twentieth hypothesis as
+      confidently as the first. The loop has to be broken from outside.
+    </div>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>The analysis loop</span><span class="counter"></span></div>
+</section>
+
+<!-- 5 · THE BREAK -->
+<section class="slide red-strip">
+  <div class="kicker">The turn</div>
+  <h2>Breaking out</h2>
+  <div class="grow">
+    <div class="quote">"We have wasted 3 days using 'proven'. Need a stepback."</div>
+    <div class="quote">"No need to analyze for the 100000th time. Doing that for days.
+      Nothing worked. Write from scratch from source."</div>
+    <p style="margin-top:1.5vh">Two instructions, and they are the whole method:</p>
+    <ul class="checklist" style="margin-top:1vh">
+      <li><b>Stop adjusting.</b> Do not extend the existing code. Do not start from it. Do not read it for inspiration.</li>
+      <li><b>Go to the source.</b> Not the symptom, not the spec alone — the actual implementation everybody else's tools agree with.</li>
+    </ul>
+    <p class="sub" style="margin-top:1.5vh">Rewriting sounds like the expensive option. It was finished the same day.</p>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>The turn</span><span class="counter"></span></div>
+</section>
+
+<!-- 6 · DEFINITION -->
+<section class="slide">
+  <div class="kicker">Focus, part one</div>
+  <h2>Define the thing before writing it</h2>
+  <div class="grow">
+    <p class="sub" style="margin-bottom:1.2vh">Four constraints, written down before any code. Each one rules
+       something out, which is what makes it useful.</p>
+    <table>
+      <tr><th style="width:26%">Constraint</th><th>What it rules out</th></tr>
+      <tr><td><b>Async, parallel across devices</b></td><td>Reads and writes take <code>&amp;self</code>, so one format fans out across block groups and many formats run at once. The original was serial.</td></tr>
+      <tr><td><b>Pure Rust, no C</b></td><td>No binding to e2fsprogs, no <code>unsafe</code>, no casting a <code>repr(C)</code> struct over a buffer. Every field encoded by hand, little-endian.</td></tr>
+      <tr><td><b>Device-agnostic</b></td><td>A <code>BlockDevice</code> trait is the only seam. No file, no loopback, no round trip through the kernel.</td></tr>
+      <tr><td><b>Byte-exactness is testable</b></td><td>No "looks right". Output is compared against recorded real <code>mke2fs</code> output for the same geometry.</td></tr>
+    </table>
+    <div class="plain"><b>Nothing in this crate reads or writes a path outside the device it was given.</b>
+      A boundary stated once, worth more than a code review later.</div>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>Definition</span><span class="counter"></span></div>
+</section>
+
+<!-- 7 · THE RULE -->
+<section class="slide dark">
+  <div class="kicker">Focus, part two</div>
+  <h2>One rule that settles arguments</h2>
+  <div class="grow">
+    <div class="quote" style="font-size:2.9vh">Match what <code>mke2fs</code> actually writes, field for field,
+      derived from the e2fsprogs source.</div>
+    <p>Where a value is a judgement call in our code and a computed default in <code>mke2fs</code>,
+       we compute it the way <code>mke2fs</code> does. Not "a reasonable value". Not "what the
+       spec permits". The same value.</p>
+    <div class="cols" style="margin-top:1.5vh">
+      <div>
+        <h3>Why a rule, not a goal</h3>
+        <p class="sub">A goal ("make it correct") invites a new opinion every time something
+           is ambiguous — and an AI has an unlimited supply of plausible opinions.
+           A rule ends the conversation: go and look at what the reference does.</p>
+      </div>
+      <div>
+        <h3>What it buys downstream</h3>
+        <p class="sub">A consumer that disagrees with real <code>mke2fs</code> output is now
+           a consumer bug, with a reference to point at — instead of an open-ended
+           guess about feature flags. That is exactly the argument that burned three days.</p>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>The rule</span><span class="counter"></span></div>
+</section>
+
+<!-- 8 · SPEC VS SOURCE -->
+<section class="slide">
+  <div class="kicker">Focus, part three</div>
+  <h2>The spec tells you the shape. <span class="accent">The source tells you the value.</span></h2>
+  <div class="grow">
+    <p>Both were needed, and they do different jobs. The documentation describes what
+       a superblock field <em>means</em>. It does not tell you what number a real
+       formatter puts there for a 256 MiB volume.</p>
+    <table style="margin-top:1vh">
+      <tr><th style="width:34%">From the spec</th><th>Only from the source</th></tr>
+      <tr>
+        <td>What <code>s_reserved_gdt_blocks</code> is for</td>
+        <td>That those blocks are the resize inode's indirect blocks — so zeroing them is corruption, not tidiness</td>
+      </tr>
+      <tr>
+        <td>That <code>flex_bg</code> groups metadata together</td>
+        <td>That placement is an allocation, not arithmetic — a contiguous run collides with group 1's superblock backup at 256 MiB</td>
+      </tr>
+      <tr>
+        <td>That inodes and blocks have size defaults</td>
+        <td><code>mke2fs.conf</code>'s size classes, which pick them by volume size</td>
+      </tr>
+      <tr>
+        <td>That the journal has a checksum feature</td>
+        <td>That <code>mke2fs</code> does not set <code>csum_v3</code> at format time, even though it could</td>
+      </tr>
+    </table>
+    <p class="sub" style="margin-top:1vh">Implementing from the specification alone produces a filesystem that is
+       defensible in every particular and identical to nobody's.</p>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>Spec vs source</span><span class="counter"></span></div>
+</section>
+
+<!-- 9 · WHAT GOT BUILT -->
+<section class="slide dark">
+  <div class="kicker">The result</div>
+  <h2>Two crates</h2>
+  <div class="grow">
+    <div class="cols">
+      <div>
+        <h3 style="color:var(--rh-red)">mkfs-ext4</h3>
+        <p class="sub">Creates the filesystem and checks it.</p>
+        <ul style="margin-top:1vh">
+          <li>ext2, ext3 and ext4 from one code path — as <code>mke2fs</code> does</li>
+          <li>Formatter, parallel across block groups</li>
+          <li><code>fsck</code>: six passes, check <em>and</em> repair</li>
+          <li>Structural compare between two filesystems</li>
+          <li>CLI: <code>mkfs-ext4</code>, <code>fsck-ext4</code></li>
+        </ul>
+      </div>
+      <div>
+        <h3 style="color:var(--rh-red)">fio-ext4</h3>
+        <p class="sub">Fills it in. No kernel, no mount, no root.</p>
+        <ul style="margin-top:1vh">
+          <li>Files, directories, reads and writes at an offset</li>
+          <li>Permissions, ownership, timestamps</li>
+          <li>Symlinks, hard links, device nodes, FIFOs</li>
+          <li>Extended attributes — SELinux labels and ACLs</li>
+          <li>tar in and out, streaming; OCI layers</li>
+        </ul>
+      </div>
+    </div>
+    <div class="plain" style="margin-top:1.5vh"><b>It works on a Mac.</b> None of it needs a Linux kernel to
+      produce a Linux filesystem — which is the point for CI, for unprivileged containers,
+      and for a microcontroller that has no operating system at all.</div>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>Two crates</span><span class="counter"></span></div>
+</section>
+
+<!-- 10 · FEATURE PARITY -->
+<section class="slide">
+  <div class="kicker">Features</div>
+  <h2>On-disk feature parity with <code>mke2fs</code></h2>
+  <div class="grow">
+    <div>
+      <span class="pill">metadata_csum</span><span class="pill">64bit</span><span class="pill">extents</span>
+      <span class="pill">flex_bg</span><span class="pill">sparse_super</span><span class="pill">resize_inode</span>
+      <span class="pill">dir_index</span><span class="pill">filetype</span><span class="pill">huge_file</span>
+      <span class="pill">dir_nlink</span><span class="pill">extra_isize</span><span class="pill">has_journal</span>
+      <span class="pill">meta_bg</span><span class="pill">orphan_file</span><span class="pill">mmp</span>
+      <span class="pill">ext_attr</span>
+    </div>
+    <div class="cols" style="margin-top:2vh">
+      <div>
+        <h3>Scale</h3>
+        <p class="sub">1 KiB to 4 KiB blocks. 16 MiB to 256 TiB. <code>meta_bg</code> past
+          ~200 TiB, where the group descriptor table stops fitting. A 1 TiB sparse
+          filesystem formats in 7 seconds and allocates 353 MiB.</p>
+      </div>
+      <div>
+        <h3>MMP — multiple mount protection</h3>
+        <p class="sub">The fence that stops two hosts mounting one volume read-write and
+          destroying it. Stamp a sequence, wait twice the check interval, re-read, refuse
+          if it moved — and <code>mmp_nodename</code> makes the refusal name the holder
+          rather than guessing.</p>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>Feature parity</span><span class="counter"></span></div>
+</section>
+
+<!-- 11 · ATTRIBUTES -->
+<section class="slide">
+  <div class="kicker">Features</div>
+  <h2>Attributes and ownership are not decoration</h2>
+  <div class="grow">
+    <p>A container will not start without the right modes. A tarball cannot be unpacked
+       without owners. An image whose every file is <code>0644 root:root</code> is not a
+       root filesystem — it is a directory of files that happens to be shaped like one.</p>
+    <pre>vol.write_with("/etc/shadow", data, &amp;Attrs::mode(0o600)).await?;
+vol.write_with("/usr/bin/su",  elf,  &amp;Attrs::mode(0o4755)).await?;   <span class="c">// setuid</span>
+vol.mkdir_with("/tmp",               &amp;Attrs::mode(0o1777)).await?;   <span class="c">// sticky</span>
+vol.chown("/home/gw", 165536, 165536).await?;                        <span class="c">// 32-bit, userns range</span>
+vol.mknod("/dev/null", Special::CharDevice { major: 1, minor: 3 },
+          &amp;Attrs::mode(0o666)).await?;
+vol.symlink("/bin", "usr/bin").await?;</pre>
+    <p class="sub">Device nodes matter for the same reason: no <code>/dev/null</code>,
+       no working image. Creating one normally requires root. Here it is a field in an inode.</p>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>Attributes</span><span class="counter"></span></div>
+</section>
+
+<!-- 12 · XATTRS -->
+<section class="slide">
+  <div class="kicker">Features</div>
+  <h2>Extended attributes — <span class="accent">the ones SELinux rides on</span></h2>
+  <div class="grow">
+    <p>Without them, an SELinux system boots into a filesystem it will not let anything
+       run from. ext4 keeps them in two places, and both had to be written:</p>
+    <div class="cols" style="margin-top:0.8vh">
+      <div>
+        <h3>In the inode</h3>
+        <p class="sub">In the spare room after the fixed fields, past
+           <code>128 + i_extra_isize</code>. Cheap — no extra block, no extra read.</p>
+      </div>
+      <div>
+        <h3>In a block of its own</h3>
+        <p class="sub">When the set does not fit. Reachable only from
+           <code>i_file_acl</code>, which is exactly why it is easy to leak.</p>
+      </div>
+    </div>
+    <div class="plain" style="margin-top:1.2vh">
+      <b>The trap:</b> block-stored entries need a per-entry hash. The inline form does not.
+      Write a zero hash and the kernel accepts it — <code>e2fsck</code> does not:
+      <code>Extended attribute in inode 25 has a hash (0) which is invalid</code>.
+    </div>
+    <pre>$ getfattr -d -m - /mnt/etc/hostname
+security.selinux="system_u:object_r:etc_t:s0"
+user.build="fio-ext4"</pre>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>Extended attributes</span><span class="counter"></span></div>
+</section>
+
+<!-- 13 · ARCHIVES -->
+<section class="slide dark">
+  <div class="kicker">Features</div>
+  <h2>Archives, streamed both ways</h2>
+  <div class="grow">
+    <p>The operation an image build actually performs: take a rootfs tarball or a container
+       layer and lay it down with everything intact. Through a kernel that needs root and a
+       mount. Here it needs neither.</p>
+    <pre>$ fio-ext4 disk.img untar rootfs.tar
+$ skopeo copy ... | fio-ext4 disk.img untar --whiteouts -C /   <span class="c"># a pipe, gzip detected</span>
+$ fio-ext4 disk.img tar -z backup.tar.gz</pre>
+    <div class="cols" style="margin-top:1.2vh">
+      <div>
+        <h3>Nothing is held in memory</h3>
+        <p class="sub">A <code>Source</code>/<code>Sink</code> pair that needs no runtime, no
+          pinning and no allocation to implement. A file, a pipe, a socket and a registry
+          response are the same thing — and an archive larger than RAM is not a problem.</p>
+      </div>
+      <div>
+        <h3>Layers stack properly</h3>
+        <p class="sub"><code>.wh.name</code> deletes; <code>.wh..wh..opq</code> empties a
+          directory. A replacing file gets a fresh inode, so it inherits none of the mode,
+          owner or labels of the file below it.</p>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>Archives</span><span class="counter"></span></div>
+</section>
+
+<!-- 14 · DIR_INDEX -->
+<section class="slide">
+  <div class="kicker">Features</div>
+  <h2>Large directories: <code>dir_index</code></h2>
+  <div class="grow">
+    <p>Without an index, finding a name means reading the directory until it turns up, and
+       adding one means reading it until a gap turns up. Filling a directory with
+       <em>n</em> names costs <em>n²</em> block reads. Bearable at a hundred names; not at
+       ten thousand.</p>
+    <div class="plain">
+      <b>Grown the way <code>e2fsck -D</code> grows one, not the way the kernel does.</b>
+      The kernel splits one leaf at a time because it cannot stop the world. This builds
+      images — so when a leaf will not take another name, the whole index is rebuilt,
+      sorted by hash and repacked. One code path for the first conversion and every growth
+      after it, instead of a leaf split, a node split and a root promotion that each have
+      to be right alone.
+    </div>
+    <p class="sub" style="margin-bottom:1vh">Leaves keep a fifth of each block free, so a rebuild lands about once per
+       two hundred names rather than once per name. The tree is invisible to a linear
+       reader — which is why <code>dir_index</code> is a <em>compatible</em> feature and an
+       old kernel still mounts the filesystem.</p>
+    <pre>7,500 names, 1 KiB and 4 KiB blocks, against a real kernel:
+  e2fsck -fn                                     <span class="g">exit 0</span>
+  every name resolved <span class="c">through the index</span>, not by listing  <span class="g">0 missing</span>
+  a name that was never there                    <span class="g">still absent</span>
+  the kernel adding its own name to our tree     <span class="g">ok</span>
+  e2fsck -fn, after the kernel wrote             <span class="g">exit 0</span></pre>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>dir_index</span><span class="counter"></span></div>
+</section>
+
+<!-- 15 · VERIFICATION LADDER -->
+<section class="slide dark">
+  <div class="kicker">The proof</div>
+  <h2>Seven kinds of verification</h2>
+  <div class="grow">
+    <p class="sub" style="margin-bottom:0.6vh">Grey rungs are ours and prove only self-consistency.
+      Red rungs are somebody else's implementation disagreeing with us.</p>
+    <div class="ladder">
+      <div class="rung own"><b>Unit tests</b><span>Offsets asserted, not assumed. Necessary. Nowhere near sufficient.</span></div>
+      <div class="rung own"><b>Our own fsck</b><span>Six passes over our own output. Shares our assumptions, so it shares our blind spots.</span></div>
+      <div class="rung"><b>Golden references</b><span>7 real <code>mke2fs</code> images, byte-comparable — pinned UUID, hash seed and <code>SOURCE_DATE_EPOCH</code>.</span></div>
+      <div class="rung"><b>Structural compare</b><span>Our own tool, diffing two filesystems field by field and classifying each difference.</span></div>
+      <div class="rung"><b>Real e2fsck</b><span>e2fsprogs 1.47.3 on Fedora 43, over 11 configurations.</span></div>
+      <div class="rung"><b>A real kernel</b><span>Loop mount, write, unmount, <em>and check again</em>. The second check is the one that counts.</span></div>
+      <div class="rung"><b>An external oracle</b><span><code>debugfs</code> computing the same directory hashes independently.</span></div>
+    </div>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>Verification</span><span class="counter"></span></div>
+</section>
+
+<!-- 16 · WHAT EACH CAUGHT -->
+<section class="slide">
+  <div class="kicker">The proof</div>
+  <h2>What each one caught that the others didn't</h2>
+  <div class="grow scroll">
+    <table>
+      <tr><th style="width:40%">The defect</th><th style="width:26%">Caught by</th><th>Missed by</th></tr>
+      <tr><td><b>crc32c convention.</b> The reference updates a table raw; the Rust crate complements at both ends. Every metadata checksum was wrong.</td><td>Real <code>e2fsck</code></td><td>All our tests — they agreed with each other</td></tr>
+      <tr><td><b>Reserved GDT blocks zeroed.</b> They <em>are</em> the resize inode's indirect blocks.</td><td>Golden compare</td><td>Reading the spec</td></tr>
+      <tr><td><b>flex_bg run overlapped</b> group 1's superblock backup at 256 MiB.</td><td>Golden compare</td><td>Every smaller size</td></tr>
+      <tr><td><b>Journal <code>csum_v3</code> set</b> at format time; <code>mke2fs</code> writes none.</td><td>Golden compare</td><td><code>e2fsck</code> — it was legal, just not what mke2fs does</td></tr>
+      <tr><td><b>1 KiB blocks on a 4 KiB-sector device.</b> The mechanism shipped without the detection.</td><td>Measuring a real device</td><td>Every test — none had a 4 KiB sector</td></tr>
+      <tr><td><b>Zero <code>e_hash</code></b> on block-stored xattrs.</td><td>Real <code>e2fsck</code></td><td>The kernel, which accepted it</td></tr>
+      <tr><td><b>Leaked xattr block on delete.</b> Reachable only from <code>i_file_acl</code>.</td><td>Real <code>e2fsck</code></td><td>Our fsck</td></tr>
+    </table>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>What each caught</span><span class="counter"></span></div>
+</section>
+
+<!-- 17 · THE COMPARE TOOL -->
+<section class="slide">
+  <div class="kicker">The proof</div>
+  <h2>The compare tool, and the list nobody expected</h2>
+  <div class="grow">
+    <p>A structural diff between two filesystems, written specifically so "is our output the
+       same as <code>mke2fs</code>?" could be answered by a program instead of an opinion.
+       It sorts every difference into three classes:</p>
+    <div class="stat-row">
+      <div class="stat"><h3>Identity</h3><p class="sub">UUID, timestamps, label. Expected to differ. Ignore.</p></div>
+      <div class="stat"><h3>Incidental</h3><p class="sub">Free-block counters and the like. Differ without meaning.</p></div>
+      <div class="stat"><h3>Structural</h3><p class="sub">Geometry, features, placement. Any difference here is a bug in one of the two.</p></div>
+    </div>
+    <div class="plain">
+      <b>The first run produced 16 differences.</b> Not one had shown up as a test failure,
+      because every test we owned was checking our output against our own expectations.
+      Reserved GDT blocks, the flex_bg overlap and the journal checksum flag were all on
+      that list.
+    </div>
+    <p class="sub">Today: zero structural differences across all six golden references.</p>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>Compare</span><span class="counter"></span></div>
+</section>
+
+<!-- 18 · THE ORACLE -->
+<section class="slide dark">
+  <div class="kicker">The proof</div>
+  <h2>Some things cannot be tested against yourself</h2>
+  <div class="grow">
+    <p>A directory hash is the clearest case. Get it wrong and the filesystem is
+       <em>structurally perfect</em>: every block valid, every checksum right, every name
+       filed in a leaf. Just the wrong leaf.</p>
+    <div class="plain"><b>There is no self-consistent test for this.</b> Our lookups use our
+      hash, so they agree with themselves no matter what it computes. The only way to know
+      is to ask the implementation everyone else agrees with.</div>
+    <pre>$ debugfs -R "dx_hash -h half_md4 hello"
+Hash of hello is 0x1746da32 (minor 0x420013b5)</pre>
+    <p>26 values, three algorithms, seeded and unseeded, including names long enough to need
+       several transform blocks — pinned into the test suite as constants taken from
+       <code>debugfs</code>, not from us. They matched on the first run.</p>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>External oracle</span><span class="counter"></span></div>
+</section>
+
+<!-- 19 · THE ONE THAT PASSED EVERYTHING -->
+<section class="slide red-strip">
+  <div class="kicker">The proof</div>
+  <h2>The bug that passed <span class="accent">everything we owned</span></h2>
+  <div class="grow">
+    <p>In an index block, the count-and-limit header and the first index entry
+       <em>share an address</em> — deliberately. The first entry has no hash, because those
+       four bytes are the count and limit.</p>
+    <p>Writing a hash there set the limit to zero. A zero limit puts the checksum tail at
+       the offset of the first entry's block pointer. So the checksum overwrote the pointer.</p>
+    <div class="plain">
+      <b>Everything passed.</b> Unit tests passed. Our own <code>fsck</code> passed. Every
+      name was still found — because a pointer that resolved to nothing made the lookup fall
+      back to a linear scan, which worked perfectly and silently.
+    </div>
+    <p>It only became visible when a directory grew large enough to need a second level of
+       the tree, where there was nothing to fall back to.</p>
+    <p class="sub">Then, and only then: <code>an index points at a hole</code>.</p>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>Silent failure</span><span class="counter"></span></div>
+</section>
+
+<!-- 20 · MEASURE -->
+<section class="slide">
+  <div class="kicker">The proof</div>
+  <h2>"Did you really fix the 4K?"</h2>
+  <div class="grow">
+    <p>Sector-size support had been added, documented and released. The API took a sector
+       size. The tests passed. And on a real 4 KiB-sector device it still produced a
+       1 KiB-block filesystem — because the <em>mechanism</em> had shipped without the
+       <em>detection</em>.</p>
+    <div class="stat-row">
+      <div class="stat"><div class="hero-num">1024</div><div class="hero-label">our block size, measured on a real 4 KiB loop device</div></div>
+      <div class="stat"><div class="hero-num">4096</div><div class="hero-label">what <code>mke2fs</code> chose on the same device</div></div>
+    </div>
+    <p>The fix was to ask the kernel — <code>ioctl_blksszget</code> — rather than assume 512.
+       And the likely root cause of the three-day bug: a 256 MiB volume on 4 KiB sectors
+       formatted with 1 KiB blocks, which lwext4 will not write to a block at a time.</p>
+    <div class="plain"><b>No test would have found this.</b> Not one machine in the test set
+      had a 4 KiB sector. Someone had to ask the question and someone had to go and measure.</div>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>Measure, don't assume</span><span class="counter"></span></div>
+</section>
+
+<!-- 21 · NUMBERS -->
+<section class="slide dark">
+  <div class="kicker">Effort</div>
+  <h2>What it cost</h2>
+  <div class="grow">
+    <div class="stat-row">
+      <div class="stat"><div class="hero-num">3</div><div class="hero-label">days in the analysis loop, before any of this</div></div>
+      <div class="stat"><div class="hero-num">1</div><div class="hero-label">day from empty directory to a formatter passing e2fsck and kernel mount</div></div>
+      <div class="stat"><div class="hero-num">18k</div><div class="hero-label">lines of Rust across both crates</div></div>
+      <div class="stat"><div class="hero-num">202</div><div class="hero-label">tests, plus 11 configurations against a real kernel</div></div>
+    </div>
+    <table style="margin-top:1vh">
+      <tr><th>Day one, 06:50 → 18:00</th><th>Then</th></tr>
+      <tr>
+        <td class="sub">Scaffold, on-disk structures, checksums, golden references, geometry,
+          the formatter, fsck, both CLIs, meta_bg, orphan_file, compare, MMP — and the
+          second crate started at 13:47.</td>
+        <td class="sub">Extended attributes. Tar and OCI layers. <code>dir_index</code>
+          maintenance. Two releases. The long tail is where the interesting bugs were.</td>
+      </tr>
+    </table>
+    <p class="sub" style="margin-top:1.2vh">The three days produced nothing. The one day produced a filesystem.
+       The difference was not effort or tooling — it was the decision to stop adjusting and start defining.</p>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>Effort</span><span class="counter"></span></div>
+</section>
+
+<!-- 22 · WHERE IT IS USEFUL -->
+<section class="slide">
+  <div class="kicker">Use</div>
+  <h2>Where this is worth having</h2>
+  <div class="grow">
+    <div class="cols">
+      <div>
+        <h3>Embedded and firmware</h3>
+        <p class="sub">Write files and data onto a removable drive from a device with no
+          operating system — an ESP32 writing an ext4 card that a Linux box then reads.
+          No kernel, no allocator requirement in the archive path, no C toolchain.</p>
+        <h3>Repair where there is no fsck</h3>
+        <p class="sub">RouterOS has no <code>e2fsck</code>. This one is a library, so the
+          check and the repair can run inside whatever is already there.</p>
+      </div>
+      <div>
+        <h3>Storage engines</h3>
+        <p class="sub">Format many thin volumes at once, straight against the volume —
+          no file, no loopback, no round trip. That is what the async and the
+          <code>&amp;self</code> signatures were for.</p>
+        <h3>Image and CI builds</h3>
+        <p class="sub">Build a root filesystem, with real ownership and SELinux labels,
+          in an unprivileged container or on a Mac. Unpack a container layer without
+          being root.</p>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>Use cases</span><span class="counter"></span></div>
+</section>
+
+<!-- 23 · LESSONS -->
+<section class="slide red-strip">
+  <div class="kicker">Lessons</div>
+  <h2>Building a library with an AI</h2>
+  <div class="grow">
+    <ul class="checklist">
+      <li><b>Break the analysis loop from outside.</b> An AI will generate hypothesis
+        twenty as confidently as hypothesis one, forever. Noticing you are in the loop is
+        a human job.</li>
+      <li><b>Distrust "proven".</b> It is a description of history, not a test. It made the
+        formatter the last place anyone looked.</li>
+      <li><b>Write the definition before the code.</b> Four constraints that each rule
+        something out beat any amount of "make it correct".</li>
+      <li><b>Give it one rule that settles arguments.</b> "Match the reference, field for
+        field" ends ambiguity by sending it somewhere checkable.</li>
+      <li><b>Spec <em>and</em> source.</b> The spec gives the shape; only the implementation
+        gives the values everyone else agrees on.</li>
+      <li><b>Verify with something that is not you.</b> Our tests, our fsck and our
+        assumptions all fail together. <code>e2fsck</code>, a kernel and <code>debugfs</code>
+        fail separately — which is the whole value.</li>
+      <li><b>Rewriting is often the cheap option.</b> Three days adjusting; one day building.</li>
+    </ul>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>Lessons</span><span class="counter"></span></div>
+</section>
+
+<!-- 24 · CLOSE -->
+<section class="slide dark">
+  <div class="grow">
+    <div class="kicker">Thank you</div>
+    <h1>Writing ext4 in Rust</h1>
+    <p class="sub" style="margin-top:2vh; font-size:2.3vh">
+      MIT OR Apache-2.0 — the MIT arm is GPLv2-compatible, so it imposes nothing on a
+      kernel or RHEL consumer.
+    </p>
+    <pre style="margin-top:2vh">$ mkfs-ext4 disk.img
+$ fio-ext4 disk.img untar rootfs.tar
+$ fsck-ext4 -fn disk.img</pre>
+    <div style="margin-top:2.5vh">
+      <span class="pill">github.com/glennswest/mkfs.ext4.rs</span>
+      <span class="pill">github.com/glennswest/fio.ext4.rs</span>
+    </div>
+    <p class="sub" style="margin-top:3vh; font-size:2.5vh">
+      The filesystem was never the hard part.<br>
+      <span style="color:var(--rh-red)">Knowing when to stop analysing it was.</span>
+    </p>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>Glenn West · August 2026</span><span class="counter"></span></div>
+</section>
+
+</div>
+<script>
+  const slides = Array.from(document.querySelectorAll("section.slide"));
+  let cur = Math.min(Math.max(parseInt(location.hash.slice(1) || "1", 10) - 1 || 0, 0), slides.length - 1);
+  function show(i) {
+    cur = Math.min(Math.max(i, 0), slides.length - 1);
+    slides.forEach((s, j) => s.classList.toggle("active", j === cur));
+    document.querySelectorAll(".counter").forEach(c => c.textContent = (cur + 1) + " / " + slides.length);
+    history.replaceState(null, "", "#" + (cur + 1));
+  }
+  addEventListener("keydown", e => {
+    if (["ArrowRight", "PageDown", " "].includes(e.key)) { show(cur + 1); e.preventDefault(); }
+    else if (["ArrowLeft", "PageUp"].includes(e.key)) { show(cur - 1); e.preventDefault(); }
+    else if (e.key === "Home") show(0);
+    else if (e.key === "End") show(slides.length - 1);
+  });
+  addEventListener("click", e => {
+    if (e.clientX > innerWidth * 0.75) show(cur + 1);
+    else if (e.clientX < innerWidth * 0.25) show(cur - 1);
+  });
+  show(cur);
+</script>
