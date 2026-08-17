@@ -384,17 +384,27 @@ pub fn set_count(block: &mut [u8], count_offset: usize, count: u16) {
 
 /// Read one index entry as `(hash, block)`.
 ///
-/// The first entry of a block carries no hash — everything below the next
-/// entry's hash belongs to it — so its hash reads as zero.
+/// Entry zero has no hash. Its four hash bytes are the count and limit — the
+/// array and the header share them, which is why `struct ext2_dx_countlimit`
+/// and the first `struct ext2_dx_entry` sit at the same address. Nothing needs
+/// the missing hash: everything below entry one's hash belongs to entry zero.
 pub fn entry(block: &[u8], count_offset: usize, index: usize) -> (u32, u32) {
     let at = count_offset + index * ENTRY_LEN;
-    (get_u32(block, at), get_u32(block, at + 4))
+    let hash = if index == 0 { 0 } else { get_u32(block, at) };
+    (hash, get_u32(block, at + 4))
 }
 
 /// Write one index entry.
+///
+/// Entry zero's hash is not written, because those bytes are the count and
+/// limit. Writing it would set the limit to zero, and a zero limit puts the
+/// checksum tail on top of entry zero's block pointer — which is a tree that
+/// looks well-formed and points at nothing.
 pub fn set_entry(block: &mut [u8], count_offset: usize, index: usize, hash: u32, target: u32) {
     let at = count_offset + index * ENTRY_LEN;
-    put_u32(block, at, hash);
+    if index > 0 {
+        put_u32(block, at, hash);
+    }
     put_u32(block, at + 4, target);
 }
 
@@ -607,6 +617,29 @@ mod tests {
     }
 
     #[test]
+    fn entry_zero_shares_its_hash_bytes_with_the_count_and_limit() {
+        let mut block = build_node(1024, true);
+        let limit = get_u16(&block, NODE_COUNT_OFFSET);
+        assert_eq!(limit, ((1024 - 8 - 8) / 8) as u16);
+
+        // Writing entry zero must leave the limit alone.
+        set_entry(&mut block, NODE_COUNT_OFFSET, 0, 0xdead_beef, 7);
+        set_count(&mut block, NODE_COUNT_OFFSET, 1);
+        assert_eq!(get_u16(&block, NODE_COUNT_OFFSET), limit, "the limit was lost");
+        assert_eq!(count(&block, NODE_COUNT_OFFSET), 1);
+        assert_eq!(entry(&block, NODE_COUNT_OFFSET, 0), (0, 7));
+
+        // And with the limit intact the checksum lands past the entries
+        // rather than on top of the first one.
+        stamp_csum(&mut block, 1024, 0x1234, 12, 0, NODE_COUNT_OFFSET);
+        assert_eq!(
+            entry(&block, NODE_COUNT_OFFSET, 0),
+            (0, 7),
+            "the checksum was written over entry zero's block pointer"
+        );
+    }
+
+    #[test]
     fn find_picks_the_last_entry_at_or_below_the_hash() {
         let mut block = build_node(1024, false);
         // The first entry's hash is never read: everything below the second
@@ -618,6 +651,7 @@ mod tests {
             set_entry(&mut block, NODE_COUNT_OFFSET, i, hash, target);
         }
         set_count(&mut block, NODE_COUNT_OFFSET, 3);
+        assert_eq!(entry(&block, NODE_COUNT_OFFSET, 1), (0x4000, 11));
 
         assert_eq!(find(&block, NODE_COUNT_OFFSET, 0).unwrap(), 0);
         assert_eq!(find(&block, NODE_COUNT_OFFSET, 0x3fff).unwrap(), 0);

@@ -16,6 +16,7 @@ use crate::features::{IncompatFeatures, RoCompatFeatures};
 use crate::structs::dirent::{self, DirEntry};
 use crate::structs::extent::{self, Extent, ExtentHeader, ExtentIdx};
 use crate::structs::group_desc::GroupDesc;
+use crate::structs::htree;
 use crate::structs::inode::{iflags, Inode, N_BLOCKS, NDIR_BLOCKS};
 use crate::structs::superblock::{Superblock, SUPERBLOCK_LEN, SUPERBLOCK_OFFSET};
 
@@ -714,12 +715,87 @@ impl<D: BlockDevice> Filesystem<D> {
 
     /// Look a name up in a directory.
     pub async fn lookup(&self, dir: &Inode, name: &[u8]) -> Result<Option<u32>> {
+        // An indexed directory answers in a two-block walk instead of a read
+        // of the whole thing, which is the difference between filling a
+        // directory in linear time and in quadratic time.
+        if dir.flags & iflags::INDEX != 0 {
+            if let Some(answer) = self.lookup_indexed(dir, name).await? {
+                return Ok(answer);
+            }
+        }
         Ok(self
             .read_dir(dir)
             .await?
             .into_iter()
             .find(|e| e.name == name)
             .map(|e| e.inode))
+    }
+
+    /// Look a name up through a directory's hash index.
+    ///
+    /// The outer `Option` says whether the index could be used at all: `None`
+    /// means the directory does not have one that this code understands, and
+    /// the caller should read the directory the slow way rather than conclude
+    /// the name is absent.
+    async fn lookup_indexed(&self, dir: &Inode, name: &[u8]) -> Result<Option<Option<u32>>> {
+        let block_size = self.block_size() as usize;
+        let Some(root_block) = self.resolve_block(dir, 0).await? else {
+            return Ok(None);
+        };
+        let root = self.read_block(root_block).await?;
+        if htree::count_offset(&root, block_size) != Some(htree::ROOT_COUNT_OFFSET) {
+            return Ok(None);
+        }
+
+        // The root records which hash it was built with; the superblock's
+        // flags say which signedness convention that hash used.
+        let version = htree::version_for(htree::root_hash_version(&root), self.superblock().flags);
+        let (hash, _) = htree::dirhash(version, name, &self.superblock().hash_seed);
+
+        // Descend to the block whose index covers this hash.
+        let mut node = root;
+        let mut offset = htree::ROOT_COUNT_OFFSET;
+        if htree::indirect_levels(&node) > 0 {
+            let chosen = htree::find(&node, offset, hash)?;
+            let (_, child) = htree::entry(&node, offset, chosen);
+            let Some(physical) = self.resolve_block(dir, child as u64).await? else {
+                return Ok(None);
+            };
+            node = self.read_block(physical).await?;
+            match htree::count_offset(&node, block_size) {
+                Some(found) => offset = found,
+                None => return Ok(None),
+            }
+        }
+
+        let count = htree::count(&node, offset) as usize;
+        let mut at = htree::find(&node, offset, hash)?;
+
+        // Names that share a hash can spill into the following leaves, which
+        // say so by setting the low bit of their own hash — the one bit the
+        // hash itself never uses. Without following that, a lookup would stop
+        // at the first leaf and miss them.
+        loop {
+            let (_, leaf) = htree::entry(&node, offset, at);
+            let Some(physical) = self.resolve_block(dir, leaf as u64).await? else {
+                return Ok(None);
+            };
+            let buf = self.read_block(physical).await?;
+            for entry in dirent::parse_block(&buf)? {
+                if entry.inode != 0 && entry.name == name {
+                    return Ok(Some(Some(entry.inode)));
+                }
+            }
+
+            at += 1;
+            if at >= count {
+                return Ok(Some(None));
+            }
+            let (next, _) = htree::entry(&node, offset, at);
+            if next & 1 == 0 {
+                return Ok(Some(None));
+            }
+        }
     }
 
     /// Resolve an absolute path to an inode number.

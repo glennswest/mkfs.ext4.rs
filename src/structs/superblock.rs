@@ -598,6 +598,19 @@ impl Superblock {
         self.inodes_per_group.div_ceil(self.inodes_per_block())
     }
 
+    /// Whether directories may carry a hash index.
+    pub fn has_dir_index(&self) -> bool {
+        self.feature_compat.contains(CompatFeatures::DIR_INDEX)
+    }
+
+    /// Whether directory entries record what kind of thing they name.
+    ///
+    /// Without this every entry's file-type byte must be zero, which is why it
+    /// is asked about rather than assumed.
+    pub fn has_filetype(&self) -> bool {
+        self.feature_incompat.contains(IncompatFeatures::FILETYPE)
+    }
+
     /// Whether metadata checksums are in use.
     pub fn has_metadata_csum(&self) -> bool {
         self.feature_ro_compat

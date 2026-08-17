@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### 2026-08-14
+- **feat:** `Filesystem::lookup` walks a directory's hash index when it has
+  one, answering in a two- or three-block walk instead of a read of the whole
+  directory. Runs of names that share a hash are followed across leaves.
+- **feat:** `Superblock::has_dir_index` and `has_filetype`.
+- **fix:** `htree::set_entry` no longer writes the first entry's hash. Those
+  four bytes are the index's count and limit — `struct ext2_dx_countlimit` and
+  the first `struct ext2_dx_entry` deliberately share an address. Writing a
+  hash there set the limit to zero, which put the checksum tail on top of the
+  first entry's block pointer: a tree that passed every structural check and
+  pointed at nothing.
+
 ### 2026-08-13
 - **feat:** `structs::htree` — the `dir_index` on-disk format: the directory
   hash (legacy, half-MD4 and TEA, in both the signed and unsigned conventions),
