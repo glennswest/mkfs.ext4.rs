@@ -19,6 +19,13 @@
   references, in four kinds — `bg_flags` missing `INODE_ZEROED` (16), `bg_flags`
   missing `BLOCK_UNINIT` (8), `s_lpf_ino` recorded rather than left zero (6),
   and the resize inode's block map, which *is* the reserved GDT blocks (3).
+- **docs:** corrected how this crate describes its own provenance, in the
+  README, `CLAUDE.md` and the deck. It was written **from the ext4
+  specification**, then held to real `mke2fs` output by the comparison tool,
+  with the e2fsprogs source consulted at the specific fields where the two
+  disagreed — to establish *why* a difference is there. Saying it was "derived
+  from the e2fsprogs source" described neither the method nor the provenance
+  accurately.
 - **docs:** the deck now names the culprit instead of describing the mechanism
   around it. The analysis loop is drawn as a cartoon strip — six panels, the
   time between them, and the assistant's own confident wrong answers in full,

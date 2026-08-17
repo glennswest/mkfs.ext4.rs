@@ -2,9 +2,11 @@
 
 Async, parallel **ext2 / ext3 / ext4** formatter and checker in pure Rust.
 
-A from-scratch reimplementation of `mke2fs` and `e2fsck`, written against the
-[e2fsprogs](https://github.com/tytso/e2fsprogs) source as the reference for
-every on-disk field, default and geometry rule.
+A from-scratch reimplementation of `mke2fs` and `e2fsck`, written from the ext4
+on-disk specification and then held to real `mke2fs` output: a comparison tool
+finds every difference between the two filesystems, and the
+[e2fsprogs](https://github.com/tytso/e2fsprogs) source is consulted at those
+specific points to establish *why* the difference exists.
 
 ## Using it
 
@@ -75,8 +77,10 @@ Two properties the C tools cannot offer a Rust storage engine:
   formats its own in-memory or network-backed volume directly — no loopback,
   no `/dev` node, no shelling out to `mkfs.ext4`.
 
-It is also *correct by reference*: defaults and layout come from what `mke2fs`
-actually computes, not from a reading of the spec plus a guess.
+It is also *correct by reference*. The spec gives the shape; the differences a
+comparison against real `mke2fs` output turns up are what give the values. Each
+one is chased to a reason rather than adjusted until it disappears — which is
+the difference between matching and merely resembling.
 
 ## Status
 

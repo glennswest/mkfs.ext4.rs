@@ -1,7 +1,9 @@
 # CLAUDE.md — mkfs-ext4
 
 Async, parallel ext2/ext3/ext4 formatter and checker in pure Rust. Reimplements
-`mke2fs` and `e2fsck` from the e2fsprogs source as the reference.
+`mke2fs` and `e2fsck` from the ext4 specification, held to real `mke2fs`
+output by a comparison tool, with the e2fsprogs source consulted at the
+specific points where the two differ.
 
 - **Crate:** `mkfs-ext4` (lib `mkfs_ext4`)
 - **Version:** 1.0.2 — see `Cargo.toml` (single version location)
@@ -17,8 +19,9 @@ Linux kernel mounts and writes, and that **RouterOS (lwext4) mounts but refuses
 every write to** — stormblock#39. Three days went into adjusting that code
 against the symptom. This crate does not extend it and does not start from it.
 
-The rule here: **match what `mke2fs` actually writes, field for field, derived
-from the e2fsprogs source.** Where a value is a judgement call in our code and a
+The rule here: **match what `mke2fs` actually writes, field for field.** Write
+from the spec, diff the result against real `mke2fs` output, and for every
+difference go to the source at that one point to find out why it is there. Where a value is a judgement call in our code and a
 computed default in `mke2fs`, we compute it the way `mke2fs` does. A consumer
 that disagrees with real `mke2fs` output is then a consumer bug with a reference
 to point at, not an open-ended guess about feature flags.
@@ -37,8 +40,10 @@ to point at, not an open-ended guess about feature flags.
 
 ## Work plan
 
-- [x] Study the e2fsprogs source (`ext2_fs.h`, `mke2fs.c`, `initialize.c`,
-      `alloc_tables.c`, `csum.c`, `mkjournal.c`, `mke2fs.conf.in`)
+- [x] Work the specification, with the e2fsprogs source (`ext2_fs.h`,
+      `mke2fs.c`, `initialize.c`, `alloc_tables.c`, `csum.c`, `mkjournal.c`,
+      `mke2fs.conf.in`) as the place to look up why a specific difference
+      exists
 - [x] Scaffold the crate
 - [x] `device` — async `BlockDevice` trait, file / memory implementations
 - [x] `structs` — superblock, group descriptors, inode, dirent, extents

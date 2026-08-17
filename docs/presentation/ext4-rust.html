@@ -370,37 +370,65 @@
   <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>The rule</span><span class="counter"></span></div>
 </section>
 
-<!-- 8 · SPEC VS SOURCE -->
+<!-- 8 · THE METHOD -->
 <section class="slide">
   <div class="kicker">Focus, part three</div>
-  <h2>The spec tells you the shape. <span class="accent">The source tells you the value.</span></h2>
+  <h2>Write from spec. <span class="accent">Then find out where you're wrong.</span></h2>
   <div class="grow">
-    <p>Both were needed, and they do different jobs. The documentation describes what
-       a superblock field <em>means</em>. It does not tell you what number a real
-       formatter puts there for a 256 MiB volume.</p>
-    <table style="margin-top:1vh">
-      <tr><th style="width:34%">From the spec</th><th>Only from the source</th></tr>
+    <p>The code was written from the ext4 on-disk specification — not transcribed from
+       anybody's C. The specification is enough to produce a filesystem that is valid in
+       every particular and identical to nobody's. So that is only step one:</p>
+    <div class="flow">
+      <div class="node">Write from the spec<small>valid, plausible, unverified</small></div>
+      <div class="arrow">→</div>
+      <div class="node">Format the same geometry<small>as real <code>mke2fs</code>, pinned</small></div>
+      <div class="arrow">→</div>
+      <div class="node">Diff the two<small>a tool, not an opinion</small></div>
+      <div class="arrow">→</div>
+      <div class="node">Ask <em>why</em><small>the source, at that one point</small></div>
+    </div>
+    <div class="plain">
+      <b>The last step is the one that does the work.</b> A difference tells you
+      <em>that</em> you disagree; it never tells you who is right. Going to the reference
+      implementation at exactly that field turns a mismatch into a reason — and a reason
+      is what tells you whether to change your code or write down why you did not.
+    </div>
+    <p class="sub">Spot references, not a reading of the whole. You do not need to know
+       how <code>mke2fs</code> works. You need to know why it put a 4 there.</p>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>The method</span><span class="counter"></span></div>
+</section>
+
+<!-- 8b · WHAT THE SOURCE ANSWERED -->
+<section class="slide dark">
+  <div class="kicker">Focus, part three</div>
+  <h2>What the spec could not answer</h2>
+  <div class="grow">
+    <p class="sub" style="margin-bottom:1vh">Four differences the compare tool found, and
+       what the source said when asked about that one field.</p>
+    <table>
+      <tr><th style="width:30%">The difference</th><th>Why, once the source was asked</th></tr>
       <tr>
-        <td>What <code>s_reserved_gdt_blocks</code> is for</td>
-        <td>That those blocks are the resize inode's indirect blocks — so zeroing them is corruption, not tidiness</td>
+        <td>Reserved GDT blocks: we wrote zeros</td>
+        <td>They are not spare space. They <em>are</em> the resize inode's indirect blocks — so zeroing them is corruption, and the spec never says so</td>
       </tr>
       <tr>
-        <td>That <code>flex_bg</code> groups metadata together</td>
-        <td>That placement is an allocation, not arithmetic — a contiguous run collides with group 1's superblock backup at 256 MiB</td>
+        <td><code>flex_bg</code> metadata in the wrong place at 256 MiB</td>
+        <td>Placement is an allocation, not arithmetic. A contiguous run collides with group 1's superblock backup</td>
       </tr>
       <tr>
-        <td>That inodes and blocks have size defaults</td>
-        <td><code>mke2fs.conf</code>'s size classes, which pick them by volume size</td>
+        <td>Inode and block sizes differing by volume size</td>
+        <td><code>mke2fs.conf</code>'s size classes — a configuration file, not a format rule</td>
       </tr>
       <tr>
-        <td>That the journal has a checksum feature</td>
-        <td>That <code>mke2fs</code> does not set <code>csum_v3</code> at format time, even though it could</td>
+        <td>Journal <code>csum_v3</code>: we set it, <code>mke2fs</code> did not</td>
+        <td>Nothing was wrong. <code>mke2fs</code> simply does not set it at format time — a difference to record, not to fix</td>
       </tr>
     </table>
-    <p class="sub" style="margin-top:1vh">Implementing from the specification alone produces a filesystem that is
-       defensible in every particular and identical to nobody's.</p>
+    <div class="plain"><b>That last row is why the step exists.</b> Three of these were our
+      bugs and one was not, and the diff alone cannot tell them apart.</div>
   </div>
-  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>Spec vs source</span><span class="counter"></span></div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>Spot references</span><span class="counter"></span></div>
 </section>
 
 <!-- 9 · WHAT GOT BUILT -->
@@ -891,8 +919,10 @@ async fn write_at(…)        { … }
         something out beat any amount of "make it correct".</li>
       <li><b>Give it one rule that settles arguments.</b> "Match the reference, field for
         field" ends ambiguity by sending it somewhere checkable.</li>
-      <li><b>Spec <em>and</em> source.</b> The spec gives the shape; only the implementation
-        gives the values everyone else agrees on.</li>
+      <li><b>Write from the spec, then diff against the reference.</b> The spec gives a
+        valid filesystem. Only the diff tells you where valid is not the same as
+        compatible — and only the source, asked at that one field, tells you which of
+        you is wrong.</li>
       <li><b>Verify with something that is not you.</b> Our tests, our fsck and our
         assumptions all fail together. <code>e2fsck</code>, a kernel and <code>debugfs</code>
         fail separately — which is the whole value.</li>
