@@ -3,6 +3,16 @@
 ## [Unreleased]
 
 ### 2026-08-18
+- **fix:** `read_block_bitmap` and `read_inode_bitmap` returned the block on
+  disk even for a group flagged `BLOCK_UNINIT` or `INODE_UNINIT`, where
+  nothing was ever written to it — the flag says to compute the bitmap from
+  the geometry, and the descriptor checksum vouches for the flag. Once the
+  formatter stopped writing those bitmaps, our own `fsck` read them and
+  reported every uninitialised group as differing from the inodes in use. On a
+  fresh device the two agree by accident, because unwritten reads back as
+  zeros and an all-free bitmap is zeros; `a_dirty_medium_formats_just_as_clean`
+  formats onto a device filled with `0xff` first, so the difference between
+  "wrote zeros" and "wrote nothing" is visible to a test at all.
 - **perf:** two writes that no reader reads and that `mke2fs` does not make.
   Reserved GDT blocks in a backup group are reserved space and nothing more —
   only group 0's are the resize inode's indirect blocks, listing every backup
