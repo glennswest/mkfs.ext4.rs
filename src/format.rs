@@ -1220,7 +1220,13 @@ async fn write_group<D: BlockDevice + ?Sized>(
             dev.write_at(at, &one).await?;
         } else {
             dev.write_at(at, &gdt).await?;
-            if g.reserved_gdt_blocks > 0 {
+            // Reserved GDT blocks are only written where they hold something.
+            // In group 0 they are the resize inode's indirect blocks and list
+            // every backup copy; in a backup group they are reserved space and
+            // nothing more, so `mke2fs` writes the superblock and descriptors
+            // there and stops. On a 1 TiB filesystem that is eighteen copies of
+            // 1024 blocks — 72 MiB of zeros written for no reader.
+            if g.reserved_gdt_blocks > 0 && group == 0 && !plan.zeroed_medium {
                 dev.write_zeroes(
                     at + gdt.len() as u64,
                     g.reserved_gdt_blocks as u64 * block_size,
@@ -1230,10 +1236,22 @@ async fn write_group<D: BlockDevice + ?Sized>(
         }
     }
 
-    dev.write_at(layout.block_bitmap * block_size, &state.block_bitmap)
-        .await?;
-    dev.write_at(layout.inode_bitmap * block_size, &state.inode_bitmap)
-        .await?;
+    // A group whose descriptor says BLOCK_UNINIT or INODE_UNINIT has no
+    // authoritative bitmap on disk: the flag says to compute it from the
+    // geometry, and the descriptor checksum vouches for the flag. `mke2fs`
+    // does not write those bitmaps, and on a 1 TiB filesystem that is 7,653
+    // groups out of 8,192 — 62 MiB of blocks nothing will ever read.
+    //
+    // The bitmaps are still built, because their checksums go in the
+    // descriptor either way.
+    if state.desc.flags & bg_flags::BLOCK_UNINIT == 0 {
+        dev.write_at(layout.block_bitmap * block_size, &state.block_bitmap)
+            .await?;
+    }
+    if state.desc.flags & bg_flags::INODE_UNINIT == 0 {
+        dev.write_at(layout.inode_bitmap * block_size, &state.inode_bitmap)
+            .await?;
+    }
 
     // Inode tables are zeroed unless the caller asked for lazy initialisation,
     // which leaves them untouched and marks the group uninitialised instead.
