@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Writing ext4 in Rust</title>
+<title>Writing a Rust Library with AI</title>
 <style>
   :root {
     --rh-red: #EE0000;
@@ -174,14 +174,15 @@
 <!-- 1 · TITLE -->
 <section class="slide dark active">
   <div class="grow">
-    <div class="kicker">Rust · ext2/3/4 · Building with an AI</div>
-    <h1>Writing ext4 in Rust</h1>
-    <h1 style="color:#B8BBBE; font-weight:400; font-size:3.8vh; margin-top:1.5vh;">
-      Three days of analysis, one day of building —<br>and what made the difference
+    <div class="kicker">Rust · Method · Worked example</div>
+    <h1>Writing a Rust Library<br>with AI</h1>
+    <h1 style="color:#B8BBBE; font-weight:400; font-size:3.6vh; margin-top:1.5vh;">
+      A method, and the ext4 filesystem it was worked out on
     </h1>
-    <p class="sub" style="margin-top:4vh; font-size:2.2vh;">
-      Two crates: a formatter and checker that matches <code>mke2fs</code> field for field,<br>
-      and a userspace file writer that fills the filesystem in — no kernel, no mount, no root.
+    <p class="sub" style="margin-top:3.5vh; font-size:2.2vh;">
+      Three days of confident wrong answers, then one day to a formatter that matches
+      <code>mke2fs</code> field for field —<br>plus a checker, a differ, and a userspace
+      file writer that needs no kernel, no mount and no root.
     </p>
     <p style="margin-top:4.5vh; font-size:2.1vh;">Glenn West &nbsp;·&nbsp; August 2026</p>
   </div>
@@ -194,8 +195,8 @@
   <div class="grow">
     <div class="stat-row">
       <div class="stat"><h3>The loop</h3><p class="sub">Three days trying to fix code that already existed</p></div>
-      <div class="stat"><h3>The focus</h3><p class="sub">The definition and the one rule that made it buildable</p></div>
-      <div class="stat"><h3>The library</h3><p class="sub">What it does, feature by feature</p></div>
+      <div class="stat"><h3>The playbook</h3><p class="sub">Five moves — and what the AI could and could not do</p></div>
+      <div class="stat"><h3>The library</h3><p class="sub">What came out of it, feature by feature</p></div>
       <div class="stat"><h3>The proof</h3><p class="sub">Seven kinds of verification, and what each one alone missed</p></div>
     </div>
     <p class="sub" style="margin-top:2.5vh">
@@ -322,6 +323,24 @@
   <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>The turn</span><span class="counter"></span></div>
 </section>
 
+<!-- 5b · THE PLAYBOOK -->
+<section class="slide dark">
+  <div class="kicker">The method</div>
+  <h2>Five moves</h2>
+  <div class="grow">
+    <p class="sub" style="margin-bottom:1.4vh">Everything after this slide is one of these
+      five, worked out on a filesystem. They are in order, and the order matters.</p>
+    <div class="ladder">
+      <div class="rung"><b>1 · Refuse the loop</b><span>Stop adjusting existing code. The decision to define rather than adjust is the whole difference — and it has to come from you.</span></div>
+      <div class="rung"><b>2 · Write the definition</b><span>A handful of constraints that each rule something <em>out</em>. Before any code.</span></div>
+      <div class="rung"><b>3 · Give it one rule</b><span>Something that settles arguments by sending them somewhere checkable, rather than inviting another opinion.</span></div>
+      <div class="rung"><b>4 · Build the differ first</b><span>A tool that answers "am I the same as the reference?" — so the answer is a program's, not the model's.</span></div>
+      <div class="rung"><b>5 · Verify with what isn't you</b><span>Your code, your tests and your assumptions fail together. Somebody else's implementation fails separately.</span></div>
+    </div>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>The playbook</span><span class="counter"></span></div>
+</section>
+
 <!-- 6 · DEFINITION -->
 <section class="slide">
   <div class="kicker">Focus, part one</div>
@@ -429,6 +448,78 @@
       bugs and one was not, and the diff alone cannot tell them apart.</div>
   </div>
   <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>Spot references</span><span class="counter"></span></div>
+</section>
+
+<!-- 8c · WHAT IT COULD AND COULD NOT DO -->
+<section class="slide">
+  <div class="kicker">The method</div>
+  <h2>What the AI was good at — and what it never did</h2>
+  <div class="grow">
+    <div class="cols">
+      <div>
+        <h3 style="color:var(--ok)">Good at</h3>
+        <ul style="margin-top:0.6vh">
+          <li>Eighteen thousand lines of exacting, tedious, byte-level encoding — offsets, little-endian fields, checksums — without getting bored or sloppy</li>
+          <li>Holding a whole on-disk format in view at once, and writing the tests beside the code</li>
+          <li>Reproducing a twenty-year-old hash bit-for-bit from a description of it</li>
+          <li>Building the comparison tool that then caught its own mistakes</li>
+        </ul>
+      </div>
+      <div>
+        <h3 style="color:var(--rh-red)">Never did</h3>
+        <ul class="xlist" style="margin-top:0.6vh">
+          <li>Notice it was looping. Six hypotheses over three days, each delivered with the confidence of the first</li>
+          <li>Distrust its own word "proven"</li>
+          <li>Resist blaming a third party — twice, and wrongly</li>
+          <li>Register that its tests agreeing with each other proved nothing</li>
+          <li>Ask "has anyone measured this on a 4 KiB-sector drive?" — that question came from a person</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>Good at / never did</span><span class="counter"></span></div>
+</section>
+
+<!-- 8d · FOCUSING IT -->
+<section class="slide red-strip">
+  <div class="kicker">The method</div>
+  <h2>Focusing it: what actually worked</h2>
+  <div class="grow">
+    <table>
+      <tr><th style="width:38%">Instead of</th><th>Say</th></tr>
+      <tr><td class="sub">"Make it correct"</td><td><b>"Match the reference, field for field"</b> — a goal invites an opinion; a rule sends the question somewhere checkable</td></tr>
+      <tr><td class="sub">"Fix the write path"</td><td><b>"Write it from the spec. Do not read the old code"</b> — otherwise the old assumptions come along</td></tr>
+      <tr><td class="sub">"Is it right?"</td><td><b>"What does the diff say?"</b> — ask for the difference, not the verdict</td></tr>
+      <tr><td class="sub">"Fix that difference"</td><td><b>"Why is it there?"</b> — demand the reason first; three of ours were bugs and one was not</td></tr>
+      <tr><td class="sub">"Do the tests pass?"</td><td><b>"What would prove you wrong?"</b> — "the tests pass" is not an answer when you wrote the tests</td></tr>
+    </table>
+    <div class="plain"><b>And state boundaries once, in writing.</b> "Nothing in this crate reads
+      or writes a path outside the device it was given" did more than any review would have.</div>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>Focusing it</span><span class="counter"></span></div>
+</section>
+
+<!-- 8e · TRANSFERRING IT -->
+<section class="slide dark">
+  <div class="kicker">The method</div>
+  <h2>This is not really about filesystems</h2>
+  <div class="grow">
+    <p>The method needs three things: a specification, an implementation everyone already
+       agrees with, and a way to compare your output to its output. Filesystems happen to
+       have all three lying around. So do most things worth reimplementing.</p>
+    <table style="margin-top:0.5vh">
+      <tr><th style="width:26%">Building</th><th style="width:30%">The reference</th><th>The differ</th></tr>
+      <tr><td>A filesystem</td><td><code>mke2fs</code></td><td>Format the same geometry, diff the images</td></tr>
+      <tr><td>A protocol</td><td>The canonical server or client</td><td>Replay a capture; diff the bytes on the wire</td></tr>
+      <tr><td>A codec or format writer</td><td>The reference encoder</td><td>Encode the same input; diff the output</td></tr>
+      <tr><td>A parser</td><td>The implementation everyone else uses</td><td>Feed both a corpus; diff the parse trees</td></tr>
+    </table>
+    <div class="plain"><b>No reference at all?</b> Then building the oracle <em>is</em> the
+      first task — a second independent implementation, a property test, a model, or a
+      recorded corpus of real-world artefacts. If you cannot say what would prove you
+      wrong, you are already in the loop and have not noticed.</div>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>Transferring it</span><span class="counter"></span></div>
 </section>
 
 <!-- 9 · WHAT GOT BUILT -->
@@ -936,7 +1027,7 @@ async fn write_at(…)        { … }
 <section class="slide dark">
   <div class="grow">
     <div class="kicker">Thank you</div>
-    <h1>Writing ext4 in Rust</h1>
+    <h1>Writing a Rust Library with AI</h1>
     <p class="sub" style="margin-top:2vh; font-size:2.3vh">
       MIT OR Apache-2.0 — the MIT arm is GPLv2-compatible, so it imposes nothing on a
       kernel or RHEL consumer.

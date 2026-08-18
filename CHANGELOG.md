@@ -19,6 +19,12 @@
   references, in four kinds — `bg_flags` missing `INODE_ZEROED` (16), `bg_flags`
   missing `BLOCK_UNINIT` (8), `s_lpf_ino` recorded rather than left zero (6),
   and the resize inode's block map, which *is* the reserved GDT blocks (3).
+- **docs:** the deck's subject is now the method rather than the filesystem —
+  *Writing a Rust Library with AI*, with ext4 as the worked example. Four new
+  slides: the five moves in order; what the assistant was good at and what it
+  never once did; the phrasings that focused it, against the ones that did not;
+  and how the method transfers to protocols, codecs and parsers — including
+  what to do when there is no reference implementation to diff against.
 - **docs:** corrected how this crate describes its own provenance, in the
   README, `CLAUDE.md` and the deck. It was written **from the ext4
   specification**, then held to real `mke2fs` output by the comparison tool,
