@@ -76,6 +76,19 @@ impl ExtentHeader {
     }
 }
 
+/// Where a node's checksum tail sits: `EXT4_EXTENT_TAIL_OFFSET` in
+/// `fs/ext4/ext4_extents.h`.
+///
+/// Not the end of the block. The tail follows the last entry `max` accounts
+/// for, and the checksum covers only the bytes before it. Those agree only
+/// when the space after the header divides into entries with exactly
+/// `TAIL_LEN` spare — true at 1 KiB and 4 KiB blocks, false at 2 KiB, 8 KiB
+/// and 32 KiB, where the end of the block is four bytes further out and no
+/// other reader looks there.
+pub fn tail_offset(max: u16) -> usize {
+    HEADER_LEN + max as usize * ENTRY_LEN
+}
+
 /// A leaf extent: a run of contiguous physical blocks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Extent {

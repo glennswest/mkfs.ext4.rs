@@ -163,14 +163,20 @@ async fn skipping_writes_on_a_zeroed_medium_changes_nothing() {
 /// Above about 56 GiB the journal needs more extents than the inode holds, so
 /// they move to an extent tree block of their own. That block is a tree node
 /// like any other: with `metadata_csum` it carries a tail holding its checksum,
-/// and the tail costs an entry's worth of room in the header's `max`.
+/// the tail costs an entry's worth of room in the header's `max`, and it sits
+/// at `EXT4_EXTENT_TAIL_OFFSET` — after the last entry `max` counts, not at
+/// the end of the block.
 ///
 /// Written without either, the filesystem is fine everywhere else and the
 /// journal cannot be read at all — `e2fsck` reports "Superblock has an invalid
 /// journal (inode 8)" and refuses to check the filesystem. Nothing smaller
 /// than 64 GiB reaches this path, which is why every fixture missed it.
-#[tokio::test]
-async fn a_journal_needing_an_external_extent_block_is_checksummed() {
+///
+/// Run at three block sizes on purpose. End-of-block and tail offset coincide
+/// only when the room after the header divides into entries with exactly four
+/// bytes spare, which 1 KiB and 4 KiB do and 2 KiB does not — so a 4 KiB-only
+/// case cannot see a checksum written in the wrong place.
+async fn journal_extent_block_is_checksummed_at(block_size: u32) {
     use mkfs_ext4::csum;
     use mkfs_ext4::device::{BlockDevice, FileDevice};
     use mkfs_ext4::format::format;
@@ -183,16 +189,22 @@ async fn a_journal_needing_an_external_extent_block_is_checksummed() {
     // Sparse, and `zeroed_medium` keeps the writes down to tens of megabytes.
     std::fs::File::create(&path)
         .unwrap()
-        .set_len(64 * 1024 * 1024 * 1024)
+        .set_len(64 * GIB)
         .unwrap();
 
     let dev = FileDevice::open(&path).await.unwrap();
-    format(&dev, &Params::new(Profile::Ext4).zeroed_medium(true))
-        .await
-        .unwrap();
+    format(
+        &dev,
+        &Params::new(Profile::Ext4)
+            .block_size(block_size)
+            .zeroed_medium(true),
+    )
+    .await
+    .unwrap();
 
     let fs = Filesystem::open(&dev).await.unwrap();
     assert!(fs.has_metadata_csum(), "this test is about the checksum");
+    assert_eq!(fs.block_size(), block_size, "the block size was not honoured");
 
     let journal = fs.read_inode(ino::JOURNAL).await.unwrap();
     let header = ExtentHeader::decode(&journal.block).unwrap();
@@ -217,10 +229,29 @@ async fn a_journal_needing_an_external_extent_block_is_checksummed() {
         "max must leave room for the checksum tail"
     );
 
-    let at = block.len() - extent::TAIL_LEN;
+    // `EXT4_EXTENT_TAIL_OFFSET`: where the kernel and e2fsck look, and the
+    // limit of what they checksum.
+    let at = extent::tail_offset(leaf_header.max);
     let want = csum::extent_block_csum(fs.csum_seed(), ino::JOURNAL, 0, &block[..at]);
     let got = mkfs_ext4::bytes::get_u32(&block, at);
     assert_eq!(got, want, "the journal's extent block carries no valid checksum");
 
     let _ = BlockDevice::flush(&dev).await;
+}
+
+#[tokio::test]
+async fn a_journal_needing_an_external_extent_block_is_checksummed() {
+    journal_extent_block_is_checksummed_at(4096).await;
+}
+
+/// The case the end-of-block offset gets wrong: 2 KiB blocks leave four bytes
+/// between the tail and the end of the block.
+#[tokio::test]
+async fn a_journal_extent_block_is_checksummed_at_2k_blocks() {
+    journal_extent_block_is_checksummed_at(2048).await;
+}
+
+#[tokio::test]
+async fn a_journal_extent_block_is_checksummed_at_1k_blocks() {
+    journal_extent_block_is_checksummed_at(1024).await;
 }

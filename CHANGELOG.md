@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### 2026-08-18
+- **fix:** The journal's extent leaf writes its checksum at
+  `EXT4_EXTENT_TAIL_OFFSET` — `sizeof(header) + sizeof(extent) * eh_max`, where
+  the kernel and `e2fsck` read it and the last byte they checksum — instead of
+  at the end of the block. The two coincide only when the room after the header
+  divides into entries with exactly four bytes spare: true at 1 KiB and 4 KiB
+  blocks, false at 2 KiB, 8 KiB and 32 KiB, where the checksum landed four
+  bytes past where any other reader looks. On such a filesystem a journal
+  needing more than the four extents an inode holds got a leaf no foreign
+  reader would accept — reachable at 2 KiB, which `mke2fs` picks by size class.
+  Our own reader derived the offset the same wrong way, so `fsck::check` stayed
+  clean and only a real `e2fsck` objected. `extent::tail_offset` now names the
+  offset once, and the journal-extent test runs at 1 KiB, 2 KiB and 4 KiB —
+  without the fix only the 2 KiB case fails. Closes #1.
+
 ## [v1.3.0] — 2026-08-18
 
 ### Added

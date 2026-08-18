@@ -1505,14 +1505,17 @@ async fn write_journal<D: BlockDevice + ?Sized>(dev: &D, plan: &Plan, start: u64
     // The extent leaf, when the journal needed more extents than fit inline.
     //
     // This block is an extent tree node like any other, so with metadata_csum
-    // it carries a tail holding its checksum — and the tail costs an entry's
-    // worth of room, so `max` has to know about it too. Getting either wrong
+    // it carries a tail holding its checksum — the tail costs an entry's worth
+    // of room, so `max` has to know about it too, and it goes at
+    // `EXT4_EXTENT_TAIL_OFFSET`, after the last entry `max` counts, which is
+    // the end of the block only at 1 KiB and 4 KiB. Getting any of it wrong
     // leaves a journal that `e2fsck` cannot read at all.
     if let Some(leaf) = plan.journal_extent_leaf {
         let with_tail = plan.csum_scheme != GroupDescCsum::None;
         let mut buf = journal_extent_leaf_block(&plan.journal_extents, g.block_size, with_tail);
         if with_tail {
-            let at = buf.len() - extent::TAIL_LEN;
+            let max = extent::ExtentHeader::max_entries(g.block_size as usize, true);
+            let at = extent::tail_offset(max);
             let crc = csum::extent_block_csum(plan.csum_seed, ino::JOURNAL, 0, &buf[..at]);
             put_u32(&mut buf, at, crc);
         }
