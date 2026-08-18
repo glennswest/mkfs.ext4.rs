@@ -575,8 +575,7 @@
       <div>
         <h3>Scale</h3>
         <p class="sub">1 KiB to 4 KiB blocks. 16 MiB to 256 TiB. <code>meta_bg</code> past
-          ~200 TiB, where the group descriptor table stops fitting. A 1 TiB sparse
-          filesystem formats in 7 seconds and allocates 353 MiB.</p>
+          ~200 TiB, where the group descriptor table stops fitting.</p>
         <h3>Sector size</h3>
         <p class="sub">Drives report 512 or 4096, and it is a <em>floor</em>: a block
           smaller than a sector cannot be written a block at a time. Our choice matches
@@ -740,6 +739,7 @@ $ fio-ext4 disk.img tar -z backup.tar.gz</pre>
       <tr><td><b>1 KiB blocks on a 4 KiB-sector device.</b> The mechanism shipped without the detection.</td><td>Measuring a real device</td><td>Every test — none had a 4 KiB sector</td></tr>
       <tr><td><b>Zero <code>e_hash</code></b> on block-stored xattrs.</td><td>Real <code>e2fsck</code></td><td>The kernel, which accepted it</td></tr>
       <tr><td><b>Leaked xattr block on delete.</b> Reachable only from <code>i_file_acl</code>.</td><td>Real <code>e2fsck</code></td><td>Our fsck</td></tr>
+      <tr><td><b>16 GiB of inode tables written</b> that <code>mke2fs</code> never writes. A 1 TiB volume cost 17.15 GiB of real pages against its 18 MiB.</td><td>Counting the blocks the medium actually allocated</td><td><em>Everything.</em> Same bytes, same checksums, same <code>e2fsck</code>, and invisible to our own differ</td></tr>
     </table>
   </div>
   <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>What each caught</span><span class="counter"></span></div>

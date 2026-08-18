@@ -19,6 +19,12 @@
   references, in four kinds — `bg_flags` missing `INODE_ZEROED` (16), `bg_flags`
   missing `BLOCK_UNINIT` (8), `s_lpf_ino` recorded rather than left zero (6),
   and the resize inode's block map, which *is* the reserved GDT blocks (3).
+- **docs:** removed a wrong figure from the deck. It claimed a 1 TiB filesystem
+  formats in 7 seconds and allocates 353 MiB. Measured: **4m 11s and 17.15 GiB**
+  by default, or 26s and 1.15 GiB with `lazy_itable_init`. Real `mke2fs` on the
+  same geometry: under a second and 18 MiB. The gap is the inode table — 16 GiB
+  of zeros we write and `mke2fs` does not, plus a 1 GiB journal body it also
+  leaves unwritten. See the open issue on defaults.
 - **docs:** the deck's subject is now the method rather than the filesystem —
   *Writing a Rust Library with AI*, with ext4 as the worked example. Four new
   slides: the five moves in order; what the assistant was good at and what it
