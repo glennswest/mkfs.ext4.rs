@@ -2,7 +2,9 @@
 
 ## [Unreleased]
 
-### 2026-08-18
+## [v1.3.1] — 2026-08-18
+
+### Fixed
 - **fix:** The journal's extent leaf writes its checksum at
   `EXT4_EXTENT_TAIL_OFFSET` — `sizeof(header) + sizeof(extent) * eh_max`, where
   the kernel and `e2fsck` read it and the last byte they checksum — instead of

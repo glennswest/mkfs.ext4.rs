@@ -391,7 +391,7 @@ dependencies = [
 
 [[package]]
 name = "mkfs-ext4"
-version = "1.3.0"
+version = "1.3.1"
 dependencies = [
  "anyhow",
  "async-trait",
