@@ -3,6 +3,27 @@
 ## [Unreleased]
 
 ### 2026-08-18
+- **perf:** two writes that no reader reads and that `mke2fs` does not make.
+  Reserved GDT blocks in a backup group are reserved space and nothing more —
+  only group 0's are the resize inode's indirect blocks, listing every backup
+  copy — so only group 0's are written. And a group whose descriptor carries
+  `BLOCK_UNINIT` or `INODE_UNINIT` has no authoritative bitmap on disk: the
+  flag says to compute it from the geometry, and the descriptor checksum
+  vouches for the flag. The bitmaps are still built, because their checksums
+  go in the descriptor either way; they are simply not written. On a 1 TiB
+  ext4 with 8,192 groups: **17,563.7 MiB in 35,463 writes becomes 17,429.8 MiB
+  in 19,547** — 133.9 MiB and 45% of the write calls, of which 72 MiB is the
+  reserved GDT alone (80.0 MiB down to 8.0). Measured with
+  `examples/writemap`, before and after, rather than reasoned about.
+- **docs:** `examples/writemap.rs` — a device that stores nothing and records
+  every write, so a 1 TiB format costs no disk and still says exactly which
+  bytes it would have touched, classified block by block into what lives
+  there. A single write can span a whole flex group's worth of bitmaps, and
+  attributing all of it to the first block's kind is how a measurement lies to
+  you, so it does not.
+- **docs:** `examples/fsckgolden.rs` — runs our `fsck` over the recorded
+  real-`mke2fs` images, so "our checker is happy with their filesystems" is a
+  command rather than a claim.
 - **fix:** a journal larger than the four extents an inode holds — anything
   above about 56 GiB — moved its extents to an extent tree block of their own,
   and that block was written with neither the checksum tail `metadata_csum`
