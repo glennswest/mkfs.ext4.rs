@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### 2026-08-18
+- **fix:** a journal larger than the four extents an inode holds — anything
+  above about 56 GiB — moved its extents to an extent tree block of their own,
+  and that block was written with neither the checksum tail `metadata_csum`
+  requires nor a `max` that left room for one. The filesystem was correct
+  everywhere else and its journal could not be read at all: `e2fsck` reported
+  "Superblock has an invalid journal (inode 8)" and refused to check further.
+  Every fixture and every verification case stopped below 56 GiB, so nothing
+  reached the path. Now checked from 56 GiB to 1 TiB, and covered by a test
+  that asserts the leaf's checksum directly.
+- **feat:** `Params::zeroed_medium` — say that the device already reads back as
+  zeros, and the inode tables and journal body are not written, because they
+  are already what they must be. The image is **byte-identical** either way,
+  which a test asserts across ext2/3/4; the difference is only in how much was
+  written to produce it. On a 1 TiB volume: 17.15 GiB and 4m 11s becomes
+  151.8 MiB and 2s. True of a fresh sparse file, an untouched thin volume, or a
+  device just discarded — and of nothing else. Also `--zeroed-medium` on the
+  CLI.
+
 ### 2026-08-17
 - **test:** `tests/sector_size.rs` — the block size we choose for each
   combination of the two sector sizes real drives report (512 and 4096) and a

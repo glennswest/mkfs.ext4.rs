@@ -200,6 +200,20 @@ pub struct Params {
     /// `mke2fs -E lazy_itable_init`. Enormously faster on a large device, and
     /// safe only when the filesystem carries group descriptor checksums.
     pub lazy_itable_init: bool,
+    /// The device already reads back as zeros everywhere.
+    ///
+    /// Then the inode tables and the body of the journal need not be written:
+    /// they are already what they must be. The filesystem produced is
+    /// **byte-identical** to the one produced without this — the difference is
+    /// only in how much was written to get there, which on a 1 TiB volume is
+    /// about 17 GiB against about 1 GiB.
+    ///
+    /// True of a freshly created sparse file, of a thin volume that has never
+    /// been written, and of a device just discarded. **Not** true of a device
+    /// with anything on it: the inode tables would be marked zeroed while
+    /// holding whatever was there before, and a stale block in the journal
+    /// range with a plausible magic would be replayed as a transaction.
+    pub zeroed_medium: bool,
     /// Reserved-block owner. `mke2fs -E resuid=`.
     pub resuid: u16,
     /// Reserved-block group. `mke2fs -E resgid=`.
@@ -230,6 +244,7 @@ impl Default for Params {
             feature_spec: None,
             mkfs_time: None,
             lazy_itable_init: false,
+            zeroed_medium: false,
             resuid: 0,
             resgid: 0,
             concurrency: None,
@@ -316,6 +331,13 @@ impl Params {
     /// Fix the creation timestamp, making the output reproducible.
     pub fn mkfs_time(mut self, secs: u64) -> Self {
         self.mkfs_time = Some(secs);
+        self
+    }
+
+    /// Say that the device already reads back as zeros. See
+    /// [`Params::zeroed_medium`] for when that is true.
+    pub fn zeroed_medium(mut self, zeroed: bool) -> Self {
+        self.zeroed_medium = zeroed;
         self
     }
 

@@ -82,6 +82,13 @@ struct Args {
     #[arg(long)]
     lazy_itable_init: bool,
 
+    /// The device already reads back as zeros, so the inode tables and the
+    /// journal body need not be written. Produces an identical filesystem
+    /// from far fewer writes. True of a fresh sparse file, an untouched thin
+    /// volume, or a device just discarded — and of nothing else.
+    #[arg(long)]
+    zeroed_medium: bool,
+
     /// Creation timestamp, for a reproducible image.
     #[arg(long)]
     mkfs_time: Option<u64>,
@@ -126,6 +133,7 @@ async fn main() -> anyhow::Result<()> {
     params.feature_spec = args.features;
     params.mkfs_time = args.mkfs_time;
     params.lazy_itable_init = args.lazy_itable_init;
+    params.zeroed_medium = args.zeroed_medium;
     params.mmp_update_interval = args.mmp_update_interval;
     if args.mmp_update_interval.is_some() {
         // Asking for an interval is asking for the fence.

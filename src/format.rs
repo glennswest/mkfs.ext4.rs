@@ -112,6 +112,7 @@ struct Plan {
     csum_scheme: GroupDescCsum,
     csum_seed: u32,
     lazy_itable: bool,
+    zeroed_medium: bool,
     resuid: u16,
     resgid: u16,
 }
@@ -888,6 +889,7 @@ fn plan(device_size: u64, params: &Params) -> Result<Plan> {
         csum_scheme,
         csum_seed,
         lazy_itable: params.lazy_itable_init,
+        zeroed_medium: params.zeroed_medium,
         resuid: params.resuid,
         resgid: params.resgid,
     })
@@ -1236,7 +1238,15 @@ async fn write_group<D: BlockDevice + ?Sized>(
     // Inode tables are zeroed unless the caller asked for lazy initialisation,
     // which leaves them untouched and marks the group uninitialised instead.
     // Group 0 always gets a table: the reserved inodes live in it.
-    if !plan.lazy_itable || group == 0 {
+    //
+    // On a medium that already reads as zeros there is nothing to do either —
+    // and unlike lazy initialisation this changes no flag, because the table
+    // really is zeroed. It is the difference between "the kernel must zero
+    // this later" and "this is already what it needs to be". `mke2fs` takes
+    // the same view, which is why it marks every group ITABLE_ZEROED and
+    // writes no inode table at all.
+    let skip = plan.zeroed_medium || (plan.lazy_itable && group != 0);
+    if !skip {
         dev.write_zeroes(
             layout.inode_table * block_size,
             g.itable_blocks_per_group as u64 * block_size,
@@ -1461,8 +1471,9 @@ async fn write_journal<D: BlockDevice + ?Sized>(dev: &D, plan: &Plan, start: u64
 
     // The rest of the journal must be zero: a stale block with a plausible
     // magic would be replayed as a transaction. The journal need not be one
-    // run, so every run is cleared.
-    for (i, run) in plan.journal_runs.iter().enumerate() {
+    // run, so every run is cleared — unless the medium is already zero, in
+    // which case there is no stale block to find.
+    for (i, run) in plan.journal_runs.iter().enumerate().filter(|_| !plan.zeroed_medium) {
         let (from, len) = if i == 0 {
             (run.start + 1, run.len - 1)
         } else {
@@ -1474,8 +1485,19 @@ async fn write_journal<D: BlockDevice + ?Sized>(dev: &D, plan: &Plan, start: u64
     }
 
     // The extent leaf, when the journal needed more extents than fit inline.
+    //
+    // This block is an extent tree node like any other, so with metadata_csum
+    // it carries a tail holding its checksum — and the tail costs an entry's
+    // worth of room, so `max` has to know about it too. Getting either wrong
+    // leaves a journal that `e2fsck` cannot read at all.
     if let Some(leaf) = plan.journal_extent_leaf {
-        let buf = journal_extent_leaf_block(&plan.journal_extents, g.block_size, false);
+        let with_tail = plan.csum_scheme != GroupDescCsum::None;
+        let mut buf = journal_extent_leaf_block(&plan.journal_extents, g.block_size, with_tail);
+        if with_tail {
+            let at = buf.len() - extent::TAIL_LEN;
+            let crc = csum::extent_block_csum(plan.csum_seed, ino::JOURNAL, 0, &buf[..at]);
+            put_u32(&mut buf, at, crc);
+        }
         dev.write_at(leaf * block_size, &buf).await?;
     }
 

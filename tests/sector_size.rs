@@ -114,3 +114,113 @@ fn an_explicit_block_size_still_cannot_go_below_the_sector() {
         "refused, but not because of the sector size: {message}"
     );
 }
+
+/// Skipping the writes must not change the filesystem.
+///
+/// `zeroed_medium` says the device already reads back as zeros, so the inode
+/// tables and the journal body need not be written. If that is true, the image
+/// it produces must be *identical* to the one produced by writing them — and
+/// if it is not, the option is not an optimisation, it is a second format.
+#[tokio::test]
+async fn skipping_writes_on_a_zeroed_medium_changes_nothing() {
+    use mkfs_ext4::device::MemDevice;
+    use mkfs_ext4::format::format;
+
+    for profile in [Profile::Ext2, Profile::Ext3, Profile::Ext4] {
+        for size in [16 * MIB, 256 * MIB] {
+            // The hash seed is random per format unless pinned, so without
+            // this the two images differ by sixteen bytes for a reason that
+            // has nothing to do with what is being tested.
+            let pinned = || {
+                let mut p = Params::new(profile)
+                    .uuid(*b"0123456789abcdef")
+                    .mkfs_time(1_700_000_000);
+                p.hash_seed = Some(*b"fedcba9876543210");
+                p
+            };
+
+            let written = MemDevice::new(size);
+            format(&written, &pinned()).await.unwrap();
+
+            // MemDevice starts zeroed, which is exactly the precondition.
+            let skipped = MemDevice::new(size);
+            format(&skipped, &pinned().zeroed_medium(true)).await.unwrap();
+
+            let (a, b) = (written.to_vec(), skipped.to_vec());
+            let differing = a.iter().zip(&b).filter(|(x, y)| x != y).count();
+            assert_eq!(
+                differing,
+                0,
+                "{profile:?} at {} MiB: {differing} bytes differ when the zeroing is skipped",
+                size / MIB
+            );
+        }
+    }
+}
+
+/// A journal too large to describe with the four extents that fit in an inode.
+///
+/// Above about 56 GiB the journal needs more extents than the inode holds, so
+/// they move to an extent tree block of their own. That block is a tree node
+/// like any other: with `metadata_csum` it carries a tail holding its checksum,
+/// and the tail costs an entry's worth of room in the header's `max`.
+///
+/// Written without either, the filesystem is fine everywhere else and the
+/// journal cannot be read at all — `e2fsck` reports "Superblock has an invalid
+/// journal (inode 8)" and refuses to check the filesystem. Nothing smaller
+/// than 64 GiB reaches this path, which is why every fixture missed it.
+#[tokio::test]
+async fn a_journal_needing_an_external_extent_block_is_checksummed() {
+    use mkfs_ext4::csum;
+    use mkfs_ext4::device::{BlockDevice, FileDevice};
+    use mkfs_ext4::format::format;
+    use mkfs_ext4::fs::Filesystem;
+    use mkfs_ext4::structs::extent::{self, ExtentHeader};
+    use mkfs_ext4::structs::superblock::ino;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("big.img");
+    // Sparse, and `zeroed_medium` keeps the writes down to tens of megabytes.
+    std::fs::File::create(&path)
+        .unwrap()
+        .set_len(64 * 1024 * 1024 * 1024)
+        .unwrap();
+
+    let dev = FileDevice::open(&path).await.unwrap();
+    format(&dev, &Params::new(Profile::Ext4).zeroed_medium(true))
+        .await
+        .unwrap();
+
+    let fs = Filesystem::open(&dev).await.unwrap();
+    assert!(fs.has_metadata_csum(), "this test is about the checksum");
+
+    let journal = fs.read_inode(ino::JOURNAL).await.unwrap();
+    let header = ExtentHeader::decode(&journal.block).unwrap();
+    assert_eq!(
+        header.depth, 1,
+        "a 64 GiB journal should not have fitted inline; this test proves nothing"
+    );
+
+    // Follow the index to the leaf and check the tail the way e2fsck does.
+    let leaf = mkfs_ext4::structs::extent::ExtentIdx::decode(
+        &journal.block[extent::HEADER_LEN..extent::HEADER_LEN + extent::ENTRY_LEN],
+    )
+    .leaf;
+    let block = fs.read_block(leaf).await.unwrap();
+
+    let leaf_header = ExtentHeader::decode(&block).unwrap();
+    assert_eq!(leaf_header.depth, 0, "the leaf should hold extents");
+    assert!(leaf_header.entries > 0, "the leaf should describe the journal");
+    assert_eq!(
+        leaf_header.max,
+        ExtentHeader::max_entries(fs.block_size() as usize, true),
+        "max must leave room for the checksum tail"
+    );
+
+    let at = block.len() - extent::TAIL_LEN;
+    let want = csum::extent_block_csum(fs.csum_seed(), ino::JOURNAL, 0, &block[..at]);
+    let got = mkfs_ext4::bytes::get_u32(&block, at);
+    assert_eq!(got, want, "the journal's extent block carries no valid checksum");
+
+    let _ = BlockDevice::flush(&dev).await;
+}
