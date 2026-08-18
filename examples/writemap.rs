@@ -52,6 +52,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Classify block by block: a single write can span a whole flex group's
     // worth of bitmaps, and attributing all of it to the first block's kind
     // is how a measurement lies to you.
+    // A group's bitmaps and inode table do not live in that group. With
+    // flex_bg the whole flex group's are packed together in its first group,
+    // so asking only "what does the group this block sits in put here?"
+    // recognises the leader's and calls every other group's bitmap unknown —
+    // which is a measurement quietly crediting 62 MiB to the wrong row.
+    // Build the map from every group's own descriptors instead.
+    let mut meta: Vec<(u64, u64, &'static str)> = Vec::new();
+    for gi in 0..geom.group_count {
+        if let Ok(g) = geom.group(gi) {
+            meta.push((g.block_bitmap, g.block_bitmap + 1, "block bitmaps"));
+            meta.push((g.inode_bitmap, g.inode_bitmap + 1, "inode bitmaps"));
+            meta.push((
+                g.inode_table,
+                g.inode_table + geom.itable_blocks_per_group as u64,
+                "inode tables",
+            ));
+        }
+    }
+    meta.sort_unstable_by_key(|r| r.0);
+    let owner = |block: u64| -> Option<&'static str> {
+        let i = meta.partition_point(|r| r.0 <= block);
+        let (start, end, kind) = *meta.get(i.checked_sub(1)?)?;
+        (block >= start && block < end).then_some(kind)
+    };
+
     for &(offset, len) in writes.iter() {
         let first = offset / bs;
         let last = (offset + len - 1) / bs;
@@ -64,15 +89,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let gdt_to = gdt_from + geom.desc_blocks as u64;
             let rgdt_to = gdt_to + geom.reserved_gdt_blocks as u64;
 
-            let kind = match g {
-                Some(ref g) if block == g.block_bitmap => "block bitmaps",
-                Some(ref g) if block == g.inode_bitmap => "inode bitmaps",
-                Some(ref g) if block >= g.inode_table
-                    && block < g.inode_table + geom.itable_blocks_per_group as u64 => "inode tables",
-                _ if has_super && block == group_start => "superblocks (primary + backups)",
-                _ if has_super && block >= gdt_from && block < gdt_to => "GDT (primary + backups)",
-                _ if has_super && block >= gdt_to && block < rgdt_to => "reserved GDT (primary + backups)",
-                _ => "journal, root, lost+found, other",
+            let kind = match owner(block) {
+                Some(kind) => kind,
+                None if has_super && block == group_start => "superblocks (primary + backups)",
+                None if has_super && block >= gdt_from && block < gdt_to => "GDT (primary + backups)",
+                None if has_super && block >= gdt_to && block < rgdt_to => "reserved GDT (primary + backups)",
+                None => "journal, root, lost+found, other",
             };
             *tally.entry(kind).or_default() += bs;
             if kind == "journal, root, lost+found, other" {

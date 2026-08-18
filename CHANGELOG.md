@@ -3,6 +3,14 @@
 ## [Unreleased]
 
 ### 2026-08-18
+- **fix:** `examples/writemap` credited a group's bitmaps and inode table to
+  whichever group the blocks physically sit in. With `flex_bg` they sit in the
+  flex group's leader, so only the leader's were recognised and every other
+  group's landed in the catch-all row: inode tables read 1,024 MiB when they
+  were 16,384, and 62 MiB of bitmaps hid in "journal, root, lost+found,
+  other". The map is now built from every group's own descriptors, and the
+  leftover is two runs — the journal, and root plus `lost+found` in group 0.
+  The totals were never wrong, so the measurement in the entry below stands.
 - **fix:** `read_block_bitmap` and `read_inode_bitmap` returned the block on
   disk even for a group flagged `BLOCK_UNINIT` or `INODE_UNINIT`, where
   nothing was ever written to it — the flag says to compute the bitmap from
