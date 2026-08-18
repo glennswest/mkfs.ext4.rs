@@ -2,7 +2,27 @@
 
 ## [Unreleased]
 
-### 2026-08-18
+## [v1.3.0] — 2026-08-18
+
+### Added
+- **feat:** `Params::zeroed_medium` — say that the device already reads back as
+  zeros, and the inode tables and journal body are not written, because they
+  are already what they must be. The image is **byte-identical** either way,
+  which a test asserts across ext2/3/4; the difference is only in how much was
+  written to produce it. On a 1 TiB volume: 17.15 GiB and 4m 11s becomes
+  151.8 MiB and 2s. True of a fresh sparse file, an untouched thin volume, or a
+  device just discarded — and of nothing else. Also `--zeroed-medium` on the
+  CLI.
+- **test:** `tests/sector_size.rs` — the block size we choose for each
+  combination of the two sector sizes real drives report (512 and 4096) and a
+  range of capacities, asserted against values measured from `mke2fs` 1.47.3 on
+  real loop devices. The row that matters is a small volume on 4 KiB sectors:
+  its size class asks for 1024-byte blocks and the sector size overrules it,
+  which is the case that produced a mountable, unwritable filesystem in
+  stormblock#39. `verify-on-linux.sh` now re-derives the table from a real
+  `mke2fs` on every run, so it cannot go stale unnoticed.
+
+### Fixed
 - **fix:** `examples/writemap` credited a group's bitmaps and inode table to
   whichever group the blocks physically sit in. With `flex_bg` they sit in the
   flex group's leader, so only the leader's were recognised and every other
@@ -21,6 +41,24 @@
   zeros and an all-free bitmap is zeros; `a_dirty_medium_formats_just_as_clean`
   formats onto a device filled with `0xff` first, so the difference between
   "wrote zeros" and "wrote nothing" is visible to a test at all.
+- **fix:** a journal larger than the four extents an inode holds — anything
+  above about 56 GiB — moved its extents to an extent tree block of their own,
+  and that block was written with neither the checksum tail `metadata_csum`
+  requires nor a `max` that left room for one. The filesystem was correct
+  everywhere else and its journal could not be read at all: `e2fsck` reported
+  "Superblock has an invalid journal (inode 8)" and refused to check further.
+  Every fixture and every verification case stopped below 56 GiB, so nothing
+  reached the path. Now checked from 56 GiB to 1 TiB, and covered by a test
+  that asserts the leaf's checksum directly.
+- **fix(docs):** the deck's table headers were invisible on dark slides. The
+  file carries no doctype, so a browser opening it from disk renders it in
+  quirks mode, where a table does not inherit colour from its ancestors — the
+  header fell back to black on a black slide. Colour is now stated on `th` and
+  `td` instead of inherited, and the copy in this repository is a complete
+  document rather than a fragment. Every slide is checked for overflow at four
+  aspect ratios.
+
+### Changed
 - **perf:** two writes that no reader reads and that `mke2fs` does not make.
   Reserved GDT blocks in a backup group are reserved space and nothing more —
   only group 0's are the resize inode's indirect blocks, listing every backup
@@ -33,6 +71,8 @@
   in 19,547** — 133.9 MiB and 45% of the write calls, of which 72 MiB is the
   reserved GDT alone (80.0 MiB down to 8.0). Measured with
   `examples/writemap`, before and after, rather than reasoned about.
+
+### Documentation
 - **docs:** `examples/writemap.rs` — a device that stores nothing and records
   every write, so a 1 TiB format costs no disk and still says exactly which
   bytes it would have touched, classified block by block into what lives
@@ -42,33 +82,6 @@
 - **docs:** `examples/fsckgolden.rs` — runs our `fsck` over the recorded
   real-`mke2fs` images, so "our checker is happy with their filesystems" is a
   command rather than a claim.
-- **fix:** a journal larger than the four extents an inode holds — anything
-  above about 56 GiB — moved its extents to an extent tree block of their own,
-  and that block was written with neither the checksum tail `metadata_csum`
-  requires nor a `max` that left room for one. The filesystem was correct
-  everywhere else and its journal could not be read at all: `e2fsck` reported
-  "Superblock has an invalid journal (inode 8)" and refused to check further.
-  Every fixture and every verification case stopped below 56 GiB, so nothing
-  reached the path. Now checked from 56 GiB to 1 TiB, and covered by a test
-  that asserts the leaf's checksum directly.
-- **feat:** `Params::zeroed_medium` — say that the device already reads back as
-  zeros, and the inode tables and journal body are not written, because they
-  are already what they must be. The image is **byte-identical** either way,
-  which a test asserts across ext2/3/4; the difference is only in how much was
-  written to produce it. On a 1 TiB volume: 17.15 GiB and 4m 11s becomes
-  151.8 MiB and 2s. True of a fresh sparse file, an untouched thin volume, or a
-  device just discarded — and of nothing else. Also `--zeroed-medium` on the
-  CLI.
-
-### 2026-08-17
-- **test:** `tests/sector_size.rs` — the block size we choose for each
-  combination of the two sector sizes real drives report (512 and 4096) and a
-  range of capacities, asserted against values measured from `mke2fs` 1.47.3 on
-  real loop devices. The row that matters is a small volume on 4 KiB sectors:
-  its size class asks for 1024-byte blocks and the sector size overrules it,
-  which is the case that produced a mountable, unwritable filesystem in
-  stormblock#39. `verify-on-linux.sh` now re-derives the table from a real
-  `mke2fs` on every run, so it cannot go stale unnoticed.
 - **docs:** `examples/replay.rs` — diffs a directory of raw images against the
   golden `mke2fs` references, so the deck's claim about what the compare tool
   first reported is a command that can be run rather than a recollection.
@@ -105,13 +118,6 @@
   replaced, a `logical_sector_size()` left to its 512-byte default by a thin
   volume that is not a real block device and had to report it.
 - **docs:** `docs/presentation/thumbnail.html` and two rendered thumbnails.
-- **fix(docs):** the deck's table headers were invisible on dark slides. The
-  file carries no doctype, so a browser opening it from disk renders it in
-  quirks mode, where a table does not inherit colour from its ancestors — the
-  header fell back to black on a black slide. Colour is now stated on `th` and
-  `td` instead of inherited, and the copy in this repository is a complete
-  document rather than a fragment. Every slide is checked for overflow at four
-  aspect ratios.
 - **docs:** `docs/presentation/ext4-rust.html` — a deck on how the two crates
   were built: the analysis loop that spent three days on the wrong code, the
   definition and the single rule that broke it, the features, and the seven
