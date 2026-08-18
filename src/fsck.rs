@@ -1083,6 +1083,36 @@ mod tests {
             .join("\n")
     }
 
+    /// The same statement on a medium that does not read back as zeros.
+    ///
+    /// A group flagged `BLOCK_UNINIT` or `INODE_UNINIT` has no bitmap written
+    /// to it, so on a fresh device the difference between "wrote zeros" and
+    /// "wrote nothing" is invisible — every byte reads as zero either way, and
+    /// a test on a blank device cannot tell the two apart. Fill the device
+    /// first and it can: whatever was there stays there, and a reader that
+    /// trusts those blocks instead of the flag sees a bitmap full of ones.
+    #[tokio::test]
+    async fn a_dirty_medium_formats_just_as_clean() {
+        for profile in [Profile::Ext2, Profile::Ext3, Profile::Ext4] {
+            for size in [16 * MIB, 64 * MIB] {
+                let dev = MemDevice::new(size);
+                dev.write_at(0, &vec![0xffu8; size as usize]).await.unwrap();
+                let params = Params::new(profile)
+                    .uuid(*b"0123456789abcdef")
+                    .mkfs_time(1_700_000_000);
+                format(&dev, &params).await.unwrap();
+
+                let report = check(dev, &FsckOptions::check_only()).await.unwrap();
+                assert!(
+                    report.is_clean(),
+                    "{} at {size} bytes on a dirty medium:\n{}",
+                    profile.name(),
+                    describe(&report)
+                );
+            }
+        }
+    }
+
     /// The strongest statement this crate can make about itself: what the
     /// formatter writes, the checker finds nothing wrong with.
     #[tokio::test]

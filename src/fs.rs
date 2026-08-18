@@ -851,19 +851,48 @@ impl<D: BlockDevice> Filesystem<D> {
         }
     }
 
+    /// The bitmap a group's flags say to compute rather than read.
+    ///
+    /// `BLOCK_UNINIT` and `INODE_UNINIT` say the block on disk was never
+    /// written: nothing in the group is in use, and the group descriptor
+    /// checksum vouches for it. `mke2fs` skips those writes and so do we, so a
+    /// reader that trusted the block would be reading whatever the medium
+    /// happened to hold. Everything past the last real bit is padding, which
+    /// is set, exactly as a written bitmap has it.
+    fn uninit_bitmap(&self, bits_in_use: u32) -> Vec<u8> {
+        let block_size = self.superblock.block_size() as usize;
+        let mut bitmap = vec![0u8; block_size];
+        for bit in bits_in_use as usize..block_size * 8 {
+            bitmap[bit / 8] |= 1 << (bit % 8);
+        }
+        bitmap
+    }
+
     /// Read a group's block bitmap.
+    ///
+    /// A `BLOCK_UNINIT` group's bitmap is computed, not read — see
+    /// [`Filesystem::uninit_bitmap`].
     pub async fn read_block_bitmap(&self, group: u32) -> Result<Vec<u8>> {
         let desc = self.group_descs.get(group as usize).ok_or_else(|| {
             Error::corrupt("group descriptor", format!("no group {group}"))
         })?;
+        if desc.block_uninit() && self.csum_scheme != GroupDescCsum::None {
+            return Ok(self.uninit_bitmap(self.superblock.blocks_per_group));
+        }
         self.read_block(desc.block_bitmap).await
     }
 
     /// Read a group's inode bitmap.
+    ///
+    /// An `INODE_UNINIT` group's bitmap is computed, not read — see
+    /// [`Filesystem::uninit_bitmap`].
     pub async fn read_inode_bitmap(&self, group: u32) -> Result<Vec<u8>> {
         let desc = self.group_descs.get(group as usize).ok_or_else(|| {
             Error::corrupt("group descriptor", format!("no group {group}"))
         })?;
+        if desc.inode_uninit() && self.csum_scheme != GroupDescCsum::None {
+            return Ok(self.uninit_bitmap(self.superblock.inodes_per_group));
+        }
         self.read_block(desc.inode_bitmap).await
     }
 
