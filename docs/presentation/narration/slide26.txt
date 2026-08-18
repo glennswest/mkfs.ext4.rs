@@ -1,0 +1,6 @@
+Did you really fix the four K?
+Sector size support had been added, documented and released. The A.P.I. took a sector size. The tests passed.
+[beat=0.5] And on a real four kilobyte sector device it still produced a one kilobyte block filesystem. Because the mechanism had shipped without the detection.
+One thousand twenty four, measured on a real four kilobyte loop device. Four thousand ninety six is what make e two f s chose on the same device.
+The fix was to ask the kernel, rather than assume five hundred twelve.
+[e=0.85] And that is very likely the root cause of the original three day bug: a two hundred fifty six megabyte volume on four kilobyte sectors, formatted with one kilobyte blocks, which lwext four will not write to a block at a time.

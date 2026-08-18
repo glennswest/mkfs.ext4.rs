@@ -1,0 +1,4 @@
+The compare tool was written specifically so that is our output the same as make e two f s could be answered by a program instead of an opinion.
+It sorts every difference into three classes. Identity, like U.U.I.D. and timestamps, expected to differ, ignore. Incidental, like free block counters, differ without meaning. And structural: geometry, features, placement. Any difference there is a bug in one of the two.
+[beat=0.6] Not one of these had shown up as a test failure, because every test we owned checked our output against our own expectations.
+[e=0.9] Replayed today against the formatter as it stood before they were fixed: thirty three structural differences, over six references, in four kinds.

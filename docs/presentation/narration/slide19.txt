@@ -1,0 +1,4 @@
+Archives, streamed both ways. This is the operation an image build actually performs: take a rootfs tarball or a container layer, and lay it down with everything intact.
+Through a kernel, that needs root and a mount. Here it needs neither. Untar a rootfs. Pipe skopeo straight in, with gzip detected. Tar it back out.
+Nothing is held in memory. There's a source and sink pair that needs no runtime and no allocation, so a file, a pipe, a socket and a registry response are all the same thing. An archive larger than R.A.M. is not a problem.
+And layers stack properly. Whiteouts delete, opaque whiteouts empty a directory, and a replacing file gets a fresh inode, so it inherits none of the mode, owner or labels of the file underneath.

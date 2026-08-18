@@ -1,0 +1,5 @@
+This is not really about filesystems.
+The method needs three things. A specification. An implementation everyone already agrees with. And a way to compare your output to its output.
+Filesystems happen to have all three lying around. So do most things worth reimplementing.
+A protocol has a canonical server: replay a capture and diff the bytes on the wire. A codec has a reference encoder: encode the same input and diff the output. A parser has the implementation everyone else uses: feed both a corpus and diff the parse trees.
+[e=0.8] And if there's no reference at all, then building the oracle is the first task. Not an afterthought.

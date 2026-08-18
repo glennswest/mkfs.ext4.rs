@@ -1,0 +1,5 @@
+Some things cannot be tested against yourself, and a directory hash is the clearest case.
+Get it wrong and the filesystem is structurally perfect. Every block valid, every checksum right, every name filed in a leaf. Just the wrong leaf.
+[beat=0.5] There is no self-consistent test for that. Our lookups use our hash, so they agree with themselves no matter what it computes. The only way to know is to ask the implementation everyone else agrees with.
+So: debug f s, computing hashes independently. Twenty six values, three algorithms, seeded and unseeded, including names long enough to need several transform blocks. Pinned into the test suite as constants taken from debug f s, not from us.
+They matched on the first run.

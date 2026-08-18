@@ -1,0 +1,5 @@
+The way out was two instructions.
+We have wasted three days using proven. Need a stepback.
+And then: no need to analyze for the hundred thousandth time. Write from scratch, from source.
+[beat=0.5] That's the whole method, really. Stop adjusting: don't extend the existing code, don't start from it, don't even read it for inspiration. And go to the source, the actual implementation that everybody else's tools already agree with.
+[e=0.9] Rewriting sounds like the expensive option. It was finished the same day.

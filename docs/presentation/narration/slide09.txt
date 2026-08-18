@@ -1,0 +1,4 @@
+Then one rule. Match what make e two f s actually writes, field for field, derived from the e two f s progs source.
+Where a value is a judgement call in our code and a computed default in theirs, we compute it the way they do. Not a reasonable value. Not what the spec permits. The same value.
+[beat=0.5] Why a rule and not a goal? A goal like make it correct invites a new opinion every time something is ambiguous, and an A.I. has an unlimited supply of plausible opinions. A rule ends the conversation. Go and look at what the reference does.
+And it pays off downstream. A consumer that disagrees with real make e two f s output is now a consumer bug, with a reference to point at. That's exactly the argument that burned three days.

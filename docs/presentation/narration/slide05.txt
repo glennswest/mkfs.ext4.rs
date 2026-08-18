@@ -1,0 +1,5 @@
+Look at why that loop holds, because every panel in it is reasonable.
+Each one is a plausible hypothesis, argued well, and acted on. Not one of them was tested against a reference. They were tested against the symptom, and the symptom stayed the same either way.
+What an A.I. adds is an unlimited supply of confident, well-argued next hypotheses. It will not tire. It will not get bored. And it will never spontaneously say: I have been wrong five times, so my sixth answer is probably wrong too.
+Two of those six blamed somebody else's code. That's the least falsifiable answer available, and the most comfortable one.
+And proven did real damage. Proven is a claim about the past. That formatter had produced filesystems Linux accepted for months, and every one of those months was on five hundred twelve byte sector storage. The claim was true, and completely irrelevant.

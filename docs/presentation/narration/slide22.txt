@@ -1,0 +1,5 @@
+Here's what each one caught that the others didn't, and this is the argument for having all of them.
+The C.R.C. thirty two C convention. The reference updates a table raw, the Rust crate complements at both ends, so every metadata checksum was wrong. Caught by real e two f s c k. Missed by all of our tests, because they agreed with each other.
+Reserved group descriptor blocks zeroed: caught by the golden compare, missed by reading the spec.
+A flex b g run overlapping group one's superblock backup at two hundred fifty six megabytes: caught by the golden compare, missed by every smaller size.
+One kilobyte blocks on a four kilobyte sector device: caught only by measuring a real drive, and missed by every test, because none of them had a four kilobyte sector.

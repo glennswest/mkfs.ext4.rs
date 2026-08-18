@@ -29,3 +29,13 @@ temp/
 # Filesystem images produced by tests and manual runs
 *.img
 *.img.*
+
+# slidemaker production artifacts (regenerable from the deck + narration)
+docs/presentation/frames/
+docs/presentation/segs/
+docs/presentation/tts/
+docs/presentation/voice-*/
+docs/presentation/concat.txt
+docs/presentation/*.mp4
+docs/presentation/*.wav
+docs/presentation/*.m4a

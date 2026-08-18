@@ -1,0 +1,4 @@
+On-disk feature parity with make e two f s. Metadata checksums, sixty four bit, extents, flex b g, sparse super, resize inode, dir index, and the rest.
+It scales from one kilobyte to four kilobyte blocks, and from sixteen megabytes to two hundred fifty six terabytes.
+Sector size deserves a mention, because it caused everything in this talk. Drives report five hundred twelve or four thousand ninety six, and that number is a floor. A block smaller than a sector cannot be written a block at a time. Our choice matches make e two f s in every cell of the capacity by sector size matrix.
+And M.M.P., multiple mount protection. That's the fence that stops two hosts mounting one volume read-write and destroying it.

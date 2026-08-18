@@ -1,0 +1,4 @@
+So what was actually wrong?
+Not lwext four. Not MikroTik. A fifteen hundred line hand-rolled formatter whose defaults were chosen rather than derived. And it said so, in its own header comment: feature set is deliberately conservative, that is the set verified to mount read-write on Router O.S.
+Underneath it, a block size of four thousand ninety six as a constant. Not a decision.
+[e=0.85] Verified against the symptom. Mounting was the test, and mounting was never the problem. Every feature was picked by whether the symptom moved, so the feature list encoded three days of guesses as settled fact.

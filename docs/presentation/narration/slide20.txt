@@ -1,0 +1,3 @@
+Large directories need an index. Without one, finding a name means reading the directory until it turns up, and adding one means reading until a gap turns up. Filling a directory with n names costs n squared block reads. That's bearable at a hundred names, and not at ten thousand.
+This grows the index the way e two f s c k dash D grows one, not the way the kernel does.
+The kernel splits one leaf at a time, because it cannot stop the world. This builds images. So when a leaf won't take another name, the whole index is rebuilt, sorted by hash and repacked. One code path, instead of a leaf split and a node split and a root promotion that each have to be right on their own.

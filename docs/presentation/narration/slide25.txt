@@ -1,0 +1,5 @@
+This is the bug that passed everything we owned.
+In an index block, the count and limit header and the first index entry share an address, deliberately. The first entry has no hash, because those four bytes are the count and the limit.
+Writing a hash there set the limit to zero. A zero limit puts the checksum tail at the offset of the first entry's block pointer. So the checksum overwrote the pointer.
+[beat=0.6] And everything passed. Unit tests passed. Our own f s c k passed. Every name was still found, because a pointer that resolved to nothing made the lookup fall back to a linear scan, which worked perfectly, and silently.
+[e=0.9] It only became visible when a directory grew large enough to need a second level of the tree. Where there was nothing to fall back to.

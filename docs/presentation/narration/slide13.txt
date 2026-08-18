@@ -1,0 +1,6 @@
+So how do you actually focus it? Five swaps, and they're small.
+Instead of make it correct, say match the reference, field for field. A goal invites an opinion. A rule sends the question somewhere checkable.
+Instead of fix the write path, say write it from the spec, and don't read the old code. Otherwise the old assumptions come along.
+Instead of is it right, ask what does the diff say. Ask for the difference, not the verdict.
+Instead of fix that difference, ask why is it there. Demand the reason first.
+And instead of do the tests pass, ask what would prove you wrong. The tests pass is not an answer when you wrote the tests.

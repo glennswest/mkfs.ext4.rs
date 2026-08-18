@@ -1,0 +1,4 @@
+What came out of it is two crates.
+The first one creates the filesystem and checks it. Ext two, ext three and ext four from one code path, the way make e two f s does. A formatter that runs parallel across block groups. An f s c k with six passes that checks and repairs. And a structural compare between two filesystems.
+The second one fills it in. Files, directories, reads and writes at an offset. Permissions, ownership, timestamps. Symlinks, hard links, device nodes. Extended attributes, including SELinux labels. Tar in and out, streaming, and O.C.I. layers.
+[e=0.9] And it works on a Mac. None of it needs a Linux kernel to produce a Linux filesystem.

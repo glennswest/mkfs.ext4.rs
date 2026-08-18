@@ -1,0 +1,4 @@
+Four parts. The loop first, which is three days spent trying to fix code that already existed.
+Then the playbook. Five moves, and an honest account of what the A.I. could and could not do.
+Then the library itself, feature by feature. And finally the proof: seven kinds of verification, and what each one missed on its own.
+Every number in this talk comes out of the repositories. Commit timestamps, test counts, and the actual output of e two f s c k.

@@ -1,0 +1,6 @@
+Five moves. Everything after this slide is one of them, and the order matters.
+One: refuse the loop. Stop adjusting existing code. That decision has to come from you.
+Two: write the definition. A handful of constraints that each rule something out, before any code.
+Three: give it one rule. Something that settles arguments by sending them somewhere checkable.
+Four: build the differ first, so the answer belongs to a program rather than to the model.
+Five: verify with what isn't you. Your code, your tests and your assumptions all fail together.

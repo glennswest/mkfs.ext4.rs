@@ -1,0 +1,6 @@
+The lessons, and they're about working with an A.I. more than about Rust.
+Break the analysis loop from outside. It will generate hypothesis twenty as confidently as hypothesis one, forever. Noticing that you're in the loop is a human job.
+Distrust proven. It's a description of history, not a test.
+Watch for the other implementation's fault. Two of the six hypotheses blamed MikroTik. That's the least falsifiable answer available, and the most comfortable one, and lwext four had been behaving correctly the entire time.
+Write the definition before the code. Four constraints that each rule something out beat any amount of make it correct.
+And give it one rule that settles arguments.

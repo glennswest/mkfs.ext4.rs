@@ -1,0 +1,5 @@
+And then it happened again.
+The hand-rolled formatter was thrown away and replaced with this crate. The templates worked. Weeks later, the same symptom came back. Mounts, healthy, every write refused.
+[beat=0.5] This time it was not a bug in the formatter. It was one method left to its default.
+The volume implemented block device: size, read at, write at. And logical sector size was simply not implemented, so it answered five hundred twelve.
+The volume exported four kilobyte sectors. Nothing could ask the kernel, because a thin volume is not a real block device. It has to say. It said nothing, so the default spoke for it.

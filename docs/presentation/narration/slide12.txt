@@ -1,0 +1,4 @@
+An honest accounting. What the A.I. was good at, and what it never did.
+It was very good at eighteen thousand lines of exacting, tedious, byte-level encoding. Offsets, little-endian fields, checksums, without getting bored or sloppy. It held a whole on-disk format in view at once. It reproduced a twenty year old hash bit for bit from a description. And it built the comparison tool that then caught its own mistakes.
+[beat=0.6] What it never did: notice it was looping. Six hypotheses over three days, each delivered with the confidence of the first. It never distrusted its own word proven. It never resisted blaming a third party, twice, and wrongly. It never registered that its tests agreeing with each other proved nothing.
+And it never asked: has anyone measured this on a four kilobyte sector drive? That question came from a person.

@@ -1,0 +1,4 @@
+Extended attributes are the ones SELinux rides on. Without them, an SELinux system boots into a filesystem it will not let anything run from.
+Ext four keeps them in two places, and both had to be written. In the inode, in the spare room after the fixed fields, which is cheap. And in a block of its own when the set doesn't fit, reachable only from one pointer, which is exactly why it's easy to leak.
+[beat=0.5] Here's the trap. Block-stored entries need a per-entry hash. The inline form does not. Write a zero hash and the kernel accepts it quite happily.
+E two f s c k does not.

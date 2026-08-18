@@ -1,0 +1,6 @@
+Four differences the compare tool found, and what the source said when I asked about that one field.
+We wrote zeros into the reserved group descriptor blocks. They are not spare space. They are the resize inode's indirect blocks, so zeroing them is corruption, and the spec never says so.
+Flex b g metadata landed in the wrong place at two hundred fifty six megabytes, because placement is an allocation, not arithmetic.
+Inode and block sizes differed by volume size, which turned out to be size classes in a configuration file, not a format rule.
+And the journal checksum version three: we set it, make e two f s did not. Nothing was wrong there. It simply doesn't set it at format time.
+[e=0.85] That last row is why the step exists. Three of these were our bugs and one was not, and the diff alone cannot tell them apart.

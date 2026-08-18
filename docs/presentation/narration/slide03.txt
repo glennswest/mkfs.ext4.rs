@@ -1,0 +1,4 @@
+It starts with a storage engine that had a formatter. That formatter produced filesystems the Linux kernel mounted and wrote to happily.
+Router O.S. mounted them too. And then refused every single write.
+[beat=0.5] There's a trap hiding in that sentence. Mounts read-write, and is writable, are two different claims. Only the second one is a test.
+For three days I treated the first one as evidence. And the formatter was described as proven, which made it the last place anybody looked.

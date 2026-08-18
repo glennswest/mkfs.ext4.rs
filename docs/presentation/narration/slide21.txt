@@ -1,0 +1,5 @@
+Seven kinds of verification. And the distinction that matters is who they belong to.
+Unit tests: offsets asserted, not assumed. Necessary, and nowhere near sufficient. Our own f s c k, six passes over our own output, which shares our assumptions and therefore our blind spots. Those two prove only self-consistency.
+Then the ones that are somebody else. Seven real make e two f s images, byte comparable, with pinned U.U.I.D. and hash seed. Our structural compare tool. Real e two f s c k, over eleven configurations. A real kernel: loop mount, write, unmount, and check again.
+[e=0.85] That second check is the one that counts.
+And an external oracle: debug f s, computing the same directory hashes independently.

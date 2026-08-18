@@ -1,0 +1,4 @@
+The code was written from the ext four on-disk specification. Not transcribed from anybody's C.
+Here's the catch. The specification is enough to produce a filesystem that is valid in every particular, and identical to nobody's. So writing from the spec is only step one.
+Format the same geometry as real make e two f s, pinned. Diff the two images with a tool, not an opinion. And then ask why, at that one field.
+[e=0.85] That last step does all the work. A difference tells you that you disagree. It never tells you who is right.

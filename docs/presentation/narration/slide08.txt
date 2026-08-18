@@ -1,0 +1,6 @@
+The definition came first. Four constraints, written down before any code, and each one rules something out.
+Async and parallel across devices, so reads and writes take an immutable self reference, and one format fans out across block groups. The original was serial.
+Pure Rust, no C. No binding to e two f s progs, no unsafe, no casting a struct over a buffer. Every field encoded by hand.
+Device agnostic: a block device trait is the only seam. No file, no loopback, no round trip through the kernel.
+And byte-exactness is testable. Not looks right. Compared against recorded real make e two f s output for the same geometry.
+[e=0.8] One more line, stated once: nothing in this crate reads or writes a path outside the device it was given. That was worth more than any code review.

@@ -1,0 +1,5 @@
+Attributes and ownership are not decoration.
+A container will not start without the right modes. A tarball cannot be unpacked without owners.
+[e=0.85] An image where every file is six four four, owned by root, is not a root filesystem. It's a directory of files that happens to be shaped like one.
+So the A.P.I. takes them directly. Write shadow with mode six hundred. Write s u with the setuid bit. Make temp sticky. Change ownership into a user namespace range with thirty two bit ids. Create device nodes and symlinks.
+Device nodes matter for the same reason. No dev null, no working image.

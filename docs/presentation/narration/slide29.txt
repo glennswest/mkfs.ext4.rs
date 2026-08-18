@@ -1,0 +1,5 @@
+Where the answer wasn't.
+Three days produced six confident hypotheses, and the answer was in none of the places any of them pointed. Not the journal. Not metadata checksums. Not lwext four, and not MikroTik. The implementation everyone was ready to blame was behaving correctly the whole time.
+[beat=0.5] It was a default nobody had compared against anything. First a formatter whose feature list was chosen by whether the symptom moved. Then a sector size a volume never reported.
+Both are closed now. And not because the reference implementation is cleverer than we are.
+[e=0.9] Because make e two f s had already met a four kilobyte sector drive, and we had not. That is the whole argument for matching a reference, field for field.
