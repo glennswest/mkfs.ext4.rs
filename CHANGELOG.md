@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [v1.4.0] — 2026-08-18
+
+### Added
+- **feat:** `fsck` verifies the checksum on every extent-tree node that lives
+  in a block of its own, and `Filesystem::bad_extent_checksums` exposes the
+  same check. This is the check whose absence let v1.3.1's bug through: walking
+  an extent tree reads the entries and never looks at the four bytes after
+  them, so a tail written where no other reader looks passed our own `fsck`
+  while `e2fsck` reported "extent block passes checks, but checksum does not
+  match extent" and the kernel refused the file with EIO. A new test corrupts
+  a leaf's tail, leaving every entry intact, and asserts the check reports it —
+  a filesystem that only fails on a foreign reader is one we could not see
+  before. Relates to #1 and fio.ext4.rs#2.
+
 ## [v1.3.1] — 2026-08-18
 
 ### Fixed
