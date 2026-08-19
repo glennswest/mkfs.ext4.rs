@@ -527,6 +527,29 @@ async fn pass1_inodes<D: BlockDevice>(
                 );
             }
 
+            // The checksum on every extent-tree node that lives in a block of
+            // its own. Walking the tree does not touch these — the walk reads
+            // the entries and never looks at the four bytes after them — so a
+            // tail written where no other reader looks passes a walk and fails
+            // the kernel (mkfs.ext4.rs#1, fio.ext4.rs#2).
+            match fs.bad_extent_checksums(&inode, inum).await {
+                Ok(blocks) => {
+                    for block in blocks.iter().take(4) {
+                        report.push(
+                            1,
+                            "extent-csum",
+                            Severity::Serious,
+                            format!(
+                                "inode {inum} extent block {block} checksum does not match its contents"
+                            ),
+                        );
+                    }
+                }
+                // An unreadable or nonsensical tree; the walk above already
+                // said so, and saying it twice helps nobody.
+                Err(_) => {}
+            }
+
             // i_blocks counts every block the inode owns, in 512-byte sectors.
             // The resize inode is the exception: it also counts the reserved
             // descriptor blocks it indexes but does not exclusively own.

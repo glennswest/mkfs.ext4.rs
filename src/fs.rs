@@ -530,6 +530,89 @@ impl<D: BlockDevice> Filesystem<D> {
         Ok(())
     }
 
+    /// Every extent-tree node this inode keeps in a block of its own whose
+    /// checksum does not match its contents.
+    ///
+    /// The root in `i_block` is not one of them: it carries no tail, because
+    /// the inode's own checksum already covers it. A node that lives in a
+    /// block of its own ends with an `ext4_extent_tail` at
+    /// `EXT4_EXTENT_TAIL_OFFSET`, and both the kernel and `e2fsck` verify it
+    /// before trusting a single entry in the node — the kernel refusing the
+    /// file with EIO when it does not match.
+    ///
+    /// A checker that only walks the tree cannot see a tail written in the
+    /// wrong place, because it reads the entries it wrote and never looks at
+    /// the four bytes after them. That is how a filesystem no foreign reader
+    /// would accept passed a clean check here (mkfs.ext4.rs#1,
+    /// fio.ext4.rs#2). Reading them is the whole point of this.
+    pub async fn bad_extent_checksums(&self, inode: &Inode, inum: u32) -> Result<Vec<u64>> {
+        if !self.has_metadata_csum()
+            || !inode.uses_extents()
+            || !inode.has_block_map()
+            || inode.flags & iflags::INLINE_DATA != 0
+        {
+            return Ok(Vec::new());
+        }
+
+        let mut bad = Vec::new();
+        // (node bytes, the block it came from — `None` for the inline root)
+        let mut stack: Vec<(Vec<u8>, Option<u64>)> = vec![(inode.block.to_vec(), None)];
+        let mut guard = 0u32;
+
+        while let Some((node, from)) = stack.pop() {
+            guard += 1;
+            if guard > 1_000_000 {
+                return Err(Error::corrupt(
+                    "extent tree",
+                    "walk did not terminate; the tree is probably cyclic",
+                ));
+            }
+            let header = ExtentHeader::decode(&node)?;
+
+            if let Some(block) = from {
+                let at = extent::tail_offset(header.max);
+                if at + extent::TAIL_LEN > node.len() {
+                    // `max` puts the tail past the end of its own block, so
+                    // there is nowhere valid for it to be.
+                    bad.push(block);
+                } else {
+                    let want = csum::extent_block_csum(
+                        self.csum_seed,
+                        inum,
+                        inode.generation,
+                        &node[..at],
+                    );
+                    if get_u32(&node, at) != want {
+                        bad.push(block);
+                    }
+                }
+            }
+
+            if header.depth == 0 {
+                continue;
+            }
+
+            let space = match from {
+                None => extent::INLINE_LEN,
+                Some(_) => self.block_size() as usize,
+            };
+            let max = ExtentHeader::max_entries(space, false);
+            if header.entries > max {
+                return Err(Error::corrupt(
+                    "extent header",
+                    format!("{} entries claimed, only {max} fit", header.entries),
+                ));
+            }
+            for i in 0..header.entries as usize {
+                let at = extent::HEADER_LEN + i * extent::ENTRY_LEN;
+                let idx = ExtentIdx::decode(&node[at..at + extent::ENTRY_LEN]);
+                let child = self.read_block(idx.leaf).await?;
+                stack.push((child, Some(idx.leaf)));
+            }
+        }
+        Ok(bad)
+    }
+
     async fn walk_indirect(
         &self,
         inode: &Inode,

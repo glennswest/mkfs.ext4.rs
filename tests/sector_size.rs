@@ -255,3 +255,77 @@ async fn a_journal_extent_block_is_checksummed_at_2k_blocks() {
 async fn a_journal_extent_block_is_checksummed_at_1k_blocks() {
     journal_extent_block_is_checksummed_at(1024).await;
 }
+
+/// The check that would have caught the tail written in the wrong place.
+///
+/// Walking an extent tree reads the entries and never looks at the four bytes
+/// after them, so a checker that only walks cannot tell a good tail from one
+/// no other reader would accept. `e2fsck` verifies it; until this landed we
+/// did not, which is exactly how a filesystem the kernel refuses came back
+/// clean from our own `fsck` (#1, fio.ext4.rs#2).
+#[tokio::test]
+async fn fsck_reports_an_extent_block_whose_checksum_does_not_match() {
+    use mkfs_ext4::device::{BlockDevice, FileDevice};
+    use mkfs_ext4::format::format;
+    use mkfs_ext4::fs::Filesystem;
+    use mkfs_ext4::fsck::{self, FsckOptions};
+    use mkfs_ext4::structs::extent::{self, ExtentHeader};
+    use mkfs_ext4::structs::inode::Inode;
+    use mkfs_ext4::structs::superblock::ino;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("extent-csum.img");
+    std::fs::File::create(&path).unwrap().set_len(64 * GIB).unwrap();
+
+    let dev = FileDevice::open(&path).await.unwrap();
+    format(&dev, &Params::new(Profile::Ext4).zeroed_medium(true))
+        .await
+        .unwrap();
+
+    // As written, the filesystem is clean — including the new check.
+    let report = fsck::check(FileDevice::open(&path).await.unwrap(), &FsckOptions::check_only())
+        .await
+        .unwrap();
+    assert!(
+        !report.problems.iter().any(|p| p.code == "extent-csum"),
+        "a filesystem we just wrote must not have a bad extent checksum: {:?}",
+        report.problems
+    );
+
+    // Find the journal's extent leaf and corrupt only its tail, leaving every
+    // entry intact. The walk still succeeds; only the checksum is wrong, so
+    // nothing but the new check can notice.
+    let leaf = {
+        let fs = Filesystem::open(&dev).await.unwrap();
+        let journal = fs.read_inode(ino::JOURNAL).await.unwrap();
+        let header = ExtentHeader::decode(&journal.block).unwrap();
+        assert_eq!(header.depth, 1, "the journal should need a leaf of its own");
+        extent::ExtentIdx::decode(
+            &journal.block[extent::HEADER_LEN..extent::HEADER_LEN + extent::ENTRY_LEN],
+        )
+        .leaf
+    };
+
+    let fs = Filesystem::open(&dev).await.unwrap();
+    let block_size = fs.block_size() as u64;
+    let mut block = fs.read_block(leaf).await.unwrap();
+    let leaf_header = ExtentHeader::decode(&block).unwrap();
+    let at = extent::tail_offset(leaf_header.max);
+    let was = mkfs_ext4::bytes::get_u32(&block, at);
+    mkfs_ext4::bytes::put_u32(&mut block, at, was ^ 0xffff_ffff);
+    dev.write_at(leaf * block_size, &block).await.unwrap();
+    BlockDevice::flush(&dev).await.unwrap();
+
+    let report = fsck::check(FileDevice::open(&path).await.unwrap(), &FsckOptions::check_only())
+        .await
+        .unwrap();
+    assert!(
+        report.problems.iter().any(|p| p.code == "extent-csum"),
+        "a corrupted extent tail must be reported, got: {:?}",
+        report.problems
+    );
+
+    // The inode itself is untouched, so this is not just the inode checksum
+    // firing under another name.
+    let _ = Inode::decode(&fs.read_inode_raw(ino::JOURNAL).await.unwrap(), 256);
+}
