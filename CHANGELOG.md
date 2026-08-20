@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+## [v2.0.1] — 2026-08-20
+
+### Fixed
+- **fix:** `no_std` builds could not link at all: `crc32c` detects SSE4.2 at
+  runtime and so requires `std`, and `f64::floor` is not in `core`. `crc32c` is
+  now optional behind `std`, with a software `crc32c_sw` for firmware —
+  checksumming a superblock and a few inodes, not gigabytes — and the reserved
+  block count truncates by cast, which is the same value for a non-negative
+  number and what `mke2fs` computes anyway.
+- **fix:** The software crc32c initially omitted the inversion at both ends that
+  `crc32c::crc32c_append` performs, so it produced different values — a
+  filesystem written on a host would have disagreed with firmware about every
+  checksum it carries. Caught by the agreement test rather than in the field.
+
+### Added
+- **test:** `csum::sw_tests` asserts the software and accelerated crc32c agree
+  across five inputs and three seeds. This is the test that found the inversion
+  bug above, and it is the reason to have written it.
+
 ## [v2.0.0] — 2026-08-19
 
 ### Breaking

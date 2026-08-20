@@ -40,7 +40,14 @@ pub fn crc16(mut crc: u16, data: &[u8]) -> u16 {
 /// which is `raw(~0, uuid)` and not `append(~0, uuid)`.
 #[inline]
 pub fn crc32c(seed: u32, data: &[u8]) -> u32 {
-    !crc32c::crc32c_append(!seed, data)
+    #[cfg(feature = "std")]
+    {
+        !crc32c::crc32c_append(!seed, data)
+    }
+    #[cfg(not(feature = "std"))]
+    {
+        !crc32c_sw(!seed, data)
+    }
 }
 
 /// `EXT2_CRC32C_CHKSUM` — the only metadata checksum algorithm defined, and the
@@ -250,5 +257,62 @@ mod tests {
             group_desc_csum(GroupDescCsum::None, 0, &uuid, 7, &[0u8; 32]),
             0
         );
+    }
+}
+
+/// Castagnoli, reflected (`0x1EDC6F41` reversed): the bare table-free update,
+/// with no inversion at either end.
+const CRC32C_POLY: u32 = 0x82F6_3B78;
+
+fn crc32c_bare(mut crc: u32, data: &[u8]) -> u32 {
+    for &b in data {
+        crc ^= b as u32;
+        for _ in 0..8 {
+            let mask = (crc & 1).wrapping_neg();
+            crc = (crc >> 1) ^ (CRC32C_POLY & mask);
+        }
+    }
+    crc
+}
+
+/// Software stand-in for `crc32c::crc32c_append`, for `no_std`.
+///
+/// The `crc32c` crate detects SSE4.2 at runtime and so needs `std`. Firmware
+/// checksums a superblock, a group descriptor and a handful of inodes — not
+/// gigabytes — so the bitwise form is the right trade there.
+///
+/// **It has to invert at both ends**, because `crc32c_append` does: the bare
+/// update alone produces different values, and a filesystem written on a host
+/// would then disagree with firmware about every checksum it carries. The test
+/// below is what caught that.
+fn crc32c_sw(crc: u32, data: &[u8]) -> u32 {
+    !crc32c_bare(!crc, data)
+}
+
+#[cfg(all(test, feature = "std"))]
+mod sw_tests {
+    use super::crc32c_sw;
+
+    /// The software path must agree with the accelerated one, or a filesystem
+    /// written on a host and checked in firmware would disagree about every
+    /// checksum it carries.
+    #[test]
+    fn software_crc32c_matches_the_accelerated_one() {
+        for case in [
+            &b""[..],
+            b"123456789",
+            b"the quick brown fox",
+            &[0u8; 64][..],
+            &[0xFFu8; 1024][..],
+        ] {
+            for seed in [0u32, !0, 0xDEAD_BEEF] {
+                assert_eq!(
+                    crc32c_sw(seed, case),
+                    crc32c::crc32c_append(seed, case),
+                    "seed {seed:#x}, {} bytes",
+                    case.len()
+                );
+            }
+        }
     }
 }

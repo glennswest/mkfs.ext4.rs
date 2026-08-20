@@ -10,7 +10,7 @@
 //! without touching a device.
 
 #[cfg(not(feature = "std"))]
-use alloc::{string::ToString, vec::Vec};
+use alloc::vec::Vec;
 
 use crate::error::{Error, Result};
 use crate::features::{CompatFeatures, FeatureMasks, IncompatFeatures, RoCompatFeatures};
@@ -282,7 +282,10 @@ impl Geometry {
         };
 
         let r_blocks_count =
-            ((blocks_count as f64) * params.reserved_percent / 100.0).floor() as u64;
+            // `f64::floor` is `std`; casting to an integer truncates toward
+            // zero, which is the same thing for a non-negative value and is
+            // what `mke2fs` computes anyway.
+            ((blocks_count as f64) * params.reserved_percent / 100.0) as u64;
         if r_blocks_count >= blocks_count {
             return Err(Error::invalid(
                 "reserved blocks would be the whole filesystem",

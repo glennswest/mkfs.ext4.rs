@@ -1,6 +1,6 @@
 [package]
 name = "mkfs-ext4"
-version = "2.0.0"
+version = "2.0.1"
 edition = "2021"
 authors = ["Glenn West"]
 description = "Async, parallel ext2/ext3/ext4 formatter and checker in pure Rust — a from-scratch reimplementation of mke2fs and e2fsck"
@@ -25,7 +25,7 @@ futures = { version = "0.3", optional = true }
 
 # CRC32c drives every metadata_csum checksum; crc16 for legacy GDT_CSUM is
 # implemented here since no crate matches the ext4 polynomial usage exactly.
-crc32c = { version = "0.6", default-features = false }
+crc32c = { version = "0.6", optional = true }
 
 uuid = { version = "1", features = ["v4"], optional = true }
 thiserror = { version = "2", default-features = false }
@@ -51,7 +51,7 @@ default = ["std", "cli"]
 # existing consumer is unaffected. Turning it off leaves the synchronous
 # `read` path and the on-disk structures — which is what a UEFI driver links,
 # since it has no allocator beyond `alloc`, no runtime and no `std`.
-std = ["dep:tokio", "dep:async-trait", "dep:futures", "dep:uuid", "dep:tracing"]
+std = ["dep:tokio", "dep:async-trait", "dep:futures", "dep:uuid", "dep:tracing", "dep:crc32c"]
 # The mkfs.ext4 / fsck.ext4 binaries. Library consumers turn this off.
 cli = ["std", "dep:clap", "dep:tracing-subscriber", "dep:anyhow", "tokio/rt-multi-thread"]
 
