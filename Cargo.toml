@@ -1,6 +1,6 @@
 [package]
 name = "mkfs-ext4"
-version = "1.4.0"
+version = "2.0.0"
 edition = "2021"
 authors = ["Glenn West"]
 description = "Async, parallel ext2/ext3/ext4 formatter and checker in pure Rust — a from-scratch reimplementation of mke2fs and e2fsck"
@@ -19,18 +19,18 @@ path = "src/lib.rs"
 # full tokio (stormblock does) is unaffected.
 # "time" is for the MMP protocol's waits, which are the mechanism
 # rather than an optimisation.
-tokio = { version = "1", features = ["fs", "io-util", "rt", "sync", "macros", "time"] }
-async-trait = "0.1"
-futures = "0.3"
+tokio = { version = "1", features = ["fs", "io-util", "rt", "sync", "macros", "time"], optional = true }
+async-trait = { version = "0.1", optional = true }
+futures = { version = "0.3", optional = true }
 
 # CRC32c drives every metadata_csum checksum; crc16 for legacy GDT_CSUM is
 # implemented here since no crate matches the ext4 polynomial usage exactly.
-crc32c = "0.6"
+crc32c = { version = "0.6", default-features = false }
 
-uuid = { version = "1", features = ["v4"] }
-thiserror = "2"
-bitflags = "2"
-tracing = "0.1"
+uuid = { version = "1", features = ["v4"], optional = true }
+thiserror = { version = "2", default-features = false }
+bitflags = { version = "2", default-features = false }
+tracing = { version = "0.1", optional = true }
 
 # CLI binaries only.
 clap = { version = "4", features = ["derive"], optional = true }
@@ -45,9 +45,15 @@ tempfile = "3"
 flate2 = "1"
 
 [features]
-default = ["cli"]
+default = ["std", "cli"]
+
+# The async formatter, checker and device layer. On by default, so every
+# existing consumer is unaffected. Turning it off leaves the synchronous
+# `read` path and the on-disk structures — which is what a UEFI driver links,
+# since it has no allocator beyond `alloc`, no runtime and no `std`.
+std = ["dep:tokio", "dep:async-trait", "dep:futures", "dep:uuid", "dep:tracing"]
 # The mkfs.ext4 / fsck.ext4 binaries. Library consumers turn this off.
-cli = ["dep:clap", "dep:tracing-subscriber", "dep:anyhow", "tokio/rt-multi-thread"]
+cli = ["std", "dep:clap", "dep:tracing-subscriber", "dep:anyhow", "tokio/rt-multi-thread"]
 
 # Rust will not accept a "." in a crate name, so the binaries build as
 # mkfs-ext4 and fsck-ext4. Install them as mkfs.ext4 and fsck.ext4 — that is

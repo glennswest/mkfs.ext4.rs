@@ -4,6 +4,9 @@
 //! `lib/ext2fs/ext2_fs.h`. Names match those `mke2fs -O` accepts, so a feature
 //! string round-trips through this module unchanged.
 
+#[cfg(not(feature = "std"))]
+use alloc::{string::String, vec::Vec};
+
 use bitflags::bitflags;
 
 bitflags! {

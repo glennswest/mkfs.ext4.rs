@@ -13,6 +13,9 @@
 //! That indirection is what allows a filesystem's UUID to be restamped without
 //! rewriting every checksum on it.
 
+#[cfg(not(feature = "std"))]
+use alloc::{vec::Vec};
+
 /// CRC-16 as e2fsprogs computes it: reflected, polynomial 0x8005 (0xA001
 /// reflected), no final xor. `lib/ext2fs/crc16.c`.
 pub fn crc16(mut crc: u16, data: &[u8]) -> u16 {

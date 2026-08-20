@@ -9,6 +9,9 @@
 //! that ever goes dirty there leaves the filesystem read-only permanently —
 //! hence [`crate::params::Params::no_journal`].
 
+#[cfg(not(feature = "std"))]
+use alloc::{vec::Vec};
+
 use crate::bytes::*;
 use crate::csum;
 

@@ -6,6 +6,9 @@
 //! timestamps, the creation time, the high half of the checksum and the project
 //! id.
 
+#[cfg(not(feature = "std"))]
+use alloc::{vec::Vec};
+
 use crate::bytes::*;
 use crate::csum;
 use crate::error::{Error, Result};

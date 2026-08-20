@@ -51,32 +51,49 @@
 
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
+#![cfg_attr(not(feature = "std"), no_std)]
+
+#[macro_use]
+extern crate alloc;
 
 pub mod bytes;
 
+#[cfg(feature = "std")]
 pub mod compare;
 pub mod csum;
+#[cfg(feature = "std")]
 pub mod device;
 pub mod error;
 pub mod features;
+#[cfg(feature = "std")]
 pub mod format;
+#[cfg(feature = "std")]
 pub mod fs;
+#[cfg(feature = "std")]
 pub mod fsck;
 pub mod journal;
 pub mod layout;
+#[cfg(feature = "std")]
 pub mod mmp;
 pub mod params;
+pub mod read;
 pub mod structs;
 
 // The things a caller reaches for first, so a simple use looks simple.
+#[cfg(feature = "std")]
 pub use compare::{compare, CompareOptions, ComparisonReport};
+#[cfg(feature = "std")]
 pub use device::{BlockDevice, FileDevice, MemDevice};
+#[cfg(feature = "std")]
 pub use format::{format, Report};
+#[cfg(feature = "std")]
 pub use fs::Filesystem;
+#[cfg(feature = "std")]
 pub use fsck::{FsckOptions, FsckReport};
 pub use layout::Geometry;
 pub use params::{JournalSize, Params, Profile};
 pub use error::{Error, Result};
+pub use read::{BlockReader, Ext4};
 pub use features::{CompatFeatures, FeatureMasks, IncompatFeatures, RoCompatFeatures};
 pub use structs::{
     DirEntry, Extent, GroupDesc, Inode, Superblock, SUPERBLOCK_LEN, SUPERBLOCK_OFFSET,

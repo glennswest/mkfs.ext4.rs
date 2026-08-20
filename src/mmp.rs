@@ -14,6 +14,9 @@
 //!
 //! Mirrors `lib/ext2fs/mmp.c`.
 
+#[cfg(not(feature = "std"))]
+use alloc::{string::String, string::ToString, vec::Vec};
+
 use std::time::Duration;
 
 use crate::bytes::*;

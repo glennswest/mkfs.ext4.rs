@@ -9,6 +9,9 @@
 //! geometry can be tested — and diffed against a real `mke2fs` filesystem —
 //! without touching a device.
 
+#[cfg(not(feature = "std"))]
+use alloc::{string::ToString, vec::Vec};
+
 use crate::error::{Error, Result};
 use crate::features::{CompatFeatures, FeatureMasks, IncompatFeatures, RoCompatFeatures};
 use crate::params::{Params, SizeType};

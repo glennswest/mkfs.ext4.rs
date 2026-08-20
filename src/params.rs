@@ -5,6 +5,9 @@
 //! a 64 MiB ext4 filesystem gets 1 KiB blocks and one inode per 4 KiB, not the
 //! 4 KiB blocks a reading of the defaults section alone would suggest.
 
+#[cfg(not(feature = "std"))]
+use alloc::{string::String};
+
 use crate::features::{CompatFeatures, FeatureMasks, IncompatFeatures, RoCompatFeatures};
 
 /// Which filesystem to write.
@@ -58,7 +61,7 @@ impl Profile {
     }
 }
 
-impl std::str::FromStr for Profile {
+impl core::str::FromStr for Profile {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {

@@ -9,6 +9,9 @@
 //! casting a `repr(C)` struct over a buffer — that keeps the code free of
 //! `unsafe`, correct on big-endian hosts, and honest about padding.
 
+#[cfg(not(feature = "std"))]
+use alloc::{string::String};
+
 /// Read a `u8` at `off`.
 #[inline]
 pub fn get_u8(buf: &[u8], off: usize) -> u8 {

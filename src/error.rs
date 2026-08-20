@@ -1,11 +1,20 @@
 //! Errors surfaced by formatting and checking.
 
+#[cfg(not(feature = "std"))]
+use alloc::{string::String};
+
+#[cfg(feature = "std")]
 use std::io;
 
 /// Anything that can go wrong formatting or checking a filesystem.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// The underlying device failed a read, write or flush.
+    ///
+    /// Carries `std::io::Error`, so it exists only with `std`. A `no_std`
+    /// consumer reports device failures through [`Error::DeviceRead`] instead —
+    /// firmware has no `io::Error` to wrap.
+    #[cfg(feature = "std")]
     #[error("device I/O failed at offset {offset}: {source}")]
     Io {
         /// Byte offset the operation targeted.
@@ -13,6 +22,16 @@ pub enum Error {
         /// The underlying failure.
         #[source]
         source: io::Error,
+    },
+
+    /// A read failed, with no richer cause available.
+    ///
+    /// This is what the `no_std` read path returns: firmware hands back a bare
+    /// failure, and there is nothing to attach to it.
+    #[error("device read failed at offset {offset}")]
+    DeviceRead {
+        /// Byte offset the operation targeted.
+        offset: u64,
     },
 
     /// A read or write ran past the end of the device.
@@ -71,6 +90,7 @@ pub enum Error {
 }
 
 impl Error {
+    #[cfg(feature = "std")]
     pub(crate) fn io(offset: u64, source: io::Error) -> Self {
         Error::Io { offset, source }
     }
@@ -88,4 +108,4 @@ impl Error {
 }
 
 /// Result alias used throughout the crate.
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = core::result::Result<T, Error>;

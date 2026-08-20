@@ -16,6 +16,9 @@
 //! records every change in the report, so a caller can see what was done rather
 //! than trusting that something was.
 
+#[cfg(not(feature = "std"))]
+use alloc::{string::String, vec::Vec};
+
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::csum::{self, GroupDescCsum};

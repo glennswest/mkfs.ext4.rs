@@ -7,6 +7,9 @@
 //! Block groups are disjoint byte ranges, so they are written concurrently
 //! rather than one after another — the reason [`BlockDevice`] takes `&self`.
 
+#[cfg(not(feature = "std"))]
+use alloc::{string::String, string::ToString, vec::Vec};
+
 use std::sync::Arc;
 
 use futures::stream::{FuturesUnordered, StreamExt};

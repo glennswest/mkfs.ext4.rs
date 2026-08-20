@@ -14,6 +14,9 @@
 //! This module implements the in-inode form, which is where the attributes an
 //! image builder sets almost always fit.
 
+#[cfg(not(feature = "std"))]
+use alloc::{string::String, string::ToString, vec::Vec};
+
 use crate::bytes::*;
 use crate::error::{Error, Result};
 

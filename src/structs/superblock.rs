@@ -4,6 +4,9 @@
 //! are the offsets in that struct and are asserted in the tests at the bottom
 //! of this file; they are not to be inferred from field order here.
 
+#[cfg(not(feature = "std"))]
+use alloc::{string::String, string::ToString};
+
 use crate::bytes::*;
 use crate::error::{Error, Result};
 use crate::features::{CompatFeatures, IncompatFeatures, RoCompatFeatures};
@@ -639,6 +642,10 @@ impl Superblock {
     }
 
     /// The filesystem UUID in its canonical hyphenated form.
+    ///
+    /// Needs the `uuid` crate, so it is `std` only. A `no_std` consumer has
+    /// `self.uuid` as raw bytes, which is all firmware needs.
+    #[cfg(feature = "std")]
     pub fn uuid_string(&self) -> String {
         uuid::Uuid::from_bytes(self.uuid).hyphenated().to_string()
     }

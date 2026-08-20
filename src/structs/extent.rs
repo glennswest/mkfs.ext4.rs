@@ -5,6 +5,9 @@
 //! trees put the same header and entries in whole blocks, with a four-byte
 //! checksum tail when `metadata_csum` is on.
 
+#[cfg(not(feature = "std"))]
+use alloc::{vec::Vec};
+
 use crate::bytes::*;
 use crate::error::{Error, Result};
 

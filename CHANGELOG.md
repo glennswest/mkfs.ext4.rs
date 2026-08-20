@@ -2,6 +2,46 @@
 
 ## [Unreleased]
 
+## [v2.0.0] — 2026-08-19
+
+### Breaking
+- **BREAKING:** `std` is now a default feature. A consumer using
+  `default-features = false` previously still got the whole crate; it now gets
+  only the `no_std` core, and must ask for `features = ["std"]` to keep the
+  formatter, checker and device layer. **Consumers using default features are
+  unaffected** — `std` is on, every module is present, and the API is unchanged.
+
+### Added
+- **feat:** `read` — a synchronous, `no_std`, read-only path. `BlockReader` is
+  the seam (`fn read_at(&self, offset, buf)`), and `Ext4` mounts a filesystem,
+  resolves a path, walks an inode's extent tree and reads a file. No writing,
+  no allocation policy, no journal replay.
+
+  This exists because the consumer that needs an ext4 reader most cannot have a
+  runtime: **a UEFI driver reads a kernel out of a filesystem before the kernel
+  exists.** Writing a second reader for firmware would mean two hand-maintained
+  implementations of one on-disk format, drifting, where the failure mode is
+  *the node does not boot*. So the format has one definition and two ways to
+  reach it — the async `fs` for hosts, `read` for firmware, both over the same
+  `structs`.
+- **feat:** `Error::DeviceRead { offset }` — what the `no_std` path returns when
+  a read fails. `Error::Io` wraps `std::io::Error` and so is `std` only;
+  firmware has no `io::Error` to wrap.
+- **test:** Four round-trip tests read back filesystems *this crate formatted*,
+  at 1 KiB and 4 KiB blocks — superblock geometry, the root directory's `.` and
+  `..`, path resolution, and refusing a zeroed device. If the formatter and the
+  reader ever disagree about the layout, that is where it surfaces.
+
+### Changed
+- `tokio`, `async-trait`, `futures`, `uuid` and `tracing` are now optional,
+  enabled by `std`. `thiserror`, `crc32c` and `bitflags` build with
+  `default-features = false`.
+- `compare`, `device`, `format`, `fs`, `fsck` and `mmp` are gated on `std` —
+  they are the async I/O layer. `bytes`, `csum`, `features`, `journal`,
+  `layout`, `params` and `structs` were already synchronous and need nothing.
+- `Superblock::uuid_string` is `std` only; it needs the `uuid` crate. A `no_std`
+  consumer has `sb.uuid` as raw bytes, which is what firmware wants anyway.
+
 ## [v1.4.0] — 2026-08-18
 
 ### Added

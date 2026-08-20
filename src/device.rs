@@ -9,6 +9,9 @@
 //! image, a network-backed device — implements this trait and never materialises
 //! a file or a `/dev` node.
 
+#[cfg(not(feature = "std"))]
+use alloc::{vec::Vec};
+
 use std::io;
 use std::path::Path;
 use std::sync::Mutex;

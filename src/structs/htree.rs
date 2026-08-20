@@ -14,6 +14,9 @@
 //! e2fsprogs `lib/ext2fs/ext2_fs.h`, with the hash from
 //! `lib/ext2fs/dirhash.c`.
 
+#[cfg(not(feature = "std"))]
+use alloc::{vec::Vec};
+
 use crate::bytes::{get_u16, get_u32, put_u16, put_u32};
 use crate::csum::crc32c;
 use crate::error::{Error, Result};

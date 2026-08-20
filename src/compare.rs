@@ -12,6 +12,9 @@
 //! sits). [`Significance`] separates them, so a real difference is not lost in
 //! a list of expected ones.
 
+#[cfg(not(feature = "std"))]
+use alloc::{string::String, string::ToString, vec::Vec};
+
 use crate::csum::GroupDescCsum;
 use crate::device::BlockDevice;
 use crate::error::Result;

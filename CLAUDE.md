@@ -6,7 +6,7 @@ output by a comparison tool, with the e2fsprogs source consulted at the
 specific points where the two differ.
 
 - **Crate:** `mkfs-ext4` (lib `mkfs_ext4`)
-- **Version:** 1.4.0 — see `Cargo.toml` (single version location)
+- **Version:** 2.0.0 — see `Cargo.toml` (single version location)
 - **License:** MIT OR Apache-2.0
 - **Repo:** https://github.com/glennswest/mkfs.ext4.rs
 - **Directory:** `~/projects/mkfs.ext4.rs`. The crate covers ext2/ext3/ext4
@@ -74,8 +74,23 @@ to point at, not an open-ended guess about feature flags.
 - [x] `dir_index` — the directory hash and htree format here, maintained in
       `fio-ext4`. Hash values asserted against `debugfs -R "dx_hash"`; trees
       checked by real `e2fsck` and walked by a real kernel.
+- [x] `read` — synchronous `no_std` read path, so firmware can link the reader
+      instead of a second implementation of the format drifting against this one
+      (issue #2). `structs` was already sync; only `fs` and `device` were async.
 - [ ] stormblock integration path (file against stormblock#39, do not edit it
       from this repo)
+
+## Features
+
+| Feature | Default | What it brings |
+|---|---|---|
+| `std` | yes | the async formatter, checker and device layer — everything that was here before |
+| `cli` | yes | the `mkfs-ext4` / `fsck-ext4` binaries |
+| *(neither)* | — | `structs`, `layout`, `csum`, `bytes` and the synchronous `read` path: what a UEFI driver links |
+
+`default-features = false` used to leave the crate whole. As of 2.0.0 it leaves
+the `no_std` core, so a library consumer that wants the formatter asks for
+`features = ["std"]` explicitly.
 
 ## Verified
 

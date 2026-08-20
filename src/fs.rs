@@ -8,6 +8,9 @@
 //! [`crate::fsck`] checks with it and `fio.ext4.rs` reads and writes files with
 //! it. Neither needs a kernel, a mount or a loop device.
 
+#[cfg(not(feature = "std"))]
+use alloc::{string::String, vec::Vec};
+
 use crate::bytes::{get_u32, put_u32};
 use crate::csum::{self, GroupDescCsum};
 use crate::device::BlockDevice;

@@ -5,6 +5,9 @@
 //! each carries the distance to the next, and the last stretches to the end of
 //! the block (or to the checksum tail).
 
+#[cfg(not(feature = "std"))]
+use alloc::{string::String, vec::Vec};
+
 use crate::bytes::*;
 use crate::error::{Error, Result};
 
