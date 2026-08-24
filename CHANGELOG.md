@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [v2.0.3] — 2026-08-23
+
+### Added
+- **test:** `fsck_reports_a_journal_the_superblock_only_claims_to_have` —
+  v2.0.2 added the `journal-advertised-but-absent` check but nothing proved it
+  fires. The test builds a 64 MiB filesystem that really does have a journal,
+  takes the journal inode away while leaving `has_journal` set — re-encoding
+  the superblock so its checksum stays valid and nothing but this check can
+  notice — and requires `fsck` to name it at pass 0, `Serious`. A check with
+  no test is the same position the defect was found in.
+
 ## [v2.0.2] — 2026-08-23
 
 ### Fixed

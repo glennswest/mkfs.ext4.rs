@@ -107,3 +107,71 @@ fn ext2_is_untouched() {
         assert!(!geom.features.compat.contains(CompatFeatures::HAS_JOURNAL));
     }
 }
+
+/// The check that would have caught this in the first place.
+///
+/// Every pass passed the broken filesystems, which is why the defect survived
+/// a release: a writer's output verified only by its own reader proves
+/// nothing. So the shape gets a test of its own — build one deliberately, and
+/// require `fsck` to name it.
+#[tokio::test]
+async fn fsck_reports_a_journal_the_superblock_only_claims_to_have() {
+    use mkfs_ext4::device::{BlockDevice, FileDevice};
+    use mkfs_ext4::format::format;
+    use mkfs_ext4::fsck::{self, FsckOptions, Severity};
+    use mkfs_ext4::structs::superblock::{Superblock, SUPERBLOCK_LEN, SUPERBLOCK_OFFSET};
+
+    const CODE: &str = "journal-advertised-but-absent";
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("phantom-journal.img");
+    std::fs::File::create(&path).unwrap().set_len(64 * MIB).unwrap();
+
+    let dev = FileDevice::open(&path).await.unwrap();
+    format(&dev, &Params::new(Profile::Ext4).zeroed_medium(true))
+        .await
+        .unwrap();
+
+    // As written it is clean, and it really does have a journal.
+    let report = fsck::check(
+        FileDevice::open(&path).await.unwrap(),
+        &FsckOptions::check_only(),
+    )
+    .await
+    .unwrap();
+    assert!(
+        !report.problems.iter().any(|p| p.code == CODE),
+        "a filesystem we just wrote must have the journal it advertises: {:?}",
+        report.problems
+    );
+
+    // Take the journal inode away and leave the feature bit — the exact shape
+    // the formatter used to produce below the size class's floor. Re-encoding
+    // rewrites `s_checksum`, so nothing else is disturbed and only this check
+    // can notice.
+    {
+        let mut buf = [0u8; SUPERBLOCK_LEN];
+        dev.read_at(SUPERBLOCK_OFFSET, &mut buf).await.unwrap();
+        let mut sb = Superblock::decode(&buf).unwrap();
+        assert!(sb.journal_inum != 0, "the fixture needs a real journal first");
+        sb.journal_inum = 0;
+        dev.write_at(SUPERBLOCK_OFFSET, &sb.encode()).await.unwrap();
+        dev.flush().await.unwrap();
+    }
+
+    let report = fsck::check(
+        FileDevice::open(&path).await.unwrap(),
+        &FsckOptions::check_only(),
+    )
+    .await
+    .unwrap();
+    let found = report
+        .problems
+        .iter()
+        .find(|p| p.code == CODE)
+        .unwrap_or_else(|| {
+            panic!("fsck did not notice a journal that is not there: {:?}", report.problems)
+        });
+    assert_eq!(found.pass, 0);
+    assert_eq!(found.severity, Severity::Serious);
+}
