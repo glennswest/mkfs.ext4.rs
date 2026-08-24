@@ -22,6 +22,7 @@ use alloc::{string::String, vec::Vec};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::csum::{self, GroupDescCsum};
+use crate::features::CompatFeatures;
 use crate::device::BlockDevice;
 use crate::error::Result;
 use crate::fs::Filesystem;
@@ -309,6 +310,24 @@ async fn pass0_superblock<D: BlockDevice>(
                 sb.inode_size,
                 sb.block_size()
             ),
+        );
+    }
+
+    // A journal the superblock advertises but does not have.
+    //
+    // `has_journal` with no journal inode is a shape `mke2fs` never emits and
+    // a kernel will not mount: it looks the inode up, finds nothing, and
+    // refuses. This check exists because the formatter produced exactly that
+    // on filesystems under the journal size class's floor and every pass here
+    // passed it — a writer's output verified only by its own reader (#3).
+    if sb.feature_compat.contains(CompatFeatures::HAS_JOURNAL) && sb.journal_inum == 0 {
+        report.push(
+            0,
+            "journal-advertised-but-absent",
+            Severity::Serious,
+            "superblock sets has_journal but names no journal inode; a kernel will \
+             refuse to mount this filesystem"
+                .into(),
         );
     }
 

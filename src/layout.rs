@@ -14,7 +14,7 @@ use alloc::vec::Vec;
 
 use crate::error::{Error, Result};
 use crate::features::{CompatFeatures, FeatureMasks, IncompatFeatures, RoCompatFeatures};
-use crate::params::{Params, SizeType};
+use crate::params::{JournalSize, Params, SizeType};
 use crate::structs::superblock::{MIN_DESC_SIZE, MIN_DESC_SIZE_64BIT};
 
 /// Metadata blocks a single block group holds.
@@ -280,6 +280,28 @@ impl Geometry {
         } else {
             0
         };
+
+        // A filesystem must not advertise a journal it does not have.
+        //
+        // The feature comes from the profile and the *size* from a size class,
+        // and below `default_journal_blocks`'s floor that class declines to
+        // make one. Resolving the features before the block count is known
+        // meant the bit survived the journal: the result was a superblock with
+        // `has_journal` set, no journal blocks and no journal inode — a shape
+        // `mke2fs` never emits and a kernel will not mount. It lands on the
+        // smallest filesystems, which is where it is least likely to be
+        // noticed. See issue #3.
+        //
+        // `normalise` runs again rather than the dependent features being
+        // cleared by hand here, so there is one place that knows an orphan
+        // file needs a journal to replay it.
+        if matches!(params.journal, JournalSize::Default)
+            && features.compat.contains(CompatFeatures::HAS_JOURNAL)
+            && crate::journal::default_journal_blocks(blocks_count).is_none()
+        {
+            features.compat.remove(CompatFeatures::HAS_JOURNAL);
+            crate::params::normalise(&mut features).map_err(Error::IncompatibleFeatures)?;
+        }
 
         let r_blocks_count =
             // `f64::floor` is `std`; casting to an integer truncates toward

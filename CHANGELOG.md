@@ -2,6 +2,38 @@
 
 ## [Unreleased]
 
+## [v2.0.2] — 2026-08-23
+
+### Fixed
+- **fix:** a filesystem below the journal size class's floor advertised a
+  journal it did not have (#3). `has_journal` comes from the profile and the
+  journal's *size* from `default_journal_blocks`, which returns nothing below
+  2048 blocks — and the guard only ran one way: no feature meant no journal,
+  but no journal did not clear the feature. The result was a superblock with
+  `has_journal` set, zero journal blocks and `s_journal_inum` unset. `mke2fs`
+  never emits that shape and a kernel will not mount it: it looks the journal
+  inode up, finds nothing and refuses. It landed on filesystems of 1–7 MiB at
+  4 KiB blocks, which is where config, secret and log volumes live and where
+  it was least likely to be noticed. `Geometry::compute` now clears the
+  feature once the block count is known, and re-runs `normalise` rather than
+  clearing the dependent features by hand — so the orphan file goes with it,
+  since replaying one is a journal's job. On a 1 MiB filesystem that orphan
+  file was 128 KiB, an eighth of the whole thing.
+- **fix:** `fsck` passed those filesystems. Every pass ran and found nothing,
+  which is why the defect survived: a writer's output verified only by its own
+  reader proves nothing. Pass 0 now reports `journal-advertised-but-absent`
+  when the superblock sets `has_journal` and names no journal inode.
+
+### Added
+- **test:** `tests/journal_floor.rs` — every size from 1 to 7 MiB claims no
+  journal, 8 MiB and up still get one, the orphan file follows the journal,
+  and an explicitly sized `JournalSize::Blocks` is not second-guessed by the
+  size class.
+
+### Note
+- **Output changes for filesystems under 8 MiB at 4 KiB blocks.** They are
+  smaller and now mountable. Nothing above that floor changes.
+
 ## [v2.0.1] — 2026-08-20
 
 ### Fixed
