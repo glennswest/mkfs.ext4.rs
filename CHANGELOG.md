@@ -2,7 +2,21 @@
 
 ## [Unreleased]
 
+## [v2.0.4] — 2026-08-23
+
+### Fixed
+- **fix:** restore `Cargo.toml`, which v2.0.3 shipped empty. An in-place edit
+  truncated the file before reading it, and the tag was pushed without a build
+  in between. **Do not use v2.0.3** — its manifest does not parse, so cargo
+  cannot resolve it at all; v2.0.4 is v2.0.3 with the manifest intact and
+  nothing else changed. The tag is left in place rather than moved, because a
+  published tag that something may already have fetched should not change
+  meaning underneath it.
+
 ## [v2.0.3] — 2026-08-23
+
+**Broken — do not use.** Shipped with an empty `Cargo.toml`; superseded by
+v2.0.4, which is identical apart from the restored manifest.
 
 ### Added
 - **test:** `fsck_reports_a_journal_the_superblock_only_claims_to_have` —
