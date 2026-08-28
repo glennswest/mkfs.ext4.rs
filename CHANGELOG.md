@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### 2026-08-27
+- **feat:** `cache::CachedDevice` — a write-back block cache over any
+  `BlockDevice` (#4). sbregistry measured ~280x write amplification placing a
+  9.7 MB file and ~1065x placing a 55 MB one through fio-ext4 over NVMe/TCP,
+  because every few KiB of payload re-read and re-wrote the same bitmap,
+  inode-table, extent-node, group-descriptor and superblock blocks, with the
+  device as the only metadata cache. The wrapper holds a bounded LRU of blocks:
+  reads are served from cache with misses fetched as coalesced contiguous
+  runs, writes are absorbed as dirty blocks costing no device I/O until
+  eviction or `flush()`, and write-back coalesces device-contiguous dirty
+  blocks into single writes. `CacheStats` counts what reaches the device.
+  Write-back durability is by design lazy between sync points — the measured
+  consumer discards torn builds and flushes before sealing; a consumer that
+  needs every `write_at` durable must not wrap its device in this.
+
 ## [v2.0.4] — 2026-08-23
 
 ### Fixed

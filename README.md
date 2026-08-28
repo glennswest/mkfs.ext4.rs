@@ -66,6 +66,33 @@ Note that a 512-*byte block* is not a thing ext2/3/4 can express:
 `s_log_block_size` is an exponent above 1024, so 1024 is the format's floor.
 `mke2fs -b 512` refuses for the same reason.
 
+## Write amplification and the block cache
+
+A write-heavy consumer — `fio-ext4` streaming a file into a volume — re-reads
+and re-writes the same metadata blocks (bitmap, inode table, extent nodes,
+group descriptor, superblock) for every few KiB of payload. Measured over
+NVMe/TCP that reached ~1065x write amplification: ~55.9 GB of device writes to
+place a 55 MB file (#4), with the device itself never the limiter.
+
+`CachedDevice` is the fix at the `BlockDevice` seam — a bounded write-back
+block cache any consumer can wrap around its device:
+
+```rust
+use mkfs_ext4::{CachedDevice, BlockDevice};
+
+let dev = CachedDevice::new(my_volume)   // 4 KiB blocks, 32 MiB by default
+    .with_block_size(4096)
+    .with_capacity(64 << 20);
+// … reads hit the cache, writes become dirty blocks …
+dev.flush().await?;                      // write-back, coalesced, then inner flush
+```
+
+Hot metadata settles to one read on first touch and one write per `flush()`;
+streamed data reaches the device as large coalesced writes. It is write-back:
+between flushes the device does not have the dirty blocks, so wrap only a
+device whose consumer treats a torn build as discard-and-rebuild and flushes
+at its sync points. `stats()` reports what actually reached the device.
+
 ## Why
 
 Two properties the C tools cannot offer a Rust storage engine:

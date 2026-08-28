@@ -44,6 +44,7 @@
 //! | Module | What it owns |
 //! |---|---|
 //! | [`device`] | the [`BlockDevice`] trait and its file / memory implementations |
+//! | [`cache`] | a write-back block cache over any [`BlockDevice`], for write-heavy consumers |
 //! | [`structs`] | byte-exact on-disk structures |
 //! | [`features`] | feature masks and `mke2fs -O` parsing |
 //! | [`csum`] | crc32c and crc16 metadata checksums |
@@ -58,6 +59,8 @@ extern crate alloc;
 
 pub mod bytes;
 
+#[cfg(feature = "std")]
+pub mod cache;
 #[cfg(feature = "std")]
 pub mod compare;
 pub mod csum;
@@ -80,6 +83,8 @@ pub mod read;
 pub mod structs;
 
 // The things a caller reaches for first, so a simple use looks simple.
+#[cfg(feature = "std")]
+pub use cache::{CacheStats, CachedDevice};
 #[cfg(feature = "std")]
 pub use compare::{compare, CompareOptions, ComparisonReport};
 #[cfg(feature = "std")]
