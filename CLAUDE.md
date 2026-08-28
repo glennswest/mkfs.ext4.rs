@@ -77,6 +77,18 @@ to point at, not an open-ended guess about feature flags.
 - [x] `read` — synchronous `no_std` read path, so firmware can link the reader
       instead of a second implementation of the format drifting against this one
       (issue #2). `structs` was already sync; only `fs` and `device` were async.
+- [ ] `cache` — write-back block cache over `BlockDevice` (issue #4). sbregistry
+      measured ~280x–1065x write amplification unpacking layers through
+      fio-ext4 over NVMe/TCP: every few KiB of payload re-reads and re-writes
+      the same bitmap, inode-table, extent-node, group-descriptor and
+      superblock blocks, with the device as the only metadata cache. The fix at
+      this seam: `CachedDevice<D>` wraps any `BlockDevice` with a bounded
+      write-back LRU at block granularity — reads served from cache, writes
+      absorbed as dirty blocks, batch eviction and `flush()` write back
+      contiguous runs coalesced. Lazy durability between sync points is the
+      consumer's stated contract (discard-and-rebuild on a torn build, `flush()`
+      before seal). The O(1) tail-append allocation scan is fio-ext4's half —
+      filed there, not fixed here.
 - [ ] stormblock integration path (file against stormblock#39, do not edit it
       from this repo)
 
