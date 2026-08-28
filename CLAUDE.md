@@ -6,7 +6,7 @@ output by a comparison tool, with the e2fsprogs source consulted at the
 specific points where the two differ.
 
 - **Crate:** `mkfs-ext4` (lib `mkfs_ext4`)
-- **Version:** 2.0.1 — see `Cargo.toml` (single version location)
+- **Version:** 2.1.0 — see `Cargo.toml` (single version location)
 - **License:** MIT OR Apache-2.0
 - **Repo:** https://github.com/glennswest/mkfs.ext4.rs
 - **Directory:** `~/projects/mkfs.ext4.rs`. The crate covers ext2/ext3/ext4
@@ -77,7 +77,7 @@ to point at, not an open-ended guess about feature flags.
 - [x] `read` — synchronous `no_std` read path, so firmware can link the reader
       instead of a second implementation of the format drifting against this one
       (issue #2). `structs` was already sync; only `fs` and `device` were async.
-- [ ] `cache` — write-back block cache over `BlockDevice` (issue #4). sbregistry
+- [x] `cache` — write-back block cache over `BlockDevice` (issue #4). sbregistry
       measured ~280x–1065x write amplification unpacking layers through
       fio-ext4 over NVMe/TCP: every few KiB of payload re-reads and re-writes
       the same bitmap, inode-table, extent-node, group-descriptor and

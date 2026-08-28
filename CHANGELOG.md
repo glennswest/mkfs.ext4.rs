@@ -2,7 +2,16 @@
 
 ## [Unreleased]
 
-### 2026-08-27
+## [v2.1.0] — 2026-08-27
+
+### Fixed
+- **fix:** vendor the golden reference images the gitignore silently kept out.
+  The blanket `*.img.*` rule caught `tests/golden/*.img.gz`, so only the
+  `.dump` files were ever tracked and every fresh clone failed
+  `golden_compare` with "No such file or directory" — the references existed
+  only on the machine that recorded them.
+
+### Added
 - **feat:** `cache::CachedDevice` — a write-back block cache over any
   `BlockDevice` (#4). sbregistry measured ~280x write amplification placing a
   9.7 MB file and ~1065x placing a 55 MB one through fio-ext4 over NVMe/TCP,
@@ -10,9 +19,11 @@
   inode-table, extent-node, group-descriptor and superblock blocks, with the
   device as the only metadata cache. The wrapper holds a bounded LRU of blocks:
   reads are served from cache with misses fetched as coalesced contiguous
-  runs, writes are absorbed as dirty blocks costing no device I/O until
-  eviction or `flush()`, and write-back coalesces device-contiguous dirty
-  blocks into single writes. `CacheStats` counts what reaches the device.
+  runs, writes are absorbed as dirty bytes costing no device I/O until
+  eviction or `flush()` — sub-block valid/dirty tracking means even a partial
+  write to an uncached block pays no read-modify-write read — and write-back
+  coalesces device-contiguous dirty blocks into single writes. `CacheStats`
+  counts what reaches the device.
   Write-back durability is by design lazy between sync points — the measured
   consumer discards torn builds and flushes before sealing; a consumer that
   needs every `write_at` durable must not wrap its device in this.
