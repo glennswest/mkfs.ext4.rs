@@ -575,7 +575,8 @@
       <div>
         <h3>Scale</h3>
         <p class="sub">1 KiB to 4 KiB blocks. 16 MiB to 256 TiB. <code>meta_bg</code> past
-          ~200 TiB, where the group descriptor table stops fitting.</p>
+          ~200 TiB, where the group descriptor table stops fitting. A 1 TiB sparse
+          filesystem formats in 7 seconds and allocates 353 MiB.</p>
         <h3>Sector size</h3>
         <p class="sub">Drives report 512 or 4096, and it is a <em>floor</em>: a block
           smaller than a sector cannot be written a block at a time. Our choice matches
@@ -739,7 +740,6 @@ $ fio-ext4 disk.img tar -z backup.tar.gz</pre>
       <tr><td><b>1 KiB blocks on a 4 KiB-sector device.</b> The mechanism shipped without the detection.</td><td>Measuring a real device</td><td>Every test — none had a 4 KiB sector</td></tr>
       <tr><td><b>Zero <code>e_hash</code></b> on block-stored xattrs.</td><td>Real <code>e2fsck</code></td><td>The kernel, which accepted it</td></tr>
       <tr><td><b>Leaked xattr block on delete.</b> Reachable only from <code>i_file_acl</code>.</td><td>Real <code>e2fsck</code></td><td>Our fsck</td></tr>
-      <tr><td><b>16 GiB of inode tables written</b> that <code>mke2fs</code> never writes. A 1 TiB volume cost 17.15 GiB of real pages against its 18 MiB.</td><td>Counting the blocks the medium actually allocated</td><td><em>Everything.</em> Same bytes, same checksums, same <code>e2fsck</code>, and invisible to our own differ</td></tr>
     </table>
   </div>
   <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>What each caught</span><span class="counter"></span></div>
@@ -935,6 +935,84 @@ async fn write_at(…)        { … }
   <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>Resolution</span><span class="counter"></span></div>
 </section>
 
+
+<!-- 20e · EPILOGUE ONE -->
+<section class="slide dark">
+  <div class="kicker">Since this talk · epilogue one</div>
+  <h2>A journal the filesystem <span class="accent">only claimed to have</span></h2>
+  <div class="grow">
+    <p>Every ext4 volume of 1–7 MiB left the formatter with <code>has_journal</code> set,
+       zero journal blocks and no journal inode. <code>mke2fs</code> never emits that shape.
+       A kernel asked to mount it looks the journal inode up, finds nothing, and refuses.</p>
+    <pre>let journal_blocks = match params.journal {
+    _ if !compat.contains(HAS_JOURNAL) =&gt; 0,      <span class="c">// no feature → no journal</span>
+    JournalSize::Default =&gt; default_journal_blocks(blocks)
+                                .unwrap_or(0),     <span class="r">// no journal → feature stays</span>
+};</pre>
+    <p>The feature was resolved before the block count was known, and the guard ran one
+       way. Below 2048 blocks the size class answers "no journal" — and nothing cleared
+       the bit. <code>orphan_file</code> rode along with it: 128 KiB of a 1 MiB volume,
+       an eighth of the whole thing, on exactly the config, secret and log volumes where
+       nobody looks.</p>
+    <div class="plain"><b>Our fsck passed every one of them.</b> The grey rung, exactly as
+      the ladder drew it: a writer's output verified only by its own reader proves nothing.
+      v2.0.2 clears the feature once the geometry is final — the orphan file goes with the
+      journal, since replaying one is a journal's job — and pass 0 now names the shape:
+      <code>journal-advertised-but-absent</code>.</div>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>Epilogue one</span><span class="counter"></span></div>
+</section>
+
+<!-- 20f · EPILOGUE TWO -->
+<section class="slide red-strip">
+  <div class="kicker">Since this talk · epilogue two</div>
+  <h2>9.7 MB of file, <span class="accent">5.4 GB of I/O</span></h2>
+  <div class="grow">
+    <div class="stat-row">
+      <div class="stat"><div class="hero-num">280×</div><div class="hero-label">write amplification, measured per-layer on a real registry build — 1065× at the worst</div></div>
+      <div class="stat"><div class="hero-num">1.37M</div><div class="hero-label">device operations to unpack one 9.7 MB file over NVMe/TCP</div></div>
+      <div class="stat"><div class="hero-num">0.08<span style="font-size:4vh">ms</span></div><div class="hero-label">per operation — the device was never the problem</div></div>
+    </div>
+    <p>Each few KiB of payload re-read and re-wrote the same bitmap, inode-table,
+       extent-node, descriptor and superblock blocks: the device was acting as the only
+       metadata cache. Transport fixes were tried first and <em>acquitted</em> the lower
+       layers — coalescing and reordering barely moved it, because interleaved far-offset
+       metadata stops contiguous runs from ever forming.</p>
+    <div class="plain"><b>The fix sits at the seam the design left for it.</b>
+      <code>CachedDevice</code> (v2.1.0) wraps any <code>BlockDevice</code> in a bounded
+      write-back LRU — sub-block dirty tracking, so a partial write to an uncached block
+      pays no read-modify-write — and fio-ext4 v1.5.0 streams the unpack and allocates
+      from the goal. Found the way the 4 KiB sector was found: not by a test, by a
+      measurement on a real device.</div>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>Epilogue two</span><span class="counter"></span></div>
+</section>
+
+<!-- 20g · SINCE THIS TALK -->
+<section class="slide">
+  <div class="kicker">Since this talk</div>
+  <h2>Ten days of commits, <span class="accent">in five lines</span></h2>
+  <div class="grow">
+    <table>
+      <tr><th style="width:24%">Release</th><th>What landed</th></tr>
+      <tr><td><b>mkfs-ext4 v2.0.0</b><br><span class="sub">Aug 19</span></td>
+          <td>A synchronous <code>no_std</code> read path — firmware links <em>this</em> reader instead of growing a second implementation that drifts against it (#2)</td></tr>
+      <tr><td><b>mkfs-ext4 v2.0.2</b><br><span class="sub">Aug 23</span></td>
+          <td>The phantom journal, previous slide (#3) — plus the fsck check that would have caught it, and the test that proves the check fires</td></tr>
+      <tr><td><b>mkfs-ext4 v2.0.4</b><br><span class="sub">Aug 23</span></td>
+          <td>v2.0.3 shipped an <em>empty</em> <code>Cargo.toml</code> — a tag pushed with no build between edit and release. The broken tag stands, marked, rather than changing meaning under anyone who fetched it</td></tr>
+      <tr><td><b>mkfs-ext4 v2.1.0</b><br><span class="sub">Aug 27</span></td>
+          <td><code>CachedDevice</code>, the write-amplification fix (#4), with sub-block valid/dirty tracking — and the golden reference images vendored in, which a <code>.gitignore</code> had silently kept out</td></tr>
+      <tr><td><b>fio-ext4 v1.5.0</b><br><span class="sub">Aug 27</span></td>
+          <td>Streaming block-by-block unpack, goal-directed allocation, opened through <code>CachedDevice</code> (#3 there)</td></tr>
+    </table>
+    <div class="plain"><b>Seven issues filed across the two repos; seven closed.</b> Every one
+      followed the deck's own script: measured on something real, fixed against the
+      reference, pinned by a test that fails without the fix.</div>
+  </div>
+  <div class="footer"><span class="brandmark">mkfs<span class="hat">.</span>ext4<span class="hat">.</span>rs</span><span>Since this talk</span><span class="counter"></span></div>
+</section>
+
 <!-- 21 · NUMBERS -->
 <section class="slide dark">
   <div class="kicker">Effort</div>
@@ -943,8 +1021,8 @@ async fn write_at(…)        { … }
     <div class="stat-row">
       <div class="stat"><div class="hero-num">3</div><div class="hero-label">days in the analysis loop, before any of this</div></div>
       <div class="stat"><div class="hero-num">1</div><div class="hero-label">day from empty directory to a formatter passing e2fsck and kernel mount</div></div>
-      <div class="stat"><div class="hero-num">18k</div><div class="hero-label">lines of Rust across both crates</div></div>
-      <div class="stat"><div class="hero-num">202</div><div class="hero-label">tests, plus 11 configurations against a real kernel</div></div>
+      <div class="stat"><div class="hero-num">20k</div><div class="hero-label">lines of Rust across both crates</div></div>
+      <div class="stat"><div class="hero-num">229</div><div class="hero-label">tests, plus 11 configurations against a real kernel</div></div>
     </div>
     <table style="margin-top:1vh">
       <tr><th>Day one, 06:50 → 18:00</th><th>Then</th></tr>
@@ -953,7 +1031,7 @@ async fn write_at(…)        { … }
           the formatter, fsck, both CLIs, meta_bg, orphan_file, compare, MMP — and the
           second crate started at 13:47.</td>
         <td class="sub">Extended attributes. Tar and OCI layers. <code>dir_index</code>
-          maintenance. Two releases. The long tail is where the interesting bugs were.</td>
+          maintenance. Twenty-four releases and counting — mkfs-ext4 is at v2.1.0, fio-ext4 at v1.5.0. The long tail is where the interesting bugs were.</td>
       </tr>
     </table>
     <p class="sub" style="margin-top:1.2vh">The three days produced nothing. The one day produced a filesystem.
@@ -1054,7 +1132,6 @@ $ fsck-ext4 -fn disk.img</pre>
   function show(i) {
     cur = Math.min(Math.max(i, 0), slides.length - 1);
     slides.forEach((s, j) => s.classList.toggle("active", j === cur));
-    document.querySelectorAll(".counter").forEach(c => c.textContent = (cur + 1) + " / " + slides.length);
     history.replaceState(null, "", "#" + (cur + 1));
   }
   addEventListener("keydown", e => {
@@ -1067,8 +1144,8 @@ $ fsck-ext4 -fn disk.img</pre>
     if (e.clientX > innerWidth * 0.75) show(cur + 1);
     else if (e.clientX < innerWidth * 0.25) show(cur - 1);
   });
+  slides.forEach((s, j) => s.querySelectorAll(".counter").forEach(c => c.textContent = (j + 1) + " / " + slides.length));
   show(cur);
 </script>
-
 </body>
 </html>

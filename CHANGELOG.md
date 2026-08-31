@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### 2026-08-31
+- **docs(presentation):** three "Since this talk" epilogue slides — the phantom
+  journal (#3, fixed in v2.0.2), the 280× write-amplification measurement and
+  `CachedDevice` (#4, v2.1.0), and a release ledger through mkfs-ext4 v2.1.0 /
+  fio-ext4 v1.5.0. Stats refreshed to 20k lines, 229 tests, 24 releases. Slide
+  counters now number each slide statically, so a printed page shows its own
+  position instead of the slide the browser was on. First PDF render of the
+  deck committed at `docs/presentation/ext4-rust.pdf` (36 pages, headless
+  Chrome, the deck's own `@page` geometry). The slidemaker production tree
+  (narration, frames, voice) still reflects the 33-slide deck the video was
+  produced from; a re-render needs narration for the three new slides.
+
 ## [v2.1.0] — 2026-08-27
 
 ### Fixed
