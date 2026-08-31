@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### 2026-08-31
+- **docs:** README gains a Presentation section linking the PDF and HTML deck
+  in `docs/presentation/`, and the copy in the presentations repo.
 - **docs(presentation):** three "Since this talk" epilogue slides — the phantom
   journal (#3, fixed in v2.0.2), the 280× write-amplification measurement and
   `CachedDevice` (#4, v2.1.0), and a release ledger through mkfs-ext4 v2.1.0 /

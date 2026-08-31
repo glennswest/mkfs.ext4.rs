@@ -109,6 +109,16 @@ comparison against real `mke2fs` output turns up are what give the values. Each
 one is chased to a reason rather than adjusted until it disappears — which is
 the difference between matching and merely resembling.
 
+## Presentation
+
+*Writing a Rust Library with AI* — how this crate came to exist, the three-day
+analysis loop it broke out of, the method, and what each kind of verification
+caught (36 slides):
+
+- [PDF](docs/presentation/ext4-rust.pdf)
+- [HTML deck](docs/presentation/ext4-rust.html) — open in a browser, arrow keys to navigate
+- also in [glennswest/presentations](https://github.com/glennswest/presentations/blob/main/WritingARustLibraryWithAI.pdf)
+
 ## Status
 
 The formatter works and is verified against a real kernel. `tests/verify-on-linux.sh`
