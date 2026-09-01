@@ -1,0 +1,5 @@
+Where is this worth having?
+Embedded and firmware. Write files onto a removable drive from a device with no operating system. An E.S.P. thirty two writing an ext four card that a Linux box then reads. No kernel, no C toolchain.
+Repair where there is no f s c k. Router O.S. has no e two f s c k. This one is a library, so the check and the repair can run inside whatever is already there.
+Storage engines: format many thin volumes at once, straight against the volume. That's what the async and the immutable self signatures were for.
+And image and C.I. builds. Build a root filesystem with real ownership and SELinux labels, in an unprivileged container, or on a Mac.

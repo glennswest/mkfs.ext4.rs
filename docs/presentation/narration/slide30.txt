@@ -1,5 +1,5 @@
-What it cost.
-Three days in the analysis loop, before any of this started. One day from an empty directory to a formatter passing e two f s c k and a kernel mount. Eighteen thousand lines of Rust across both crates. Two hundred and two tests, plus eleven configurations against a real kernel.
-Day one ran from ten to six: scaffold, on-disk structures, checksums, golden references, the formatter, f s c k, both C.L.I.s, and the second crate started at quarter to two in the afternoon.
-[e=0.9] The three days produced nothing. The one day produced a filesystem.
-And the difference was not effort, and it was not tooling. It was the decision to stop adjusting and start defining.
+The talk shipped, and ten days later the story had grown two epilogues.
+The first: every ext four volume between one and seven megabytes left the formatter claiming a journal it did not have. The feature bit set, zero journal blocks, no journal inode. Make e two f s never emits that shape — a kernel asked to mount it looks the journal inode up, finds nothing, and refuses.
+The feature was resolved before the block count was known, and the guard ran one way. The orphan file rode along with it — a hundred and twenty eight kilobytes of a one megabyte volume, on exactly the config and secret volumes where nobody looks.
+[beat=0.5] And our own f s c k passed every one of them. The grey rung, exactly as the ladder drew it: a writer's output, verified only by its own reader, proves nothing.
+[e=0.85] The fix clears the feature once the geometry is final, and the checker now names the shape: journal advertised, but absent.

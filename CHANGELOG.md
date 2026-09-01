@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### 2026-09-01
+- **docs(presentation):** narration catches up with the 36-slide deck for the
+  video re-render — three new scripts (the phantom journal, the write-amplification
+  measurement, the release ledger), the tail renumbered 33→36, and the stats
+  narration updated to twenty thousand lines / two hundred and twenty nine
+  tests. `slidemaker.conf` bumped to `SLIDES=36`.
+
 ### 2026-08-31
 - **docs:** README gains a Presentation section linking the PDF and HTML deck
   in `docs/presentation/`, and the copy in the presentations repo.

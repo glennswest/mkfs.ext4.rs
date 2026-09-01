@@ -1,5 +1,5 @@
-Where is this worth having?
-Embedded and firmware. Write files onto a removable drive from a device with no operating system. An E.S.P. thirty two writing an ext four card that a Linux box then reads. No kernel, no C toolchain.
-Repair where there is no f s c k. Router O.S. has no e two f s c k. This one is a library, so the check and the repair can run inside whatever is already there.
-Storage engines: format many thin volumes at once, straight against the volume. That's what the async and the immutable self signatures were for.
-And image and C.I. builds. Build a root filesystem with real ownership and SELinux labels, in an unprivileged container, or on a Mac.
+The second epilogue is a measurement. Unpacking one file of nine point seven megabytes cost five point four gigabytes of device I O. One point three seven million operations. Two hundred and eighty times write amplification — over a thousand times at the worst.
+And the device was never the problem. Point oh eight milliseconds per operation. Every few kilobytes of payload re-read and re-wrote the same bitmap, inode table, extent node and superblock blocks — the device was acting as the only metadata cache.
+Transport fixes were tried first, and they acquitted the lower layers. Coalescing and reordering barely moved it.
+[beat=0.5] The fix sits at the seam the design left for it: a write-back cache over the block device trait, with sub-block dirty tracking, so a partial write to an uncached block pays no read-modify-write.
+[e=0.9] Found the way the four kilobyte sector was found. Not by a test. By a measurement on a real device.

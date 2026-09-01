@@ -1,4 +1,5 @@
-That's the talk. Both crates are M.I.T. or Apache two, and the M.I.T. arm is G.P.L. version two compatible, so it imposes nothing on a kernel or a Red Hat consumer.
-Make the filesystem, untar a rootfs into it, check it. Both repositories are on GitHub.
-[beat=0.7] [e=0.9] The filesystem was never the hard part. Knowing when to stop analysing it was.
-Thank you.
+What it cost.
+Three days in the analysis loop, before any of this started. One day from an empty directory to a formatter passing e two f s c k and a kernel mount. Twenty thousand lines of Rust across both crates. Two hundred and twenty nine tests, plus eleven configurations against a real kernel.
+Day one ran from ten to six: scaffold, on-disk structures, checksums, golden references, the formatter, f s c k, both C.L.I.s, and the second crate started at quarter to two in the afternoon.
+[e=0.9] The three days produced nothing. The one day produced a filesystem.
+And the difference was not effort, and it was not tooling. It was the decision to stop adjusting and start defining.
