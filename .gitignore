@@ -39,6 +39,7 @@ docs/presentation/concat.txt
 docs/presentation/*.mp4
 docs/presentation/*.wav
 docs/presentation/*.m4a
+docs/presentation/*.srt
 
 # The golden mke2fs reference images are vendored on purpose: the
 # comparison tests are meaningless without them, and a fresh clone must
