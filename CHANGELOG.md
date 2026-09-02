@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### 2026-09-02
+- **docs(presentation):** the cloned voice sounded stuffy and flat. Measured
+  the speaker references: `speaker.wav` carries 25 dB less relative energy
+  above 3 kHz than `eref1.wav` — a muffled reference is cloned into every
+  word. Switched `CLONE_REF` to `eref1.wav` and widened the expression dials
+  (`EMO_GAIN` 2.2, `E_EXPAND` 0.15:1.0, `SM_TEMPO` 0.84:1.08).
+
 ### 2026-09-01
 - **docs(presentation):** narration catches up with the 36-slide deck for the
   video re-render — three new scripts (the phantom journal, the write-amplification
