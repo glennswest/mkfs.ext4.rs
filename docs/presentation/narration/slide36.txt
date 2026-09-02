@@ -1,4 +1,4 @@
 That's the talk. Both crates are M.I.T. or Apache two, and the M.I.T. arm is G.P.L. version two compatible, so it imposes nothing on a kernel or a Red Hat consumer.
 Make the filesystem, untar a rootfs into it, check it. Both repositories are on GitHub.
 [beat=0.7] [e=0.9] The filesystem was never the hard part. Knowing when to stop analysing it was.
-Thank you.
+[warmth] Thank you.

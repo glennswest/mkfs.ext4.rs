@@ -1,6 +1,6 @@
-Here's what three days actually looked like. Six answers, every one of them confident.
+[frustration] [e=0.35] Here's what three days actually looked like. Six answers, every one of them confident.
 Two hours in: it's the journal, turn it off. Journal off. Still refused.
 Five hours in: then it's metadata checksum, lwext four's support is partial. Feature dropped. Still refused.
-Day two: this is a MikroTik bug, we can't fix it from our side. Blame assigned. Nothing tested.
+[grave] Day two: this is a MikroTik bug, we can't fix it from our side. Blame assigned. Nothing tested.
 Day three: the formatter is proven, look elsewhere. And that was the one place left unexamined.
-[e=0.85] Then I stopped and said: we have wasted three days using the word proven. The loop breaks from outside.
+[relief] [e=0.85] Then I stopped and said: we have wasted three days using the word proven. The loop breaks from outside.

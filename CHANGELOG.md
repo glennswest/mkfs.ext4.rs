@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### 2026-09-02
+- **docs(presentation):** performance direction in the narration, using
+  slidemaker v0.4.0's emotion graph: the open starts low, the three wasted
+  days carry `[regret]`/`[frustration]`, the turn gets `[relief]`, the wins
+  get `[pride]`, and the close lands on `[warmth]`. Unmarked sentences take
+  the LLM's per-sentence emotion reading, modeled on a human presenter.
 - **docs(presentation):** the cloned voice sounded stuffy and flat. Measured
   the speaker references: `speaker.wav` carries 25 dB less relative energy
   above 3 kHz than `eref1.wav` — a muffled reference is cloned into every

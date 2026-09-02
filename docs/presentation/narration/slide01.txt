@@ -1,3 +1,6 @@
-Hi, I'm Glenn West. This is a talk about writing a Rust library with an A.I., and about the three days I wasted before I got anything right.
-The worked example is a filesystem. Three days of confident wrong answers, then one day to a formatter that matches make e two f s, field for field.
-[beat=0.6] The method is the part that transfers. The filesystem is just where I found it.
+[e=0.2] Hi, I'm Glenn West.
+[e=0.35] This is a talk about writing a Rust library with an A.I., and about the three days I wasted before I got anything right.
+[e=0.3] The worked example is a filesystem.
+[regret] [e=0.3] Three days of confident wrong answers.
+[pride] [e=0.75] Then one day to a formatter that matches make e two f s, field for field.
+[beat=0.6] [e=0.45] The method is the part that transfers. The filesystem is just where I found it.

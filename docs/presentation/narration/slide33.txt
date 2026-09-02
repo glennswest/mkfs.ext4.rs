@@ -1,5 +1,7 @@
 What it cost.
-Three days in the analysis loop, before any of this started. One day from an empty directory to a formatter passing e two f s c k and a kernel mount. Twenty thousand lines of Rust across both crates. Two hundred and twenty nine tests, plus eleven configurations against a real kernel.
+[regret] [e=0.35] Three days in the analysis loop, before any of this started.
+[v=0.4] [e=0.6] One day from an empty directory to a formatter passing e two f s c k and a kernel mount. Twenty thousand lines of Rust across both crates. Two hundred and twenty nine tests, plus eleven configurations against a real kernel.
 Day one ran from ten to six: scaffold, on-disk structures, checksums, golden references, the formatter, f s c k, both C.L.I.s, and the second crate started at quarter to two in the afternoon.
-[e=0.9] The three days produced nothing. The one day produced a filesystem.
+[regret] [e=0.3] The three days produced nothing.
+[pride] [e=0.95] The one day produced a filesystem.
 And the difference was not effort, and it was not tooling. It was the decision to stop adjusting and start defining.
