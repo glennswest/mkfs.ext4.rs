@@ -594,12 +594,20 @@ fn journal_extent_leaf_block(extents: &[Extent], block_size: u32, with_tail: boo
 ///
 /// The device is written in place; everything previously on it is lost.
 pub async fn format<D: BlockDevice + ?Sized>(dev: &D, params: &Params) -> Result<Report> {
-    // The device knows its own sector size; a caller may override it, but must
-    // not have to state it.
+    // The device knows its own sector size, and it is a floor: a caller may
+    // raise it — building an image in a file for a 4 KiB-sector drive — but
+    // never lower it, because a block smaller than the device's sector cannot
+    // be written at all. `mke2fs` refuses a block size below the logical
+    // sector for the same reason. A caller passing 512 for a volume that
+    // reports 4096 was getting 1 KiB blocks on a device that could not take
+    // them (#5).
     let mut params = params.clone();
-    if params.sector_size.is_none() {
-        params.sector_size = Some(dev.logical_sector_size());
-    }
+    params.sector_size = Some(
+        params
+            .sector_size
+            .unwrap_or(0)
+            .max(dev.logical_sector_size()),
+    );
     let params = &params;
     let plan = plan(dev.size(), params)?;
     write_filesystem(dev, &plan).await
@@ -2053,11 +2061,30 @@ mod tests {
             .unwrap();
         assert_eq!(report.block_size, 1024);
 
-        // And Params overrides whatever the device claimed.
+        // Params can raise it above what the device claimed — an image built
+        // in a file for a 4 KiB-sector drive.
         let dev = MemDevice::with_sector_size(64 * MIB, 512);
         let params = fixed_params(Profile::Ext4).no_journal().sector_size(4096);
         let report = format(&dev, &params).await.unwrap();
         assert_eq!(report.block_size, 4096);
+    }
+
+    /// The device's sector is a floor the caller cannot dig under. A storage
+    /// engine passing its API's `lba: 512` through for a volume that reports
+    /// 4096 was getting a 1 KiB-block filesystem the volume could not write
+    /// (#5); `mke2fs` refuses a block below the logical sector, and so do we.
+    #[tokio::test]
+    async fn params_cannot_lower_the_sector_below_the_device() {
+        let dev = MemDevice::strict(256 * MIB, 4096);
+        let params = fixed_params(Profile::Ext4).no_journal().sector_size(512);
+        let report = format(&dev, &params).await.unwrap();
+        assert_eq!(report.block_size, 4096, "512 asked for, 4096 is what the device can do");
+
+        // An explicit block size below the device's sector is refused
+        // outright rather than written and refused by the device halfway.
+        let dev = MemDevice::strict(256 * MIB, 4096);
+        let params = fixed_params(Profile::Ext4).no_journal().block_size(1024);
+        assert!(format(&dev, &params).await.is_err());
     }
 
     #[tokio::test]
