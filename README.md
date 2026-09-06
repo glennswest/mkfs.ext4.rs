@@ -42,7 +42,10 @@ impl BlockDevice for MyVolume {
 }
 ```
 
-Or state it per-format, which overrides the device:
+Or state it per-format. The device's own sector is a floor: `Params` can
+raise it — an image built in a file for a 4 KiB-sector drive — but never lower
+it, because a block smaller than the device's sector cannot be written at all.
+`mke2fs` refuses a block below the logical sector for the same reason.
 
 ```rust
 Params::new(Profile::Ext4).sector_size(4096)

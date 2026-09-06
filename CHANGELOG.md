@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [v2.2.1] — 2026-09-06
+
+### 2026-09-06
+- **fix:** the device's sector is a floor a caller cannot lower (#5, second
+  fault). A per-format `sector_size` below the device's own was honoured, so a
+  storage engine passing its API's `lba: 512` through for a volume that
+  reports 4096 got a 1 KiB-block filesystem on a device that cannot write
+  1 KiB — which is why a 256M template chose 1024 while 1024M and up chose
+  4096 and still failed on the sub-block writes fixed in 2.2.0. `format` now
+  takes the larger of the device's sector and the parameter; an explicit
+  block size below the device's sector is refused up front.
+
 ## [v2.2.0] — 2026-09-06
 
 ### 2026-09-06
