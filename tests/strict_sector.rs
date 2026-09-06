@@ -17,7 +17,7 @@ use mkfs_ext4::format::format;
 use mkfs_ext4::fs::Filesystem;
 use mkfs_ext4::fsck::{self, FsckOptions};
 use mkfs_ext4::params::{Params, Profile};
-use mkfs_ext4::structs::superblock::ino;
+use mkfs_ext4::structs::superblock::{ino, GOOD_OLD_FIRST_INO};
 
 const MIB: u64 = 1024 * 1024;
 
@@ -109,13 +109,13 @@ async fn opens_reads_and_writes_back_on_a_device_enforcing_4k_sectors() {
 
     // An inode round trip: read, change, write, and read the neighbour to
     // show the rest of the block came through untouched.
-    let lost_found_before = fs.read_inode(ino::LOST_FOUND).await.unwrap();
+    let lost_found_before = fs.read_inode(GOOD_OLD_FIRST_INO).await.unwrap();
     let mut root = fs.read_inode(ino::ROOT).await.unwrap();
     root.mtime = 1_800_000_000;
     fs.write_inode(ino::ROOT, &root).await.unwrap();
     assert_eq!(fs.read_inode(ino::ROOT).await.unwrap().mtime, 1_800_000_000);
     assert_eq!(
-        fs.read_inode(ino::LOST_FOUND).await.unwrap(),
+        fs.read_inode(GOOD_OLD_FIRST_INO).await.unwrap(),
         lost_found_before,
         "writing inode 2 must not disturb inode 11 in the same block"
     );
