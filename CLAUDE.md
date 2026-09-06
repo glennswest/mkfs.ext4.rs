@@ -89,6 +89,16 @@ to point at, not an open-ended guess about feature flags.
       consumer's stated contract (discard-and-rebuild on a torn build, `flush()`
       before seal). The O(1) tail-append allocation scan is fio-ext4's half —
       filed there, not fixed here.
+- [ ] Issue #5 (fio.ext4.rs#4 is the read side): a device that enforces its
+      4096-byte logical block refuses the sub-block I/O this crate issues at
+      aligned offsets — the 1024-byte superblock, individual inodes, the group
+      descriptor table. A loop device hid it with a kernel read-modify-write.
+      Fix at the seam: `AlignedDevice<D>` rounds every read out to whole
+      sectors and turns every partial write into a read-modify-write of the
+      sectors it touches, serialised so two partial writes to one sector cannot
+      lose each other. `format`, `Filesystem::open` and so `fsck` wrap the
+      device they are handed; nothing above the seam changes. `MemDevice::strict`
+      is the test device that refuses unaligned I/O the way stormblock does.
 - [ ] stormblock integration path (file against stormblock#39, do not edit it
       from this repo)
 
