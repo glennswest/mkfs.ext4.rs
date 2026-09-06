@@ -55,9 +55,16 @@ pub struct Filesystem<D: BlockDevice> {
 impl<D: BlockDevice> Filesystem<D> {
     /// Open a filesystem, reading its superblock and group descriptors.
     pub async fn open(device: D) -> Result<Self> {
-        let mut buf = [0u8; SUPERBLOCK_LEN];
-        device.read_at(SUPERBLOCK_OFFSET, &mut buf).await?;
-        let superblock = Superblock::decode(&buf)?;
+        // The block size is not known until the superblock has been read, and
+        // a device is only promised I/O in whole sectors — so the first read
+        // is every sector holding bytes 1024..2048, whatever the block turns
+        // out to be. Byte 1024 on a 4 KiB-sector device is one sector in;
+        // asked for on its own it is refused (fio.ext4.rs#4).
+        let sector = u64::from(device.logical_sector_size().max(1));
+        let span = (SUPERBLOCK_OFFSET + SUPERBLOCK_LEN as u64).next_multiple_of(sector);
+        let mut head = vec![0u8; span as usize];
+        device.read_at(0, &mut head).await?;
+        let superblock = Superblock::decode(&head[SUPERBLOCK_OFFSET as usize..][..SUPERBLOCK_LEN])?;
 
         let mut fs = Self {
             device,
@@ -91,17 +98,23 @@ impl<D: BlockDevice> Filesystem<D> {
     /// What `e2fsck -b` does when the primary is unreadable.
     pub async fn open_with_backup(device: D, backup_block: u64) -> Result<Self> {
         // The block size is not known until a superblock is read, so try the
-        // sizes a backup could be at.
+        // sizes a backup could be at. A block is never smaller than the
+        // device's sector, so those sizes are not tried; each candidate is
+        // read as a whole block, the one unit every device accepts.
+        let sector = device.logical_sector_size();
         for block_size in [1024u32, 2048, 4096, 8192, 16384, 32768, 65536] {
-            let at = backup_block * block_size as u64;
-            if at + SUPERBLOCK_LEN as u64 > device.size() {
+            if block_size < sector {
                 continue;
             }
-            let mut buf = [0u8; SUPERBLOCK_LEN];
+            let at = backup_block * block_size as u64;
+            if at + block_size as u64 > device.size() {
+                continue;
+            }
+            let mut buf = vec![0u8; block_size as usize];
             if device.read_at(at, &mut buf).await.is_err() {
                 continue;
             }
-            if let Ok(sb) = Superblock::decode(&buf) {
+            if let Ok(sb) = Superblock::decode(&buf[..SUPERBLOCK_LEN]) {
                 if sb.block_size() == block_size {
                     let mut fs = Self {
                         device,
@@ -324,34 +337,70 @@ impl<D: BlockDevice> Filesystem<D> {
     }
 
     /// Read an inode's raw bytes, as they are on disk.
+    ///
+    /// The device sees a read of the inode-table block the inode lives in:
+    /// every read and write this type issues is a whole block at a block
+    /// boundary, which is the one unit a device is promised to accept.
     pub async fn read_inode_raw(&self, inum: u32) -> Result<Vec<u8>> {
         let (_, block, offset) = self.inode_location(inum)?;
         let inode_size = self.superblock.inode_size as usize;
-        let mut buf = vec![0u8; inode_size];
-        self.device
-            .read_at(self.block_offset(block) + offset as u64, &mut buf)
-            .await?;
-        Ok(buf)
+        let table_block = self.read_block(block).await?;
+        Ok(table_block[offset..offset + inode_size].to_vec())
     }
 
     /// Write an inode, stamping its checksum.
+    ///
+    /// The inode-table block is read, the inode patched into it and the block
+    /// written back — the unit the kernel's buffer head works in. The inodes
+    /// sharing that block are carried through unchanged, so two writers must
+    /// not update inodes of one block concurrently.
     pub async fn write_inode(&self, inum: u32, inode: &Inode) -> Result<()> {
         let (_, block, offset) = self.inode_location(inum)?;
-        let buf = inode.encode_with_csum(
-            self.superblock.inode_size as usize,
+        let inode_size = self.superblock.inode_size as usize;
+        let encoded = inode.encode_with_csum(
+            inode_size,
             self.has_metadata_csum(),
             self.csum_seed,
             inum,
         );
-        self.device
-            .write_at(self.block_offset(block) + offset as u64, &buf)
-            .await
+        let mut table_block = self.read_block(block).await?;
+        table_block[offset..offset + inode_size].copy_from_slice(&encoded);
+        self.write_block(block, &table_block).await
+    }
+
+    /// Where the primary superblock sits: its block, and its offset within it.
+    ///
+    /// Block 1 and offset 0 on a 1 KiB filesystem; block 0 and offset 1024 on
+    /// anything larger.
+    fn superblock_location(&self) -> (u64, usize) {
+        let block_size = self.block_size() as u64;
+        (
+            SUPERBLOCK_OFFSET / block_size,
+            (SUPERBLOCK_OFFSET % block_size) as usize,
+        )
+    }
+
+    /// The primary superblock's bytes as they are on the device, read as the
+    /// block that holds them.
+    pub async fn read_superblock_raw(&self) -> Result<[u8; SUPERBLOCK_LEN]> {
+        let (block, offset) = self.superblock_location();
+        let holder = self.read_block(block).await?;
+        let mut buf = [0u8; SUPERBLOCK_LEN];
+        buf.copy_from_slice(&holder[offset..offset + SUPERBLOCK_LEN]);
+        Ok(buf)
     }
 
     /// Write the primary superblock back.
+    ///
+    /// Written as the whole block it lives in, with the rest of that block —
+    /// the boot area, on a filesystem with blocks larger than 1 KiB — carried
+    /// through unchanged.
     pub async fn flush_superblock(&self) -> Result<()> {
-        let buf = self.superblock.encode();
-        self.device.write_at(SUPERBLOCK_OFFSET, &buf).await
+        let (block, offset) = self.superblock_location();
+        let mut holder = self.read_block(block).await?;
+        self.superblock
+            .encode_into(&mut holder[offset..offset + SUPERBLOCK_LEN]);
+        self.write_block(block, &holder).await
     }
 
     /// Write the group descriptor table back, to the primary and every backup.

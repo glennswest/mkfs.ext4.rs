@@ -43,9 +43,19 @@ pub trait BlockDevice: Send + Sync {
     }
 
     /// Read exactly `buf.len()` bytes starting at `offset`.
+    ///
+    /// Every read this crate issues is whole filesystem blocks at a block
+    /// boundary, and a block is never smaller than a sector — so an
+    /// implementation may refuse anything that is not whole sectors, as a
+    /// device enforcing its logical block does (#5, fio.ext4.rs#4). The
+    /// exception is the first read of [`crate::fs::Filesystem::open`], made
+    /// before the block size is known: it is whole *sectors* instead.
     async fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<()>;
 
     /// Write all of `buf` starting at `offset`.
+    ///
+    /// The same promise as [`read_at`](Self::read_at): whole blocks at block
+    /// boundaries, so whole sectors.
     async fn write_at(&self, offset: u64, buf: &[u8]) -> Result<()>;
 
     /// Flush any buffered writes to stable storage.
@@ -270,6 +280,7 @@ pub struct MemDevice {
     data: Mutex<Vec<u8>>,
     size: u64,
     sector_size: u32,
+    strict: bool,
 }
 
 impl MemDevice {
@@ -279,6 +290,7 @@ impl MemDevice {
             data: Mutex::new(vec![0u8; size as usize]),
             size,
             sector_size: 512,
+            strict: false,
         }
     }
 
@@ -288,6 +300,35 @@ impl MemDevice {
             sector_size,
             ..Self::new(size)
         }
+    }
+
+    /// A device that reports the given logical sector size and refuses any
+    /// read or write that is not whole sectors at a sector boundary.
+    ///
+    /// This is a real device's behaviour, not a test's caprice: a loop device
+    /// hides it with a kernel read-modify-write, a volume that enforces its
+    /// logical block answers `EINVAL`. Formatting and checking on one of these
+    /// is the test that the formatter and `Filesystem` keep to whole blocks.
+    pub fn strict(size: u64, sector_size: u32) -> Self {
+        Self {
+            strict: true,
+            ..Self::with_sector_size(size, sector_size)
+        }
+    }
+
+    /// Refuse sub-sector or misaligned I/O when this device is strict.
+    fn check_aligned(&self, offset: u64, len: usize) -> Result<()> {
+        let sector = u64::from(self.sector_size);
+        if self.strict && (offset % sector != 0 || len as u64 % sector != 0) {
+            return Err(Error::io(
+                offset,
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("{len} bytes at offset {offset} is not whole {sector}-byte sectors"),
+                ),
+            ));
+        }
+        Ok(())
     }
 
     /// Take a copy of the whole image.
@@ -308,6 +349,7 @@ impl BlockDevice for MemDevice {
 
     async fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<()> {
         check_bounds(offset, buf.len() as u64, self.size)?;
+        self.check_aligned(offset, buf.len())?;
         let data = self.data.lock().expect("mem device poisoned");
         let start = offset as usize;
         buf.copy_from_slice(&data[start..start + buf.len()]);
@@ -316,6 +358,7 @@ impl BlockDevice for MemDevice {
 
     async fn write_at(&self, offset: u64, buf: &[u8]) -> Result<()> {
         check_bounds(offset, buf.len() as u64, self.size)?;
+        self.check_aligned(offset, buf.len())?;
         let mut data = self.data.lock().expect("mem device poisoned");
         let start = offset as usize;
         data[start..start + buf.len()].copy_from_slice(buf);
@@ -405,6 +448,23 @@ mod tests {
         let dev = MemDevice::new(512);
         let err = dev.write_at(500, &[0u8; 32]).await.unwrap_err();
         assert!(matches!(err, Error::OutOfBounds { .. }));
+    }
+
+    #[tokio::test]
+    async fn a_strict_device_refuses_what_a_real_one_refuses() {
+        let dev = MemDevice::strict(16384, 4096);
+        // Whole sectors at a sector boundary: fine.
+        dev.write_at(4096, &[1u8; 8192]).await.unwrap();
+        let mut back = [0u8; 4096];
+        dev.read_at(8192, &mut back).await.unwrap();
+        assert_eq!(back, [1u8; 4096]);
+        // The 1024-byte superblock at byte 1024, and a lone inode: refused.
+        assert!(dev.write_at(1024, &[0u8; 1024]).await.is_err());
+        assert!(dev.read_at(1024, &mut [0u8; 1024]).await.is_err());
+        assert!(dev.write_at(4096, &[0u8; 256]).await.is_err());
+        // And the permissive device accepts them, as a loop device would.
+        let loose = MemDevice::with_sector_size(16384, 4096);
+        loose.write_at(1024, &[0u8; 1024]).await.unwrap();
     }
 
     #[tokio::test]

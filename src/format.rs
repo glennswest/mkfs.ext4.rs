@@ -26,7 +26,7 @@ use crate::structs::dirent::{self, file_type, DirEntry};
 use crate::structs::extent::{self, Extent};
 use crate::structs::group_desc::{bg_flags, GroupDesc};
 use crate::structs::inode::{iflags, mode, Inode};
-use crate::structs::superblock::{self, ino, Superblock, SUPERBLOCK_OFFSET};
+use crate::structs::superblock::{self, ino, Superblock, SUPERBLOCK_LEN, SUPERBLOCK_OFFSET};
 
 /// What a format produced.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1095,9 +1095,15 @@ async fn write_filesystem<D: BlockDevice + ?Sized>(dev: &D, plan: &Plan) -> Resu
 
     let superblk = build_superblock(plan, free_blocks_count, free_inodes_count);
 
-    // Zero the leading blocks so no previous filesystem's magic survives to
-    // confuse blkid, and so block 0 of a 1 KiB filesystem is clean.
-    dev.write_zeroes(0, SUPERBLOCK_OFFSET.min(dev.size())).await?;
+    // Block 0 is the boot area. On a 1 KiB filesystem it is a block of its
+    // own, zeroed here so no previous filesystem's magic survives to confuse
+    // blkid; with larger blocks the superblock shares it, and the zeroes go
+    // out with the superblock below. Either way it is written as a whole
+    // block — the device is promised nothing smaller than a sector, and a
+    // block is never smaller than a sector (#5).
+    if block_size == SUPERBLOCK_OFFSET {
+        dev.write_zeroes(0, block_size).await?;
+    }
 
     // Bitmaps, inode tables and superblock copies, fanned out across groups.
     let concurrency = plan.concurrency();
@@ -1153,18 +1159,18 @@ async fn write_filesystem<D: BlockDevice + ?Sized>(dev: &D, plan: &Plan) -> Resu
 
     // The primary superblock last: until it lands, a torn format is not a
     // filesystem at all, which is the failure mode to prefer.
-    let mut sb_buf = superblk.encode();
-    dev.write_at(SUPERBLOCK_OFFSET, &sb_buf).await?;
-    // Backups carry their own group number.
+    let (block, buf) = primary_superblock_block(&superblk.encode(), g.block_size);
+    dev.write_at(block * block_size, &buf).await?;
+    // Backups carry their own group number, and sit at the start of their
+    // group's first block with nothing after them in it.
     let mut backup = superblk.clone();
     for group in 1..g.group_count {
         if !g.has_super(group) {
             continue;
         }
         backup.block_group_nr = group as u16;
-        sb_buf = backup.encode();
-        let at = g.group_first_block(group) * block_size;
-        dev.write_at(at, &sb_buf).await?;
+        let buf = superblock_at_block_start(&backup.encode(), g.block_size);
+        dev.write_at(g.group_first_block(group) * block_size, &buf).await?;
     }
 
     dev.flush().await?;
@@ -1180,6 +1186,30 @@ async fn write_filesystem<D: BlockDevice + ?Sized>(dev: &D, plan: &Plan) -> Resu
         label: plan.label.clone(),
         journal_blocks: plan.journal_blocks,
     })
+}
+
+/// The whole block the primary superblock lives in, and its number.
+///
+/// The superblock is 1024 bytes at byte 1024, but the unit this crate writes
+/// is the block: a device is only promised I/O in whole sectors, and a block
+/// is never smaller than one. With 1 KiB blocks the superblock *is* block 1;
+/// with anything larger it sits inside block 0, the boot area zero around it.
+fn primary_superblock_block(sb: &[u8; SUPERBLOCK_LEN], block_size: u32) -> (u64, Vec<u8>) {
+    if block_size as u64 == SUPERBLOCK_OFFSET {
+        (1, sb.to_vec())
+    } else {
+        let mut buf = vec![0u8; block_size as usize];
+        buf[SUPERBLOCK_OFFSET as usize..][..SUPERBLOCK_LEN].copy_from_slice(sb);
+        (0, buf)
+    }
+}
+
+/// A backup superblock as the whole block it occupies: the copy at the start,
+/// the rest of the block zero. The descriptors follow in the next block.
+fn superblock_at_block_start(sb: &[u8; SUPERBLOCK_LEN], block_size: u32) -> Vec<u8> {
+    let mut buf = vec![0u8; block_size as usize];
+    buf[..SUPERBLOCK_LEN].copy_from_slice(sb);
+    buf
 }
 
 impl Plan {
@@ -1670,18 +1700,27 @@ async fn write_reserved_inodes<D: BlockDevice + ?Sized>(dev: &D, plan: &Plan) ->
     };
 
     let sectors_per_block = block_size / 512;
-    let write = |inum: u32, inode: &Inode, buf: &mut Vec<(u64, Vec<u8>)>| {
-        let encoded = inode.encode_with_csum(inode_size, metadata_csum, plan.csum_seed, inum);
-        let index = (inum - 1) as u64;
-        let at = layout.inode_table * block_size + index * inode_size as u64;
-        buf.push((at, encoded));
-    };
 
-    let mut writes: Vec<(u64, Vec<u8>)> = Vec::new();
+    // The inodes are gathered into the inode-table blocks they occupy and
+    // each block goes out whole. The table was zeroed (or the medium reads as
+    // zero), so a block built from zeros plus its inodes is exactly what the
+    // device must hold — and a whole block is the one write every device
+    // accepts, where a lone 256-byte inode is not (#5).
+    let mut blocks: std::collections::BTreeMap<u64, Vec<u8>> = std::collections::BTreeMap::new();
+    let mut write = |inum: u32, inode: &Inode| {
+        let encoded = inode.encode_with_csum(inode_size, metadata_csum, plan.csum_seed, inum);
+        let byte = (inum - 1) as u64 * inode_size as u64;
+        let block = layout.inode_table + byte / block_size;
+        let offset = (byte % block_size) as usize;
+        blocks
+            .entry(block)
+            .or_insert_with(|| vec![0u8; block_size as usize])[offset..offset + inode_size]
+            .copy_from_slice(&encoded);
+    };
 
     // Inode 1, bad blocks: present and in use, but empty.
     let bad = Inode::new(inode_size, extra_isize);
-    write(ino::BAD, &bad, &mut writes);
+    write(ino::BAD, &bad);
 
     // Inode 2, the root directory.
     let mut root = Inode::new(inode_size, extra_isize);
@@ -1694,7 +1733,7 @@ async fn write_reserved_inodes<D: BlockDevice + ?Sized>(dev: &D, plan: &Plan) ->
     root.mtime = plan.mkfs_time as u32;
     root.crtime = plan.mkfs_time as u32;
     set_single_block(&mut root, plan.root_block, extents);
-    write(ino::ROOT, &root, &mut writes);
+    write(ino::ROOT, &root);
 
     // Inodes 3 to 6 and 9, 10: reserved and empty.
     for inum in [
@@ -1706,7 +1745,7 @@ async fn write_reserved_inodes<D: BlockDevice + ?Sized>(dev: &D, plan: &Plan) ->
         ino::REPLICA,
     ] {
         let empty = Inode::new(inode_size, extra_isize);
-        write(inum, &empty, &mut writes);
+        write(inum, &empty);
     }
 
     // Inode 7, the resize inode: its double-indirect block reaches the
@@ -1726,7 +1765,7 @@ async fn write_reserved_inodes<D: BlockDevice + ?Sized>(dev: &D, plan: &Plan) ->
         pointers[crate::structs::inode::NDIR_BLOCKS + 1] = dind as u32;
         resize.set_block_pointers(&pointers);
     }
-    write(ino::RESIZE, &resize, &mut writes);
+    write(ino::RESIZE, &resize);
 
     // Inode 8, the journal.
     let mut journal_inode = Inode::new(inode_size, extra_isize);
@@ -1751,7 +1790,7 @@ async fn write_reserved_inodes<D: BlockDevice + ?Sized>(dev: &D, plan: &Plan) ->
         }
         journal_inode.block = plan.journal_i_block;
     }
-    write(ino::JOURNAL, &journal_inode, &mut writes);
+    write(ino::JOURNAL, &journal_inode);
 
     // Inode 11, lost+found.
     let mut lpf = Inode::new(inode_size, extra_isize);
@@ -1769,7 +1808,7 @@ async fn write_reserved_inodes<D: BlockDevice + ?Sized>(dev: &D, plan: &Plan) ->
         plan.lost_found_blocks,
         extents,
     )?;
-    write(superblock::GOOD_OLD_FIRST_INO, &lpf, &mut writes);
+    write(superblock::GOOD_OLD_FIRST_INO, &lpf);
 
     // Inode 12, the orphan file: a plain regular file, unreferenced by any
     // directory, found through s_orphan_file_inum alone.
@@ -1793,11 +1832,11 @@ async fn write_reserved_inodes<D: BlockDevice + ?Sized>(dev: &D, plan: &Plan) ->
             orphan.flags |= iflags::EXTENTS;
         }
         orphan.block = plan.orphan_i_block;
-        write(orphan_ino, &orphan, &mut writes);
+        write(orphan_ino, &orphan);
     }
 
-    for (at, buf) in writes {
-        dev.write_at(at, &buf).await?;
+    for (block, buf) in blocks {
+        dev.write_at(block * block_size, &buf).await?;
     }
     Ok(())
 }

@@ -333,10 +333,7 @@ async fn pass0_superblock<D: BlockDevice>(
 
     // The superblock's own checksum, when it carries one.
     if sb.has_metadata_csum() {
-        let mut buf = [0u8; crate::structs::superblock::SUPERBLOCK_LEN];
-        fs.device()
-            .read_at(crate::structs::superblock::SUPERBLOCK_OFFSET, &mut buf)
-            .await?;
+        let buf = fs.read_superblock_raw().await?;
         if !sb.verify_checksum(&buf) {
             report.push(
                 0,
