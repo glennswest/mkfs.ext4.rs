@@ -140,3 +140,35 @@ async fn opens_reads_and_writes_back_on_a_device_enforcing_4k_sectors() {
 
     assert_clean(&dev, "after inode and superblock writes").await;
 }
+
+/// Writing the superblock back must not depend on what the superblock says
+/// about the filesystem. A golden being stamped can carry a bare superblock —
+/// magic, block size and nothing else, `blocks_count` zero — and the block
+/// holding it is still block 0 of the device. Bounding that write by the
+/// superblock's own count refused it: "block 0 is past the end of the
+/// 0-block filesystem" (found by stormblock's image builder).
+#[tokio::test]
+async fn stamps_a_bare_superblock_claiming_no_blocks() {
+    use mkfs_ext4::structs::superblock::SUPERBLOCK_OFFSET;
+
+    let dev = MemDevice::strict(8 * MIB, 4096);
+    // Magic 0xEF53 at 1024+0x38, s_log_block_size at 1024+0x18: 4096 = 1024 << 2.
+    let mut head = vec![0u8; 4096];
+    head[SUPERBLOCK_OFFSET as usize + 0x38] = 0x53;
+    head[SUPERBLOCK_OFFSET as usize + 0x39] = 0xEF;
+    head[SUPERBLOCK_OFFSET as usize + 0x18] = 2;
+    dev.write_at(0, &head).await.unwrap();
+
+    let mut fs = Filesystem::open(&dev).await.expect("a bare superblock still opens");
+    assert_eq!(fs.block_size(), 4096);
+    assert_eq!(fs.superblock().blocks_count, 0);
+
+    fs.superblock_mut().uuid = *b"stamped-by-test!";
+    fs.flush_superblock()
+        .await
+        .expect("the superblock's block is addressable whatever the superblock claims");
+    assert_eq!(fs.read_superblock_raw().await.unwrap()[0x38], 0x53);
+
+    let again = Filesystem::open(&dev).await.unwrap();
+    assert_eq!(&again.superblock().uuid, b"stamped-by-test!");
+}

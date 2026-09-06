@@ -380,11 +380,26 @@ impl<D: BlockDevice> Filesystem<D> {
         )
     }
 
+    /// The block holding the primary superblock, straight from the device.
+    ///
+    /// Not [`read_block`](Self::read_block): that checks the block against the
+    /// superblock's own `blocks_count`, and the superblock must stay readable
+    /// and writable whatever it claims about the filesystem — a repair, or a
+    /// golden being stamped, is exactly when the count may be wrong. The
+    /// device bounds the read.
+    async fn read_superblock_holder(&self) -> Result<(u64, usize, Vec<u8>)> {
+        let (block, offset) = self.superblock_location();
+        let mut holder = vec![0u8; self.block_size() as usize];
+        self.device
+            .read_at(self.block_offset(block), &mut holder)
+            .await?;
+        Ok((block, offset, holder))
+    }
+
     /// The primary superblock's bytes as they are on the device, read as the
     /// block that holds them.
     pub async fn read_superblock_raw(&self) -> Result<[u8; SUPERBLOCK_LEN]> {
-        let (block, offset) = self.superblock_location();
-        let holder = self.read_block(block).await?;
+        let (_, offset, holder) = self.read_superblock_holder().await?;
         let mut buf = [0u8; SUPERBLOCK_LEN];
         buf.copy_from_slice(&holder[offset..offset + SUPERBLOCK_LEN]);
         Ok(buf)
@@ -396,11 +411,12 @@ impl<D: BlockDevice> Filesystem<D> {
     /// the boot area, on a filesystem with blocks larger than 1 KiB — carried
     /// through unchanged.
     pub async fn flush_superblock(&self) -> Result<()> {
-        let (block, offset) = self.superblock_location();
-        let mut holder = self.read_block(block).await?;
+        let (block, offset, mut holder) = self.read_superblock_holder().await?;
         self.superblock
             .encode_into(&mut holder[offset..offset + SUPERBLOCK_LEN]);
-        self.write_block(block, &holder).await
+        self.device
+            .write_at(self.block_offset(block), &holder)
+            .await
     }
 
     /// Write the group descriptor table back, to the primary and every backup.
