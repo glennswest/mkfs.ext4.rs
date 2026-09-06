@@ -92,13 +92,18 @@ to point at, not an open-ended guess about feature flags.
 - [ ] Issue #5 (fio.ext4.rs#4 is the read side): a device that enforces its
       4096-byte logical block refuses the sub-block I/O this crate issues at
       aligned offsets — the 1024-byte superblock, individual inodes, the group
-      descriptor table. A loop device hid it with a kernel read-modify-write.
-      Fix at the seam: `AlignedDevice<D>` rounds every read out to whole
-      sectors and turns every partial write into a read-modify-write of the
-      sectors it touches, serialised so two partial writes to one sector cannot
-      lose each other. `format`, `Filesystem::open` and so `fsck` wrap the
-      device they are handed; nothing above the seam changes. `MemDevice::strict`
-      is the test device that refuses unaligned I/O the way stormblock does.
+      descriptor table at its exact byte length. A loop device hid it with a
+      kernel read-modify-write. Not fixed with a wrapper that does the same:
+      `Geometry` already guarantees a block is never smaller than a sector and
+      is whole sectors, so **every device operation is a whole filesystem
+      block at a block boundary** and alignment follows. The formatter owns
+      every block it writes and assembles full ones (block 0 is boot area plus
+      superblock in one write, the descriptor table is padded to blocks as
+      `mke2fs` writes it, reserved inodes go out grouped by inode-table
+      block); `Filesystem` reads and writes the block an inode or the
+      superblock lives in, the unit the kernel's buffer heads use. `open`
+      alone consults the sector size, before the block size is known.
+      `MemDevice::strict` is the test device that refuses unaligned I/O.
 - [ ] stormblock integration path (file against stormblock#39, do not edit it
       from this repo)
 
