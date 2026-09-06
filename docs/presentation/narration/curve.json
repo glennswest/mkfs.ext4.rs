@@ -1,0 +1,2456 @@
+{
+ "01": [
+  {
+   "energy": 0.3,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.3,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.2,
+   "emotion": "concern",
+   "why": "acknowledges failure"
+  },
+  {
+   "energy": 0.7,
+   "valence": 0.6,
+   "emotion": "pride",
+   "why": "key result"
+  },
+  {
+   "energy": 0.3,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.3,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "conclusion"
+  }
+ ],
+ "02": [
+  {
+   "energy": 0.3,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.1,
+   "emotion": "concern",
+   "why": "acknowledges struggle"
+  },
+  {
+   "energy": 0.3,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.3,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.3,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.3,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.3,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  }
+ ],
+ "03": [
+  {
+   "energy": 0.3,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.3,
+   "emotion": "wonder",
+   "why": "surprising result"
+  },
+  {
+   "energy": 0.3,
+   "valence": 0.2,
+   "emotion": "wonder",
+   "why": "additional surprising result"
+  },
+  {
+   "energy": 0.5,
+   "valence": -0.4,
+   "emotion": "concern",
+   "why": "problem identified"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.5,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "acknowledges mistake"
+  },
+  {
+   "energy": 0.5,
+   "valence": -0.4,
+   "emotion": "concern",
+   "why": "acknowledges mistake"
+  }
+ ],
+ "04": [
+  {
+   "energy": 0.3,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.2,
+   "emotion": "concern",
+   "why": "acknowledges failure"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.3,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "problem persists"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.2,
+   "emotion": "concern",
+   "why": "problem persists"
+  },
+  {
+   "energy": 0.3,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "problem persists"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "problem persists"
+  },
+  {
+   "energy": 0.3,
+   "valence": -0.2,
+   "emotion": "concern",
+   "why": "problem persists"
+  },
+  {
+   "energy": 0.3,
+   "valence": -0.2,
+   "emotion": "concern",
+   "why": "problem persists"
+  },
+  {
+   "energy": 0.3,
+   "valence": -0.2,
+   "emotion": "concern",
+   "why": "problem persists"
+  },
+  {
+   "energy": 0.3,
+   "valence": -0.2,
+   "emotion": "concern",
+   "why": "problem persists"
+  },
+  {
+   "energy": 0.6,
+   "valence": 0.2,
+   "emotion": "relief",
+   "why": "turning point"
+  },
+  {
+   "energy": 0.7,
+   "valence": 0.5,
+   "emotion": "pride",
+   "why": "key insight"
+  }
+ ],
+ "05": [
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.2,
+   "emotion": "concern",
+   "why": "problem with testing"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.2,
+   "emotion": "concern",
+   "why": "continued problem with testing"
+  },
+  {
+   "energy": 0.7,
+   "valence": 0.6,
+   "emotion": "wonder",
+   "why": "introduction of A.I. as a solution"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.2,
+   "emotion": "neutral",
+   "why": "explanation of A.I. capability"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.2,
+   "emotion": "neutral",
+   "why": "explanation of A.I. capability"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.2,
+   "emotion": "neutral",
+   "why": "explanation of A.I. capability"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "problem with blaming others"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.4,
+   "emotion": "concern",
+   "why": "problem with blaming others"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.5,
+   "emotion": "concern",
+   "why": "negative consequence of blame"
+  },
+  {
+   "energy": 0.3,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "definition of 'proven'"
+  },
+  {
+   "energy": 0.3,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "background detail"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.4,
+   "emotion": "concern",
+   "why": "irrelevance of past claim"
+  }
+ ],
+ "06": [
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "introduction of solution"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "acknowledgment of wasted time"
+  },
+  {
+   "energy": 0.5,
+   "valence": 0.1,
+   "emotion": "neutral",
+   "why": "call for change"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation of change"
+  },
+  {
+   "energy": 0.6,
+   "valence": 0.5,
+   "emotion": "relief",
+   "why": "introduction of new method"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.2,
+   "emotion": "neutral",
+   "why": "summary of method"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation of method"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation of method"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.2,
+   "emotion": "concern",
+   "why": "acknowledgment of cost"
+  },
+  {
+   "energy": 0.6,
+   "valence": 0.6,
+   "emotion": "relief",
+   "why": "quick resolution"
+  }
+ ],
+ "07": [
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "introduction of steps"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation of steps"
+  },
+  {
+   "energy": 0.5,
+   "valence": 0.3,
+   "emotion": "neutral",
+   "why": "call to action"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation of call to action"
+  },
+  {
+   "energy": 0.5,
+   "valence": 0.3,
+   "emotion": "neutral",
+   "why": "emphasizing decision"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "introduction of next step"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation of next step"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation of next step"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation of next step"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation of next step"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation of next step"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation of next step"
+  }
+ ],
+ "08": [
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "introduction of definition"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation of definition"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "technical detail"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "comparison to original"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "technical detail"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "technical detail"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "technical detail"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "technical detail"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "technical detail"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "technical detail"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "technical detail"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "technical detail"
+  },
+  {
+   "energy": 0.6,
+   "valence": 0.6,
+   "emotion": "relief",
+   "why": "conclusion and validation"
+  }
+ ],
+ "09": [
+  {
+   "energy": 0.3,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.5,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "negative outcome"
+  },
+  {
+   "energy": 0.5,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "negative outcome"
+  },
+  {
+   "energy": 0.5,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "clarification"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "question"
+  },
+  {
+   "energy": 0.5,
+   "valence": -0.2,
+   "emotion": "concern",
+   "why": "problem with approach"
+  },
+  {
+   "energy": 0.7,
+   "valence": 0.3,
+   "emotion": "relief",
+   "why": "key insight"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "instruction"
+  },
+  {
+   "energy": 0.6,
+   "valence": 0.3,
+   "emotion": "pride",
+   "why": "positive result"
+  },
+  {
+   "energy": 0.5,
+   "valence": -0.2,
+   "emotion": "concern",
+   "why": "problem with consumer"
+  },
+  {
+   "energy": 0.6,
+   "valence": -0.5,
+   "emotion": "regret",
+   "why": "negative consequence"
+  }
+ ],
+ "10": [
+  {
+   "energy": 0.3,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.3,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.5,
+   "valence": -0.2,
+   "emotion": "concern",
+   "why": "problem with specification"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "question"
+  },
+  {
+   "energy": 0.6,
+   "valence": 0.3,
+   "emotion": "relief",
+   "why": "key insight"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.2,
+   "emotion": "concern",
+   "why": "limitation of method"
+  }
+ ],
+ "11": [
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.5,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "specific error"
+  },
+  {
+   "energy": 0.5,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "specific error"
+  },
+  {
+   "energy": 0.6,
+   "valence": -0.5,
+   "emotion": "regret",
+   "why": "serious mistake"
+  },
+  {
+   "energy": 0.5,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "specific error"
+  },
+  {
+   "energy": 0.5,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "specific error"
+  },
+  {
+   "energy": 0.5,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "specific error"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "clarification"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "clarification"
+  },
+  {
+   "energy": 0.5,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.5,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  }
+ ],
+ "12": [
+  {
+   "energy": 0.3,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.3,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.6,
+   "valence": 0.4,
+   "emotion": "pride",
+   "why": "positive capability"
+  },
+  {
+   "energy": 0.5,
+   "valence": 0.3,
+   "emotion": "pride",
+   "why": "positive capability"
+  },
+  {
+   "energy": 0.5,
+   "valence": 0.3,
+   "emotion": "pride",
+   "why": "positive capability"
+  },
+  {
+   "energy": 0.5,
+   "valence": 0.3,
+   "emotion": "pride",
+   "why": "positive capability"
+  },
+  {
+   "energy": 0.6,
+   "valence": 0.4,
+   "emotion": "pride",
+   "why": "positive result"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.2,
+   "emotion": "concern",
+   "why": "limitation of A.I."
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.2,
+   "emotion": "concern",
+   "why": "limitation of A.I."
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.2,
+   "emotion": "concern",
+   "why": "limitation of A.I."
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.2,
+   "emotion": "concern",
+   "why": "limitation of A.I."
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.2,
+   "emotion": "concern",
+   "why": "limitation of A.I."
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.2,
+   "emotion": "concern",
+   "why": "limitation of A.I."
+  },
+  {
+   "energy": 0.5,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "contrast with human insight"
+  }
+ ],
+ "13": [
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  }
+ ],
+ "14": [
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  }
+ ],
+ "15": [
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  }
+ ],
+ "16": [
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  }
+ ],
+ "17": [
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.6,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "procedural"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "procedural"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "procedural"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "procedural"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "procedural"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "procedural"
+  },
+  {
+   "energy": 0.6,
+   "valence": -0.5,
+   "emotion": "concern",
+   "why": "problem statement"
+  }
+ ],
+ "18": [
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.6,
+   "valence": -0.5,
+   "emotion": "concern",
+   "why": "problem statement"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.7,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "reveal"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "procedural"
+  },
+  {
+   "energy": 0.7,
+   "valence": -1.0,
+   "emotion": "frustration",
+   "why": "problem"
+  }
+ ],
+ "19": [
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.6,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.6,
+   "valence": 1.0,
+   "emotion": "relief",
+   "why": "solution"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "procedural"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "procedural"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "procedural"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "procedural"
+  },
+  {
+   "energy": 0.6,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.6,
+   "valence": 1.0,
+   "emotion": "relief",
+   "why": "solution"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "procedural"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "procedural"
+  }
+ ],
+ "20": [
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.6,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.6,
+   "valence": 1.0,
+   "emotion": "pride",
+   "why": "result"
+  },
+  {
+   "energy": 0.6,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.6,
+   "valence": 1.0,
+   "emotion": "pride",
+   "why": "result"
+  }
+ ],
+ "21": [
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.2,
+   "emotion": "concern",
+   "why": "acknowledging limitations"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.2,
+   "emotion": "concern",
+   "why": "acknowledging limitations"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "transition"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.7,
+   "valence": 0.3,
+   "emotion": "relief",
+   "why": "key insight"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  }
+ ],
+ "22": [
+  {
+   "energy": 0.6,
+   "valence": 0.3,
+   "emotion": "pride",
+   "why": "highlighting value"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "problem identified"
+  },
+  {
+   "energy": 0.6,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "problem identified"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "problem identified"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "problem identified"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "problem identified"
+  }
+ ],
+ "23": [
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.6,
+   "valence": 0.3,
+   "emotion": "relief",
+   "why": "key insight"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.2,
+   "emotion": "concern",
+   "why": "acknowledging limitations"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  }
+ ],
+ "24": [
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "problem identified"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "problem identified"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "problem identified"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "problem identified"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "problem identified"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.6,
+   "valence": 0.3,
+   "emotion": "relief",
+   "why": "key insight"
+  }
+ ],
+ "25": [
+  {
+   "energy": 0.6,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "introducing a critical problem"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "technical explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "technical explanation"
+  },
+  {
+   "energy": 0.5,
+   "valence": -0.5,
+   "emotion": "concern",
+   "why": "unexpected consequence"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "technical explanation"
+  },
+  {
+   "energy": 0.5,
+   "valence": -0.5,
+   "emotion": "concern",
+   "why": "serious consequence"
+  },
+  {
+   "energy": 0.7,
+   "valence": -0.7,
+   "emotion": "concern",
+   "why": "major problem that went unnoticed"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "supporting detail"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "supporting detail"
+  },
+  {
+   "energy": 0.5,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "technical explanation"
+  },
+  {
+   "energy": 0.5,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "technical explanation"
+  },
+  {
+   "energy": 0.6,
+   "valence": -0.5,
+   "emotion": "concern",
+   "why": "final consequence of the bug"
+  }
+ ],
+ "26": [
+  {
+   "energy": 0.6,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "introducing a critical problem"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "background"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "background"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "background"
+  },
+  {
+   "energy": 0.6,
+   "valence": -0.5,
+   "emotion": "concern",
+   "why": "unexpected consequence"
+  },
+  {
+   "energy": 0.5,
+   "valence": -0.5,
+   "emotion": "concern",
+   "why": "technical explanation"
+  },
+  {
+   "energy": 0.5,
+   "valence": -0.5,
+   "emotion": "concern",
+   "why": "specific example of the problem"
+  },
+  {
+   "energy": 0.5,
+   "valence": -0.5,
+   "emotion": "concern",
+   "why": "specific example of the problem"
+  },
+  {
+   "energy": 0.6,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "technical solution"
+  },
+  {
+   "energy": 0.6,
+   "valence": -0.5,
+   "emotion": "concern",
+   "why": "linking to a previous problem"
+  },
+  {
+   "energy": 0.6,
+   "valence": -0.5,
+   "emotion": "concern",
+   "why": "specific example of the problem"
+  }
+ ],
+ "27": [
+  {
+   "energy": 0.5,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "introducing a question"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "clarification"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "clarification"
+  },
+  {
+   "energy": 0.5,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "technical explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "technical explanation"
+  },
+  {
+   "energy": 0.5,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "technical explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "technical explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "technical explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "technical explanation"
+  },
+  {
+   "energy": 0.5,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "technical explanation"
+  }
+ ],
+ "28": [
+  {
+   "energy": 0.5,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "introducing a recurring problem"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "background"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "background"
+  },
+  {
+   "energy": 0.5,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "problem reappears"
+  },
+  {
+   "energy": 0.5,
+   "valence": -0.5,
+   "emotion": "concern",
+   "why": "serious consequence"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "clarification"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "technical explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "technical explanation"
+  },
+  {
+   "energy": 0.5,
+   "valence": -0.5,
+   "emotion": "concern",
+   "why": "technical explanation"
+  },
+  {
+   "energy": 0.5,
+   "valence": -0.5,
+   "emotion": "concern",
+   "why": "technical explanation"
+  },
+  {
+   "energy": 0.5,
+   "valence": -0.5,
+   "emotion": "concern",
+   "why": "technical explanation"
+  },
+  {
+   "energy": 0.5,
+   "valence": -0.5,
+   "emotion": "concern",
+   "why": "technical explanation"
+  },
+  {
+   "energy": 0.5,
+   "valence": -0.5,
+   "emotion": "concern",
+   "why": "technical explanation"
+  }
+ ],
+ "29": [
+  {
+   "energy": 0.3,
+   "valence": -0.2,
+   "emotion": "concern",
+   "why": "setup for a problem that wasn't where ex"
+  },
+  {
+   "energy": 0.5,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "the hypotheses were wrong, setting up th"
+  },
+  {
+   "energy": 0.3,
+   "valence": -0.4,
+   "emotion": "concern",
+   "why": "narrowing down the wrong possibilities"
+  },
+  {
+   "energy": 0.3,
+   "valence": -0.4,
+   "emotion": "concern",
+   "why": "continuing to eliminate wrong options"
+  },
+  {
+   "energy": 0.3,
+   "valence": -0.4,
+   "emotion": "concern",
+   "why": "more wrong options being ruled out"
+  },
+  {
+   "energy": 0.6,
+   "valence": 0.1,
+   "emotion": "neutral",
+   "why": "a key revelation, the implementation was"
+  },
+  {
+   "energy": 0.5,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "introducing the overlooked default"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "describing the process of debugging"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "another detail of the debugging process"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.1,
+   "emotion": "relief",
+   "why": "closing the loop on the problem"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "clarifying the reason for the fix"
+  },
+  {
+   "energy": 0.5,
+   "valence": 0.2,
+   "emotion": "wonder",
+   "why": "a surprising technical detail"
+  },
+  {
+   "energy": 0.8,
+   "valence": 0.3,
+   "emotion": "pride",
+   "why": "the main takeaway and conclusion of the "
+  }
+ ],
+ "30": [
+  {
+   "energy": 0.3,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup for the epilogue"
+  },
+  {
+   "energy": 0.6,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "introducing a new problem that emerged"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "detailing the specific issue"
+  },
+  {
+   "energy": 0.5,
+   "valence": -0.2,
+   "emotion": "concern",
+   "why": "explaining the system's response to the "
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.1,
+   "emotion": "neutral",
+   "why": "explaining the technical cause"
+  },
+  {
+   "energy": 0.5,
+   "valence": -0.2,
+   "emotion": "concern",
+   "why": "introducing a hidden issue"
+  },
+  {
+   "energy": 0.5,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "highlighting the failure of the testing"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.2,
+   "emotion": "concern",
+   "why": "a critical lesson about verification"
+  },
+  {
+   "energy": 0.5,
+   "valence": 0.1,
+   "emotion": "neutral",
+   "why": "introducing the fix"
+  }
+ ],
+ "31": [
+  {
+   "energy": 0.3,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "introducing a new section"
+  },
+  {
+   "energy": 0.6,
+   "valence": -0.4,
+   "emotion": "concern",
+   "why": "a surprising and alarming performance me"
+  },
+  {
+   "energy": 0.6,
+   "valence": -0.5,
+   "emotion": "concern",
+   "why": "emphasizing the severity of the issue"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "clarifying the root cause"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "a technical detail"
+  },
+  {
+   "energy": 0.5,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "explaining the system's behavior"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "describing the attempted fixes"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "describing the limitations of those fixe"
+  },
+  {
+   "energy": 0.5,
+   "valence": 0.1,
+   "emotion": "neutral",
+   "why": "introducing the final fix"
+  },
+  {
+   "energy": 0.5,
+   "valence": 0.1,
+   "emotion": "neutral",
+   "why": "detailing the technical aspects of the f"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "connecting the fix to the original probl"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "describing the discovery process"
+  },
+  {
+   "energy": 0.5,
+   "valence": 0.2,
+   "emotion": "wonder",
+   "why": "highlighting the importance of real-worl"
+  }
+ ],
+ "32": [
+  {
+   "energy": 0.3,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "introducing a summary"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.1,
+   "emotion": "neutral",
+   "why": "describing a technical change"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.1,
+   "emotion": "neutral",
+   "why": "detailing a specific fix"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.2,
+   "emotion": "concern",
+   "why": "highlighting a mistake in the release pr"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explaining the decision to preserve the "
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.1,
+   "emotion": "neutral",
+   "why": "introducing a new feature"
+  },
+  {
+   "energy": 0.3,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "introducing the number of issues"
+  },
+  {
+   "energy": 0.3,
+   "valence": 0.1,
+   "emotion": "relief",
+   "why": "showing that all issues were resolved"
+  },
+  {
+   "energy": 0.6,
+   "valence": 0.3,
+   "emotion": "pride",
+   "why": "concluding with the success of the proce"
+  }
+ ],
+ "33": [
+  {
+   "energy": 0.3,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.3,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.6,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.3,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.3,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.5,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "problem"
+  },
+  {
+   "energy": 0.8,
+   "valence": 0.7,
+   "emotion": "pride",
+   "why": "reveal"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.7,
+   "valence": 0.6,
+   "emotion": "pride",
+   "why": "key insight"
+  }
+ ],
+ "34": [
+  {
+   "energy": 0.3,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.3,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.3,
+   "emotion": "wonder",
+   "why": "use case"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.3,
+   "emotion": "wonder",
+   "why": "example"
+  },
+  {
+   "energy": 0.3,
+   "valence": -0.2,
+   "emotion": "concern",
+   "why": "constraint"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.2,
+   "emotion": "wonder",
+   "why": "solution"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.3,
+   "emotion": "wonder",
+   "why": "benefit"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "technical detail"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "technical detail"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.3,
+   "emotion": "wonder",
+   "why": "use case"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.3,
+   "emotion": "wonder",
+   "why": "use case"
+  }
+ ],
+ "35": [
+  {
+   "energy": 0.3,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.2,
+   "emotion": "concern",
+   "why": "problem"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.3,
+   "emotion": "concern",
+   "why": "warning"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.2,
+   "emotion": "concern",
+   "why": "warning"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": -0.2,
+   "emotion": "concern",
+   "why": "problem"
+  },
+  {
+   "energy": 0.5,
+   "valence": -0.5,
+   "emotion": "concern",
+   "why": "problem"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "explanation"
+  }
+ ],
+ "36": [
+  {
+   "energy": 0.3,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.3,
+   "valence": 0.3,
+   "emotion": "wonder",
+   "why": "technical detail"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.3,
+   "emotion": "wonder",
+   "why": "example"
+  },
+  {
+   "energy": 0.3,
+   "valence": 0.0,
+   "emotion": "neutral",
+   "why": "setup"
+  },
+  {
+   "energy": 0.4,
+   "valence": 0.5,
+   "emotion": "relief",
+   "why": "key insight"
+  },
+  {
+   "energy": 0.5,
+   "valence": 0.3,
+   "emotion": "wonder",
+   "why": "key insight"
+  },
+  {
+   "energy": 0.3,
+   "valence": 0.7,
+   "emotion": "relief",
+   "why": "conclusion"
+  }
+ ]
+}

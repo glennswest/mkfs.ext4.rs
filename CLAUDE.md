@@ -6,7 +6,7 @@ output by a comparison tool, with the e2fsprogs source consulted at the
 specific points where the two differ.
 
 - **Crate:** `mkfs-ext4` (lib `mkfs_ext4`)
-- **Version:** 2.1.0 — see `Cargo.toml` (single version location)
+- **Version:** 2.2.0 — see `Cargo.toml` (single version location)
 - **License:** MIT OR Apache-2.0
 - **Repo:** https://github.com/glennswest/mkfs.ext4.rs
 - **Directory:** `~/projects/mkfs.ext4.rs`. The crate covers ext2/ext3/ext4
@@ -89,7 +89,7 @@ to point at, not an open-ended guess about feature flags.
       consumer's stated contract (discard-and-rebuild on a torn build, `flush()`
       before seal). The O(1) tail-append allocation scan is fio-ext4's half —
       filed there, not fixed here.
-- [ ] Issue #5 (fio.ext4.rs#4 is the read side): a device that enforces its
+- [x] Issue #5 (fio.ext4.rs#4 is the read side): a device that enforces its
       4096-byte logical block refuses the sub-block I/O this crate issues at
       aligned offsets — the 1024-byte superblock, individual inodes, the group
       descriptor table at its exact byte length. A loop device hid it with a
