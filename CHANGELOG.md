@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+## [v2.2.0] — 2026-09-06
+
+### 2026-09-06
+- **fix:** a device enforcing its 4096-byte logical block refused the
+  sub-block I/O this crate issued at aligned offsets — the 1024-byte
+  superblock at byte 1024, the reserved inodes one at a time, an inode read
+  or written on its own (#5; fio.ext4.rs#4 is the read side). A loop device
+  had hidden it with a kernel read-modify-write. Not fixed with a wrapper that
+  does the same: `Geometry` already guarantees a block is never smaller than
+  a sector, so every device operation is now a whole filesystem block at a
+  block boundary. The formatter writes block 0 as boot area plus superblock,
+  pads backup superblocks to their block, and gathers the reserved inodes
+  into their inode-table blocks; `Filesystem` reads and writes the block an
+  inode or the superblock lives in, and `open` reads whole sectors before the
+  block size is known. `fsck` re-reads the superblock through the new
+  `Filesystem::read_superblock_raw`.
+- **feat:** `MemDevice::strict(size, sector)` — an in-memory device that
+  refuses any read or write that is not whole sectors at a sector boundary,
+  the behaviour of the real device. `tests/strict_sector.rs` formats every
+  profile on it at 4 KiB and 512-byte sectors, proves the image identical to
+  a permissive device's, checks it, and round-trips inode and superblock
+  writes through it.
+- **docs:** README explains the whole-block rule; `BlockDevice::read_at` and
+  `write_at` state the promise an implementation may rely on.
+
 ### 2026-09-02
 - **docs(presentation):** performance direction in the narration, using
   slidemaker v0.4.0's emotion graph: the open starts low, the three wasted

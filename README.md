@@ -48,6 +48,18 @@ Or state it per-format, which overrides the device:
 Params::new(Profile::Ext4).sector_size(4096)
 ```
 
+The sector is also the smallest I/O a device has to accept, and a device that
+enforces its logical block — a stormblock thin volume, an NVMe namespace
+formatted at 4 KiB — answers `EINVAL` to anything smaller. A loop device hides
+that behind a kernel read-modify-write; nothing else does. So **every read and
+write this crate issues is a whole filesystem block at a block boundary**: the
+formatter writes block 0 as boot area plus superblock in one piece and gathers
+the reserved inodes into their inode-table blocks, and `Filesystem` reads and
+writes the block an inode or the superblock lives in. A block is never smaller
+than a sector, so alignment follows. `MemDevice::strict` refuses unaligned I/O
+the way a real device does, and the `strict_sector` tests format, check and
+write on it.
+
 Drives report one of two logical sector sizes, and both are covered. What we
 choose, measured against `mke2fs` 1.47.3 on real loop devices of each:
 
