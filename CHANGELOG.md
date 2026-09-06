@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [v2.2.2] — 2026-09-06
+
+### 2026-09-06
+- **fix:** `flush_superblock` and `read_superblock_raw` address the block
+  holding the superblock through the device, not through `read_block`, whose
+  bounds check trusts the superblock's own `blocks_count`. A bare superblock
+  being stamped — magic and block size, count zero, as stormblock's image
+  builder writes for a golden — could not be written back in 2.2.0/2.2.1:
+  "block 0 is past the end of the 0-block filesystem". Test added.
+
 ## [v2.2.1] — 2026-09-06
 
 ### 2026-09-06
