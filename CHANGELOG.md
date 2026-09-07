@@ -2,6 +2,36 @@
 
 ## [Unreleased]
 
+## [v3.0.0] — 2026-09-06
+
+### Breaking
+- **read:** `BlockReader::read_at` returns `Result<(), ReadError>` instead of
+  `Result<(), ()>`. `ReadError` carries the device's own status word — an
+  `EFI_STATUS`, an errno — as the opaque number it is, and
+  `Error::DeviceRead` now carries it alongside the offset, which is what a
+  firmware log can print. Implementors return `ReadError::new(status)`, or
+  `ReadError::default()` with nothing to say. (The `()` error had been
+  covered by a clippy `allow`; it is now a type, and the `allow` is gone.)
+
+### Changed
+- **refactor:** clippy clean under `-D warnings` for both the `std` build
+  (all targets) and the `no_std` core. Real changes, not suppressions: the
+  fsck parent-mismatch check compared the same pair twice (`eq_op`, an
+  error); `read_inode_data` filled holes with `iter::repeat_n`, stable only
+  in 1.82 against a 1.75 MSRV; the software crc32c is compiled where it is
+  used (`no_std`, and the host test that holds it to the accelerated one)
+  rather than being dead under `std`; identical csum-seed branches merged; a
+  type alias for the placement cache; the half-MD4 rounds use
+  `rotate_left`; three imports the `no_std` core never used are gone.
+
+### Verified
+- On a 4 KiB-sector appliance the template formats still failed after
+  2.2.2, at the same offsets. That fault was never in this crate: the
+  offsets and lengths were whole blocks, and the drive layer underneath was
+  handing a malloc'd buffer to an `O_DIRECT` fd (stormblock `SasDevice`,
+  fixed in stormblock 3e507e1). The whole-block rule here stands, and the
+  `MemDevice::strict` tests are what prove it.
+
 ## [v2.2.2] — 2026-09-06
 
 ### 2026-09-06
