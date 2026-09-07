@@ -30,8 +30,6 @@
 
 use alloc::vec;
 use alloc::vec::Vec;
-#[cfg(not(feature = "std"))]
-use alloc::string::ToString;
 
 use crate::error::{Error, Result};
 use crate::structs::extent::{Extent, ExtentHeader, ExtentIdx};

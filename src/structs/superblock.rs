@@ -5,7 +5,7 @@
 //! of this file; they are not to be inferred from field order here.
 
 #[cfg(not(feature = "std"))]
-use alloc::{string::String, string::ToString};
+use alloc::string::String;
 
 use crate::bytes::*;
 use crate::error::{Error, Result};
