@@ -262,8 +262,10 @@ mod tests {
 
 /// Castagnoli, reflected (`0x1EDC6F41` reversed): the bare table-free update,
 /// with no inversion at either end.
+#[cfg(any(not(feature = "std"), test))]
 const CRC32C_POLY: u32 = 0x82F6_3B78;
 
+#[cfg(any(not(feature = "std"), test))]
 fn crc32c_bare(mut crc: u32, data: &[u8]) -> u32 {
     for &b in data {
         crc ^= b as u32;
@@ -285,6 +287,10 @@ fn crc32c_bare(mut crc: u32, data: &[u8]) -> u32 {
 /// update alone produces different values, and a filesystem written on a host
 /// would then disagree with firmware about every checksum it carries. The test
 /// below is what caught that.
+///
+/// Compiled for `no_std`, and for the host test that holds it to the
+/// accelerated implementation; under `std` otherwise it would be dead code.
+#[cfg(any(not(feature = "std"), test))]
 fn crc32c_sw(crc: u32, data: &[u8]) -> u32 {
     !crc32c_bare(!crc, data)
 }

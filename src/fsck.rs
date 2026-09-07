@@ -551,22 +551,19 @@ async fn pass1_inodes<D: BlockDevice>(
             // the entries and never looks at the four bytes after them — so a
             // tail written where no other reader looks passes a walk and fails
             // the kernel (mkfs.ext4.rs#1, fio.ext4.rs#2).
-            match fs.bad_extent_checksums(&inode, inum).await {
-                Ok(blocks) => {
-                    for block in blocks.iter().take(4) {
-                        report.push(
-                            1,
-                            "extent-csum",
-                            Severity::Serious,
-                            format!(
-                                "inode {inum} extent block {block} checksum does not match its contents"
-                            ),
-                        );
-                    }
+            // An unreadable or nonsensical tree comes back as an error; the
+            // walk above already said so, and saying it twice helps nobody.
+            if let Ok(blocks) = fs.bad_extent_checksums(&inode, inum).await {
+                for block in blocks.iter().take(4) {
+                    report.push(
+                        1,
+                        "extent-csum",
+                        Severity::Serious,
+                        format!(
+                            "inode {inum} extent block {block} checksum does not match its contents"
+                        ),
+                    );
                 }
-                // An unreadable or nonsensical tree; the walk above already
-                // said so, and saying it twice helps nobody.
-                Err(_) => {}
             }
 
             // i_blocks counts every block the inode owns, in 512-byte sectors.
@@ -840,7 +837,7 @@ async fn pass3_connectivity<D: BlockDevice>(
             .find(|(_, kids)| kids.contains(&dir))
             .map(|(&p, _)| p);
         if let Some(actual) = really_in {
-            if actual != claimed_parent && claimed_parent != actual {
+            if actual != claimed_parent {
                 report.push(
                     3,
                     "parent-mismatch",

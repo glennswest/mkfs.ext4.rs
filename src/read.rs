@@ -48,7 +48,11 @@ pub const ROOT_INO: u32 = 2;
 /// wraps a `Vec<u8>`, and neither needs a runtime.
 pub trait BlockReader {
     /// Fill `buf` from `offset`. Any failure is a failure; there is nothing
-    /// useful to report from firmware beyond that.
+    /// useful to report from firmware beyond that, which is why the error is
+    /// `()` and not a type: a UEFI `BlockIO` status has nowhere to go, and
+    /// [`Ext4`] turns the failure into [`Error::DeviceRead`] with the offset,
+    /// which is the one fact worth keeping. Deliberate, not an omission.
+    #[allow(clippy::result_unit_err)]
     fn read_at(&self, offset: u64, buf: &mut [u8]) -> core::result::Result<(), ()>;
 }
 
@@ -73,7 +77,7 @@ impl Ext4 {
     /// Read the superblock and derive the geometry needed to resolve inodes.
     pub fn open(dev: &impl BlockReader) -> Result<Ext4> {
         let mut buf = [0u8; 1024];
-        read_exact(dev, SUPERBLOCK_OFFSET as u64, &mut buf)?;
+        read_exact(dev, SUPERBLOCK_OFFSET, &mut buf)?;
         let sb = Superblock::decode(&buf)?;
 
         let block_size = 1024u64 << sb.log_block_size;
@@ -278,8 +282,10 @@ mod tests {
 
     async fn formatted(size: u64, block_size: Option<u32>) -> MemDevice {
         let dev = MemDevice::new(size);
-        let mut params = Params::default();
-        params.block_size = block_size;
+        let params = Params {
+            block_size,
+            ..Params::default()
+        };
         crate::format::format(&dev, &params).await.unwrap();
         dev
     }

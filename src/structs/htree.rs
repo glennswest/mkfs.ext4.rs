@@ -231,7 +231,7 @@ fn half_md4_transform(buf: &mut [u32; 4], input: &[u32; 8]) {
     macro_rules! round {
         ($fn:ident, $a:ident, $b:ident, $c:ident, $d:ident, $x:expr, $s:expr) => {
             $a = $a.wrapping_add($fn($b, $c, $d)).wrapping_add($x);
-            $a = ($a << $s) | ($a >> (32 - $s));
+            $a = $a.rotate_left($s);
         };
     }
 

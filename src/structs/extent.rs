@@ -246,8 +246,8 @@ mod tests {
             len: 1,
             start: 1,
         };
-        assert!(build_inline(&vec![one; 4]).is_ok());
-        assert!(build_inline(&vec![one; 5]).is_err());
+        assert!(build_inline(&[one; 4]).is_ok());
+        assert!(build_inline(&[one; 5]).is_err());
     }
 
     #[test]

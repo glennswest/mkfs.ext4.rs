@@ -173,7 +173,7 @@ fn detect_sector_size(file: &std::fs::File) -> u32 {
         {
             if let Ok(size) = rustix::fs::ioctl_blksszget(file) {
                 if size > 0 {
-                    return size as u32;
+                    return size;
                 }
             }
         }

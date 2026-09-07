@@ -971,7 +971,7 @@ impl<D: BlockDevice> Filesystem<D> {
         for logical in 0..blocks {
             match self.resolve_block(inode, logical).await? {
                 // A hole reads as zeroes, which is what a sparse file means.
-                None => out.extend(std::iter::repeat_n(0u8, block_size as usize)),
+                None => out.resize(out.len() + block_size as usize, 0),
                 Some(physical) => out.extend_from_slice(&self.read_block(physical).await?),
             }
         }

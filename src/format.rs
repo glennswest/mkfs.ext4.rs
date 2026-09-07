@@ -655,9 +655,12 @@ fn plan(device_size: u64, params: &Params) -> Result<Plan> {
         GroupDescCsum::None
     };
 
-    let csum_seed = if geom.features.incompat.contains(IncompatFeatures::CSUM_SEED) {
-        csum::seed_from_uuid(&uuid)
-    } else if csum_scheme == GroupDescCsum::Crc32c {
+    // The seed is derived from the UUID whenever crc32c is in play — stored
+    // in the superblock under `csum_seed`, recomputed by every reader without
+    // it — and is nothing at all under crc16 or no checksums.
+    let csum_seed = if geom.features.incompat.contains(IncompatFeatures::CSUM_SEED)
+        || csum_scheme == GroupDescCsum::Crc32c
+    {
         csum::seed_from_uuid(&uuid)
     } else {
         0
@@ -672,8 +675,9 @@ fn plan(device_size: u64, params: &Params) -> Result<Plan> {
     // each one would be needlessly quadratic.
     let metadata_probe = {
         let geom = geom.clone();
-        let cache: std::cell::RefCell<Option<(u32, Vec<(u64, u64)>)>> =
-            std::cell::RefCell::new(None);
+        // The flex group last asked about, and its metadata runs.
+        type PlacementCache = Option<(u32, Vec<(u64, u64)>)>;
+        let cache: std::cell::RefCell<PlacementCache> = std::cell::RefCell::new(None);
         move |block: u64| -> bool {
             let g = &geom;
             if g.in_super_region(block) {
@@ -1894,8 +1898,8 @@ fn set_run(inode: &mut Inode, start: u64, len: u32, extents: bool) -> Result<()>
                 "a {len}-block run needs indirect blocks, which this path does not build"
             )));
         }
-        for i in 0..len as usize {
-            pointers[i] = (start + i as u64) as u32;
+        for (i, pointer) in pointers.iter_mut().take(len as usize).enumerate() {
+            *pointer = (start + i as u64) as u32;
         }
         inode.set_block_pointers(&pointers);
         Ok(())
