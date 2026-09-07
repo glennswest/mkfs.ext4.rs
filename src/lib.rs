@@ -98,7 +98,7 @@ pub use fsck::{FsckOptions, FsckReport};
 pub use layout::Geometry;
 pub use params::{JournalSize, Params, Profile};
 pub use error::{Error, Result};
-pub use read::{BlockReader, Ext4};
+pub use read::{BlockReader, Ext4, ReadError};
 pub use features::{CompatFeatures, FeatureMasks, IncompatFeatures, RoCompatFeatures};
 pub use structs::{
     DirEntry, Extent, GroupDesc, Inode, Superblock, SUPERBLOCK_LEN, SUPERBLOCK_OFFSET,

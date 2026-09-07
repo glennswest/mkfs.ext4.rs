@@ -17,10 +17,10 @@
 //! small enough to read in one sitting.
 //!
 //! ```no_run
-//! # use mkfs_ext4::read::{BlockReader, Ext4};
+//! # use mkfs_ext4::read::{BlockReader, Ext4, ReadError};
 //! # struct MyDev;
 //! # impl BlockReader for MyDev {
-//! #     fn read_at(&self, _o: u64, _b: &mut [u8]) -> Result<(), ()> { Ok(()) }
+//! #     fn read_at(&self, _o: u64, _b: &mut [u8]) -> Result<(), ReadError> { Ok(()) }
 //! # }
 //! let fs = Ext4::open(&MyDev)?;
 //! let kernel = fs.read_file(&MyDev, "/vmlinuz")?;
@@ -45,17 +45,58 @@ pub const ROOT_INO: u32 = 2;
 /// The caller owns the device. A UEFI consumer wraps `BlockIO`, a host test
 /// wraps a `Vec<u8>`, and neither needs a runtime.
 pub trait BlockReader {
-    /// Fill `buf` from `offset`. Any failure is a failure; there is nothing
-    /// useful to report from firmware beyond that, which is why the error is
-    /// `()` and not a type: a UEFI `BlockIO` status has nowhere to go, and
-    /// [`Ext4`] turns the failure into [`Error::DeviceRead`] with the offset,
-    /// which is the one fact worth keeping. Deliberate, not an omission.
-    #[allow(clippy::result_unit_err)]
-    fn read_at(&self, offset: u64, buf: &mut [u8]) -> core::result::Result<(), ()>;
+    /// Fill `buf` from `offset`.
+    ///
+    /// On failure, hand back what the device said. [`Ext4`] folds it, with
+    /// the offset, into [`Error::DeviceRead`].
+    fn read_at(&self, offset: u64, buf: &mut [u8]) -> core::result::Result<(), ReadError>;
+}
+
+/// Why a [`BlockReader`] could not fill a buffer.
+///
+/// Firmware has exactly one fact to report — the device's own status word,
+/// an `EFI_STATUS`, an errno, a pallet mapping failure — and it is carried as
+/// the opaque number it is, so the `no_std` core stays free of any platform's
+/// error type. A reader with nothing to say uses [`ReadError::default`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ReadError {
+    /// The device's status as it reported it; zero when it gave none.
+    pub status: u64,
+}
+
+impl ReadError {
+    /// A failure carrying the device's status word.
+    pub const fn new(status: u64) -> Self {
+        Self { status }
+    }
+}
+
+impl core::fmt::Display for ReadError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        if self.status == 0 {
+            f.write_str("device read failed")
+        } else {
+            write!(f, "device read failed, status {:#x}", self.status)
+        }
+    }
+}
+
+impl From<ReadError> for Error {
+    /// Without an offset: [`read_exact`] supplies one, and this is for a
+    /// reader that fails before it has one to give.
+    fn from(e: ReadError) -> Self {
+        Error::DeviceRead {
+            offset: 0,
+            status: e.status,
+        }
+    }
 }
 
 fn read_exact(dev: &impl BlockReader, offset: u64, buf: &mut [u8]) -> Result<()> {
-    dev.read_at(offset, buf).map_err(|_| Error::DeviceRead { offset })
+    dev.read_at(offset, buf).map_err(|e| Error::DeviceRead {
+        offset,
+        status: e.status,
+    })
 }
 
 /// A mounted filesystem: the superblock, plus enough geometry to find inodes.
@@ -273,9 +314,34 @@ mod tests {
     struct SyncOver<'a>(&'a MemDevice);
 
     impl BlockReader for SyncOver<'_> {
-        fn read_at(&self, offset: u64, buf: &mut [u8]) -> core::result::Result<(), ()> {
-            futures::executor::block_on(self.0.read_at(offset, buf)).map_err(|_| ())
+        fn read_at(&self, offset: u64, buf: &mut [u8]) -> core::result::Result<(), ReadError> {
+            futures::executor::block_on(self.0.read_at(offset, buf))
+                .map_err(|_| ReadError::default())
         }
+    }
+
+    /// The status a reader hands back reaches the caller, with the offset
+    /// the reader was asked for — the two facts a firmware log can print.
+    #[test]
+    fn a_readers_status_word_reaches_the_error() {
+        struct Refuses;
+        impl BlockReader for Refuses {
+            fn read_at(&self, _: u64, _: &mut [u8]) -> core::result::Result<(), ReadError> {
+                Err(ReadError::new(0x8000_0000_0000_0007)) // EFI_DEVICE_ERROR
+            }
+        }
+        let err = Ext4::open(&Refuses).unwrap_err();
+        assert_eq!(
+            err,
+            Error::DeviceRead {
+                offset: 1024,
+                status: 0x8000_0000_0000_0007
+            }
+        );
+        assert_eq!(
+            err.to_string(),
+            "device read failed at offset 1024, device status 0x8000000000000007"
+        );
     }
 
     async fn formatted(size: u64, block_size: Option<u32>) -> MemDevice {

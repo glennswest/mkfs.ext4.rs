@@ -26,12 +26,16 @@ pub enum Error {
 
     /// A read failed, with no richer cause available.
     ///
-    /// This is what the `no_std` read path returns: firmware hands back a bare
-    /// failure, and there is nothing to attach to it.
-    #[error("device read failed at offset {offset}")]
+    /// This is what the `no_std` read path returns: the offset the reader
+    /// asked for, and the status the device gave — an `EFI_STATUS`, an errno,
+    /// whatever the [`crate::read::BlockReader`] had — passed through as the
+    /// opaque number it is.
+    #[error("device read failed at offset {offset}, device status {status:#x}")]
     DeviceRead {
         /// Byte offset the operation targeted.
         offset: u64,
+        /// The device's own status word; zero when it gave none.
+        status: u64,
     },
 
     /// A read or write ran past the end of the device.
