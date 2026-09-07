@@ -331,12 +331,15 @@ mod tests {
             }
         }
         let err = Ext4::open(&Refuses).unwrap_err();
-        assert_eq!(
-            err,
-            Error::DeviceRead {
-                offset: 1024,
-                status: 0x8000_0000_0000_0007
-            }
+        assert!(
+            matches!(
+                err,
+                Error::DeviceRead {
+                    offset: 1024,
+                    status: 0x8000_0000_0000_0007
+                }
+            ),
+            "{err:?}"
         );
         assert_eq!(
             err.to_string(),
