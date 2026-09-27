@@ -3,6 +3,19 @@
 ## [Unreleased]
 
 ### 2026-09-27
+- **perf:** `format()` memory no longer grows with the group count (#10). It
+  used to build every group's bitmaps (8 KiB a group at 4 KiB blocks) and the
+  whole descriptor table before writing anything: 17.6 GiB RSS at 256 TiB,
+  and 1 PiB didn't fit in 32 GiB. Now each group's bitmaps are built,
+  written and dropped as the group is written, and the descriptor table is
+  written 256 descriptor blocks at a time to every copy (classic and
+  meta_bg). The image is byte-identical whatever the chunk size.
+- **fix:** `Params::concurrency` is honoured. It was documented as bounding
+  the groups in flight, but the formatter ignored it and always used twice
+  the available parallelism (capped at 64). Zero is taken as one.
+- **docs:** Filed #11: `fsck`'s pass-1 block map is one bit per block (8 GiB
+  at 256 TiB). The comment calling that "the same trade e2fsck makes" is
+  stale, since `e2fsck` uses extent bitmaps.
 - **docs:** Third pass against the code since 2026-09-18 (no code change since
   the last pass). The README's `fsck-ext4` section now says the four flags
   are the whole command line: `e2fsck`'s `-p` / `-a` / `-C` are refused as a

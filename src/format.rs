@@ -6,6 +6,11 @@
 //!
 //! Block groups are disjoint byte ranges, so they are written concurrently
 //! rather than one after another — the reason [`BlockDevice`] takes `&self`.
+//!
+//! Nothing is held per group for the length of a format. Each group's bitmaps
+//! are built, written and dropped, and the descriptor table is built and
+//! written a bounded chunk of descriptor blocks at a time, so memory is set by
+//! the concurrency and the chunk size, not by the filesystem's size.
 
 #[cfg(not(feature = "std"))]
 use alloc::{string::String, string::ToString, vec::Vec};

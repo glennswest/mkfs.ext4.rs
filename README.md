@@ -186,6 +186,15 @@ Two properties the C tools cannot offer a Rust storage engine:
 - **Async and parallel.** `BlockDevice` takes `&self`, so a single format fans
   out across block groups, and many formats run concurrently. A storage engine
   provisioning volumes formats them all at once, not one after another.
+  `Params::concurrency(n)` bounds the groups in flight in one format. The
+  default is twice the available parallelism, capped at 64.
+- **Memory that does not grow with the filesystem.** A format streams: each
+  group's bitmaps are built, written and dropped, and the descriptor table is
+  written 256 descriptor blocks at a time. What a format holds is about the
+  concurrency × two blocks plus 1 MiB of descriptors (at 4 KiB blocks), for
+  1 GiB or 1 PiB alike ([#10](https://github.com/glennswest/mkfs.ext4.rs/issues/10)).
+  `fsck` does not do this yet: its block map is one bit per block, 8 GiB at
+  256 TiB ([#11](https://github.com/glennswest/mkfs.ext4.rs/issues/11)).
 - **No device round trip.** The `BlockDevice` trait is the seam. A consumer
   formats its own in-memory or network-backed volume directly — no loopback,
   no `/dev` node, no shelling out to `mkfs.ext4`.

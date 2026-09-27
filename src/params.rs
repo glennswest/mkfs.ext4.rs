@@ -221,8 +221,10 @@ pub struct Params {
     pub resuid: u16,
     /// Reserved-block group. `mke2fs -E resgid=`.
     pub resgid: u16,
-    /// Bound on how many block groups are written at once. `None` uses a
-    /// default proportional to the available parallelism.
+    /// Bound on how many block groups are written at once. `None` uses twice
+    /// the available parallelism, capped at 64; zero is taken as one. Each
+    /// group in flight holds its two bitmaps, so this also bounds a format's
+    /// memory.
     pub concurrency: Option<usize>,
 }
 
