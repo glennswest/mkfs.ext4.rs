@@ -131,8 +131,11 @@ to point at, not an open-ended guess about feature flags.
       `FsckReport` gains a field, so this is 4.0.0.
       **State 2026-09-27 (session restart):** code 53019ac, docs 5e6312f, both
       pushed. `sc-build` on 53019ac exited 0 (integration suites seen
-      passing; the lib unit-test summary was cut off by `tail`). A
-      `sc-build 'cargo test --lib'` re-run was in flight. **Next:** confirm
+      passing; the lib unit-test summary was cut off by `tail`). The
+      `sc-build 'cargo test --lib fsck::'` re-run never started: dev.g8.lo
+      dropped the connection, then refused SSH (2026-09-27, doc refresh
+      527a10d). The README says the skip is unreleased at `v3.0.0`; drop that
+      note when 4.0.0 is tagged. **Next:** once dev is back, confirm
       the `fsck::tests` pass by name, then `chore(release): v4.0.0` (Cargo.toml,
       CHANGELOG heading, version line above), tag and push, and close #6.
 - [ ] Issue #7 (P2): check and repair run without journal replay or orphan
