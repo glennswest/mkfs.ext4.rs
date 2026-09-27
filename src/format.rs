@@ -10,8 +10,6 @@
 #[cfg(not(feature = "std"))]
 use alloc::{string::String, string::ToString, vec::Vec};
 
-use std::sync::Arc;
-
 use futures::stream::{FuturesUnordered, StreamExt};
 
 use crate::bytes::put_u32;
@@ -118,6 +116,8 @@ struct Plan {
     zeroed_medium: bool,
     resuid: u16,
     resgid: u16,
+    /// `Params::concurrency`: how many groups are in flight at once.
+    concurrency: Option<usize>,
 }
 
 impl Plan {
@@ -907,6 +907,7 @@ fn plan(device_size: u64, params: &Params) -> Result<Plan> {
         zeroed_medium: params.zeroed_medium,
         resuid: params.resuid,
         resgid: params.resgid,
+        concurrency: params.concurrency,
     })
 }
 
@@ -1075,37 +1076,27 @@ fn build_group(plan: &Plan, group: u32) -> Result<GroupState> {
     })
 }
 
+/// Descriptor blocks held in memory at once while the table is written.
+///
+/// The table is built and written this many blocks at a time, so memory does
+/// not grow with the filesystem (#10): 1 MiB of descriptors at 4 KiB blocks,
+/// 16,384 groups' worth with 64-byte descriptors.
+const GDT_CHUNK_BLOCKS: u32 = 256;
+
 /// Write the filesystem described by `plan`.
 async fn write_filesystem<D: BlockDevice + ?Sized>(dev: &D, plan: &Plan) -> Result<Report> {
+    write_filesystem_chunked(dev, plan, GDT_CHUNK_BLOCKS).await
+}
+
+/// [`write_filesystem`] with the descriptor chunk size chosen by the caller,
+/// so a test can prove the output does not depend on it.
+async fn write_filesystem_chunked<D: BlockDevice + ?Sized>(
+    dev: &D,
+    plan: &Plan,
+    chunk_blocks: u32,
+) -> Result<Report> {
     let g = &plan.geom;
     let block_size = g.block_size as u64;
-
-    // Every group's descriptor is needed before any group descriptor table can
-    // be written, so the accounting pass comes first. It touches no device.
-    let mut states = Vec::with_capacity(g.group_count as usize);
-    for group in 0..g.group_count {
-        states.push(build_group(plan, group)?);
-    }
-
-    let free_blocks_count: u64 = states.iter().map(|s| s.desc.free_blocks_count as u64).sum();
-    let free_inodes_count: u32 = states.iter().map(|s| s.desc.free_inodes_count).sum();
-
-    // The group descriptor table, as it will appear in every copy.
-    let desc_size = g.desc_size as usize;
-    let mut gdt = vec![0u8; g.desc_blocks as usize * g.block_size as usize];
-    for (group, state) in states.iter().enumerate() {
-        let at = group * desc_size;
-        state.desc.encode_with_csum(
-            &mut gdt[at..at + desc_size],
-            desc_size,
-            plan.csum_scheme,
-            plan.csum_seed,
-            &plan.uuid,
-            group as u32,
-        );
-    }
-
-    let superblk = build_superblock(plan, free_blocks_count, free_inodes_count);
 
     // Block 0 is the boot area. On a 1 KiB filesystem it is a block of its
     // own, zeroed here so no previous filesystem's magic survives to confuse
@@ -1117,26 +1108,101 @@ async fn write_filesystem<D: BlockDevice + ?Sized>(dev: &D, plan: &Plan) -> Resu
         dev.write_zeroes(0, block_size).await?;
     }
 
-    // Bitmaps, inode tables and superblock copies, fanned out across groups.
-    let concurrency = plan.concurrency();
-    let mut pending = FuturesUnordered::new();
-    let gdt = Arc::new(gdt);
-    let states = Arc::new(states);
+    // Groups that keep the classic table: every descriptor block, at the
+    // same offset from each copy's start. Under meta_bg, only the groups
+    // before `first_meta_bg`; a meta block group's own block goes to that
+    // group's three holders instead, found as each block is written.
+    let classic_copies: Vec<u64> = (0..g.group_count)
+        .filter(|&group| !g.meta_bg || g.meta_bg_of(group) < g.first_meta_bg)
+        .filter_map(|group| g.desc_block_location(group))
+        .collect();
 
-    for group in 0..g.group_count {
-        let gdt = Arc::clone(&gdt);
-        let states = Arc::clone(&states);
-        pending.push(write_group(dev, plan, group, gdt, states, &superblk));
-
-        if pending.len() >= concurrency {
-            if let Some(result) = pending.next().await {
-                result?;
-            }
+    // Group 0's reserved GDT blocks are the resize inode's indirect blocks
+    // and list every backup copy; in a backup group they are reserved space
+    // and nothing more, so `mke2fs` writes the superblock and descriptors
+    // there and stops. On a 1 TiB filesystem that is eighteen copies of 1024
+    // blocks — 72 MiB of zeros written for no reader.
+    if g.reserved_gdt_blocks > 0 && !plan.zeroed_medium {
+        if let Some(&primary) = classic_copies.first() {
+            dev.write_zeroes(
+                (primary + g.desc_blocks as u64) * block_size,
+                g.reserved_gdt_blocks as u64 * block_size,
+            )
+            .await?;
         }
     }
-    while let Some(result) = pending.next().await {
-        result?;
+
+    // The table is walked a chunk of descriptor blocks at a time. Each group
+    // in the chunk has its bitmaps built, written and dropped, and leaves
+    // only its descriptor behind; the finished chunk then goes to every copy.
+    // Nothing is held per group for the whole format: a 1 PiB filesystem has
+    // 8.4 million groups, and 8 KiB of bitmaps each was 64 GiB (#10).
+    let concurrency = plan.concurrency();
+    let dpb = g.desc_per_block();
+    let desc_size = g.desc_size as usize;
+    let chunk_blocks = chunk_blocks.max(1);
+    let mut free_blocks_count = 0u64;
+    let mut free_inodes_count = 0u32;
+
+    let mut first_block = 0u32;
+    while first_block < g.desc_blocks {
+        let blocks = chunk_blocks.min(g.desc_blocks - first_block);
+        let first_group = first_block * dpb;
+        let end_group = ((first_block + blocks) * dpb).min(g.group_count);
+        let mut table = vec![0u8; blocks as usize * g.block_size as usize];
+
+        let mut pending = FuturesUnordered::new();
+        let mut groups = first_group..end_group;
+        loop {
+            while pending.len() < concurrency {
+                match groups.next() {
+                    Some(group) => pending.push(write_group(dev, plan, group)),
+                    None => break,
+                }
+            }
+            let Some(result) = pending.next().await else { break };
+            let (group, desc) = result?;
+            free_blocks_count += desc.free_blocks_count as u64;
+            free_inodes_count += desc.free_inodes_count;
+            let at = (group - first_group) as usize * desc_size;
+            desc.encode_with_csum(
+                &mut table[at..at + desc_size],
+                desc_size,
+                plan.csum_scheme,
+                plan.csum_seed,
+                &plan.uuid,
+                group,
+            );
+        }
+
+        // Every copy of these descriptor blocks.
+        for &copy in &classic_copies {
+            dev.write_at((copy + first_block as u64) * block_size, &table)
+                .await?;
+        }
+        if g.meta_bg {
+            for i in 0..blocks {
+                let meta = first_block + i;
+                if meta < g.first_meta_bg {
+                    continue;
+                }
+                let one = &table[i as usize * g.block_size as usize..][..g.block_size as usize];
+                let base = meta * g.meta_bg_size();
+                for group in [base, base + 1, base + g.meta_bg_size() - 1] {
+                    if group >= g.group_count {
+                        continue;
+                    }
+                    if let Some(at) = g.desc_block_location(group) {
+                        dev.write_at(at * block_size, one).await?;
+                    }
+                }
+            }
+        }
+
+        first_block += blocks;
     }
+
+    let superblk = build_superblock(plan, free_blocks_count, free_inodes_count);
 
     // Content the filesystem needs before it is coherent: the root directory,
     // lost+found, the resize inode's indirect block, the journal, and the
@@ -1226,60 +1292,28 @@ fn superblock_at_block_start(sb: &[u8; SUPERBLOCK_LEN], block_size: u32) -> Vec<
 
 impl Plan {
     fn concurrency(&self) -> usize {
-        std::thread::available_parallelism()
-            .map(|n| n.get() * 2)
-            .unwrap_or(8)
-            .clamp(1, 64)
+        match self.concurrency {
+            Some(n) => n.max(1),
+            None => std::thread::available_parallelism()
+                .map(|n| n.get() * 2)
+                .unwrap_or(8)
+                .clamp(1, 64),
+        }
     }
 }
 
-/// Write one group's descriptor table copy, bitmaps and inode table.
+/// Build one group's bitmaps and descriptor, write the bitmaps and inode
+/// table, and hand back the descriptor. The bitmaps are dropped here; the
+/// descriptor table is written by the caller, a chunk at a time.
 async fn write_group<D: BlockDevice + ?Sized>(
     dev: &D,
     plan: &Plan,
     group: u32,
-    gdt: Arc<Vec<u8>>,
-    states: Arc<Vec<GroupState>>,
-    _sb: &Superblock,
-) -> Result<()> {
+) -> Result<(u32, GroupDesc)> {
     let g = &plan.geom;
     let block_size = g.block_size as u64;
-    let state = &states[group as usize];
+    let state = build_group(plan, group)?;
     let layout = g.group(group)?;
-
-    // Descriptors follow the superblock copy. Under the classic layout that is
-    // the whole table; under meta_bg it is the one block covering this group's
-    // meta block group, which is why a filesystem too large for a contiguous
-    // table can still describe itself.
-    if let Some(desc_at) = g.desc_block_location(group) {
-        let at = desc_at * block_size;
-        if g.meta_bg && g.meta_bg_of(group) >= g.first_meta_bg {
-            let dpb = g.desc_per_block() as usize;
-            let meta = g.meta_bg_of(group) as usize;
-            let bytes = g.block_size as usize;
-            let from = meta * bytes;
-            let mut one = vec![0u8; bytes];
-            let available = gdt.len().saturating_sub(from).min(bytes);
-            one[..available].copy_from_slice(&gdt[from..from + available]);
-            let _ = dpb;
-            dev.write_at(at, &one).await?;
-        } else {
-            dev.write_at(at, &gdt).await?;
-            // Reserved GDT blocks are only written where they hold something.
-            // In group 0 they are the resize inode's indirect blocks and list
-            // every backup copy; in a backup group they are reserved space and
-            // nothing more, so `mke2fs` writes the superblock and descriptors
-            // there and stops. On a 1 TiB filesystem that is eighteen copies of
-            // 1024 blocks — 72 MiB of zeros written for no reader.
-            if g.reserved_gdt_blocks > 0 && group == 0 && !plan.zeroed_medium {
-                dev.write_zeroes(
-                    at + gdt.len() as u64,
-                    g.reserved_gdt_blocks as u64 * block_size,
-                )
-                .await?;
-            }
-        }
-    }
 
     // A group whose descriptor says BLOCK_UNINIT or INODE_UNINIT has no
     // authoritative bitmap on disk: the flag says to compute it from the
@@ -1317,7 +1351,7 @@ async fn write_group<D: BlockDevice + ?Sized>(
         .await?;
     }
 
-    Ok(())
+    Ok((group, state.desc))
 }
 
 /// Build the superblock every copy is made from.
@@ -1909,6 +1943,7 @@ fn set_run(inode: &mut Inode, start: u64, len: u32, extents: bool) -> Result<()>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
     use crate::structs::superblock::SUPERBLOCK_LEN;
     use crate::device::MemDevice;
     use crate::params::{Params, Profile};
@@ -1942,6 +1977,62 @@ mod tests {
         assert_eq!(sb.first_data_block, 1);
         assert!(sb.verify_checksum(&buf));
         assert_eq!(sb.uuid_string(), "30313233-3435-3637-3839-616263646566");
+    }
+
+    /// #10: the descriptor table is built and written a chunk at a time, and
+    /// the image must not depend on the chunk size. Many small groups give a
+    /// table of several blocks, so one-block chunks split it at every
+    /// boundary: classic layout (group 0 and every backup), meta_bg (each
+    /// block to its own three groups), and ext2 without flex_bg.
+    #[tokio::test]
+    async fn the_descriptor_chunk_size_does_not_change_the_image() {
+        const SIZE: u64 = 64 * MIB;
+        let base = |profile: Profile| Params {
+            block_size: Some(1024),
+            blocks_per_group: Some(1024),
+            hash_seed: Some(*b"fedcba9876543210"),
+            ..fixed_params(profile)
+        };
+        let cases = [
+            ("ext4", base(Profile::Ext4), false),
+            ("ext4 meta_bg", base(Profile::Ext4).features("meta_bg"), true),
+            ("ext2", base(Profile::Ext2), false),
+        ];
+        for (name, params, meta_bg) in cases {
+            let plan = plan(SIZE, &params).unwrap();
+            assert!(plan.geom.desc_blocks >= 2, "{name}: needs a multi-block table");
+            assert_eq!(plan.geom.meta_bg, meta_bg, "{name}: the layout under test");
+
+            let whole = MemDevice::new(SIZE);
+            let report = write_filesystem_chunked(&whole, &plan, GDT_CHUNK_BLOCKS)
+                .await
+                .unwrap();
+            let expected = whole.to_vec();
+            for chunk in [1, 3] {
+                let dev = MemDevice::new(SIZE);
+                let again = write_filesystem_chunked(&dev, &plan, chunk).await.unwrap();
+                assert_eq!(again, report, "{name}, chunk {chunk}");
+                assert!(dev.to_vec() == expected, "{name}: chunk {chunk} wrote a different image");
+            }
+        }
+    }
+
+    /// `Params::concurrency` bounds the groups in flight, and a bound of one
+    /// still formats the same filesystem.
+    #[tokio::test]
+    async fn params_concurrency_is_honoured() {
+        let params = Params {
+            hash_seed: Some(*b"fedcba9876543210"),
+            ..fixed_params(Profile::Ext4).no_journal()
+        };
+        assert_eq!(plan(16 * MIB, &params.clone().concurrency(3)).unwrap().concurrency(), 3);
+        assert_eq!(plan(16 * MIB, &params.clone().concurrency(0)).unwrap().concurrency(), 1);
+
+        let serial = MemDevice::new(16 * MIB);
+        let parallel = MemDevice::new(16 * MIB);
+        format(&serial, &params.clone().concurrency(1)).await.unwrap();
+        format(&parallel, &params).await.unwrap();
+        assert!(serial.to_vec() == parallel.to_vec());
     }
 
     #[tokio::test]
