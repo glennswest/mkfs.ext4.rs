@@ -193,6 +193,10 @@ Two properties the C tools cannot offer a Rust storage engine:
   written 256 descriptor blocks at a time. What a format holds is about the
   concurrency × two blocks plus 1 MiB of descriptors (at 4 KiB blocks), for
   1 GiB or 1 PiB alike ([#10](https://github.com/glennswest/mkfs.ext4.rs/issues/10)).
+  `examples/formatscale.rs` measures it on a sparse in-memory device. Peak
+  RSS less the metadata the device stores was 20 MiB at 256 TiB (it was
+  17.6 GiB) and 71 MiB at 1 PiB, which now formats in 149 s. Most of the
+  growth is the test device's own page index.
   `fsck` does not do this yet: its block map is one bit per block, 8 GiB at
   256 TiB ([#11](https://github.com/glennswest/mkfs.ext4.rs/issues/11)).
 - **No device round trip.** The `BlockDevice` trait is the seam. A consumer

@@ -10,6 +10,10 @@
   written and dropped as the group is written, and the descriptor table is
   written 256 descriptor blocks at a time to every copy (classic and
   meta_bg). The image is byte-identical whatever the chunk size.
+  `examples/formatscale.rs` (new) measured it on dev.g8.lo, on a sparse device
+  with lazy itable init on a zeroed medium. Peak RSS less the stored metadata:
+  3.5 MiB at 1 TiB, 20 MiB at 256 TiB (was 17.6 GiB total), 71 MiB at 1 PiB
+  (was out of memory at 32 GiB; now 8.4 M groups in 149 s).
 - **fix:** `Params::concurrency` is honoured. It was documented as bounding
   the groups in flight, but the formatter ignored it and always used twice
   the available parallelism (capped at 64). Zero is taken as one.
