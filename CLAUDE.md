@@ -117,9 +117,19 @@ to point at, not an open-ended guess about feature flags.
       `MemDevice::strict` is the test device that refuses unaligned I/O.
 - [x] stormblock integration path: stormblock formats its templates through
       the `BlockDevice` seam and depends on `v3.0.0`. stormblock#39 is closed.
-- [ ] Issue #6: `FsckOptions::force` / `fsck-ext4 -f` are documented but never
-      read, so every check is a full one. Either honour them the way `e2fsck`
-      does or drop the claim.
+- [ ] Issue #6 — **decided (owner, on #6): match `e2fsck`.** A clean
+      filesystem is skipped unless `-f` / `FsckOptions::force`. In progress:
+      pass 0 runs first, then `e2fsck`'s `check_if_skip` reasons in its order
+      (errors or pass-0 findings, not cleanly unmounted, backup superblock
+      differs when repairing, mount count, last-check time in the future,
+      check interval). Two added reasons in the safe direction: journal needs
+      recovery, orphans pending (this checker replays and releases neither).
+      A skip reports `clean, N/M files, A/B blocks` from the superblock, and when
+      repairing it first updates the superblock's free counts from the
+      descriptors. A full check that repairs sets `s_state`, `s_lastcheck` and
+      `s_mnt_count` the way `e2fsck` does, or a filesystem due by mount count
+      would stay due for ever. `FsckReport::scope` says which happened.
+      `FsckReport` gains a field, so this is 4.0.0.
 
 ## Features
 
