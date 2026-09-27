@@ -140,6 +140,19 @@ to point at, not an open-ended guess about feature flags.
       CHANGELOG heading, version line above), tag and push, and close #6.
 - [ ] Issue #7 (P2): check and repair run without journal replay or orphan
       release. Found during #6; not started.
+- [ ] Issue #10 (P1): `format()` RSS grows ~8 KiB per group (18 GiB at
+      256 TiB, 1 PiB > 32 GiB). Cause: `write_filesystem` builds every
+      group's `GroupState` (a block-sized block bitmap and inode bitmap each)
+      and the whole descriptor table before writing. Plan: stream it. Walk the
+      descriptor table in bounded chunks of descriptor blocks, and build,
+      write and drop each group's bitmaps inside the chunk, keeping only its
+      encoded descriptor. Write each finished chunk to every descriptor copy
+      (group 0 and the classic backups at `loc + chunk`, and each meta_bg
+      block's own three groups). Memory is then bounded by concurrency × 2
+      blocks plus one chunk. Byte-for-byte identical output: asserted by a
+      test that formats with a 1-block chunk and with the default, plus the
+      golden suites. fsck's share of the issue (same peak at 256 TiB) is
+      filed on its own if it has the same cause.
 - [ ] Issue #8 (P2): `fsck-ext4` takes only `-n -y -f -v`. `e2fsck`'s `-p`/`-a`,
       `-C` and the rest are clap usage errors that exit 2 ("corrected,
       reboot") instead of working or exiting 16. Against the owner's #6 rule
