@@ -3,6 +3,13 @@
 ## [Unreleased]
 
 ### 2026-09-27
+- **docs:** Docs re-checked against the code since 2026-09-18, now that #6
+  has landed. The README, `fsck` rustdoc and `fsck-ext4` help match the code:
+  the skip rules, `CheckScope`, `FsckOptions::force` / `repair()`, the output
+  lines and exit codes. The README now also gives the `DEVICE <reason>, check
+  forced.` line, and says the skip is on `main` for 4.0.0 while the `v3.0.0`
+  tag it tells readers to pin still runs every pass. No new gaps: the one open
+  doc/code difference, no journal replay or orphan release, is #7.
 - **BREAKING:** `fsck` skips a clean filesystem unless forced, as `e2fsck`
   does (#6, owner decision: match `e2fsck`). `FsckOptions::check_only()`
   without `force` now returns a skipped report for a filesystem that is clean

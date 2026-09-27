@@ -74,7 +74,8 @@ so to have `mkfs -t ext4` / `fsck -t ext4` dispatch to them, install them as
   descriptors, not cleanly unmounted, the backup superblock differs (when
   repairing), the mount count or check interval reached — and, erring towards
   checking, for a journal that needs recovery or orphans still to release,
-  since this checker does neither. A repairing check records itself the way
+  since this checker does neither; `fsck-ext4` then prints `DEVICE <reason>,
+  check forced.` before the passes run. A repairing check records itself the way
   `e2fsck` does (`s_state`, `s_lastcheck`, `s_mnt_count`). Exit codes follow
   `e2fsck`: 0 clean, 1 errors corrected, 4 errors left uncorrected, 8
   operational error.
@@ -82,6 +83,11 @@ so to have `mkfs -t ext4` / `fsck -t ext4` dispatch to them, install them as
   In the library, `FsckOptions::check_only()` is `e2fsck -n` and skips a
   clean filesystem; `.force(true)` makes it `-fn`. `FsckOptions::repair()` is
   `-fy`. `FsckReport::scope` says whether the passes ran and why.
+
+  The skip is on `main` and ships in the next release (4.0.0, a breaking
+  change: `FsckReport` gains `scope`). At tag `v3.0.0`, `-f` and
+  `FsckOptions::force` are accepted but not read, and every check runs every
+  pass.
 
 ## Sector size
 
