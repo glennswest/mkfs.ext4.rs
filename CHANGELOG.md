@@ -3,6 +3,28 @@
 ## [Unreleased]
 
 ### 2026-09-27
+- **BREAKING:** `fsck` skips a clean filesystem unless forced, as `e2fsck`
+  does (#6, owner decision: match `e2fsck`). `FsckOptions::check_only()`
+  without `force` now returns a skipped report for a filesystem that is clean
+  and not due; `FsckReport` gains a public `scope` field.
+- **feat:** A check falls due for `e2fsck`'s `check_if_skip` reasons, in its
+  order and wording: errors recorded or anything pass 0 finds, not cleanly
+  unmounted, primary superblock features/size/UUID different from the first
+  backup (repairing only), `s_max_mnt_count` reached, last-check time more
+  than a day in the future, `s_checkinterval` elapsed. Two more, erring
+  towards checking: journal needs recovery, orphans pending. `CheckScope`
+  (`Forced` / `Due(reason)` / `Skipped { next_check }`) and
+  `FsckOptions::force(bool)` are new.
+- **feat:** A skipped check reports its counts from the superblock and, when
+  repairing, first updates the superblock's free counts from the group
+  descriptors. `fsck-ext4` prints `DEVICE: clean, N/M files, A/B blocks`, with
+  `(check in N mounts)` / `(check after next mount)` near the limit, or
+  `DEVICE <reason>, check forced.`
+- **fix:** A repairing full check records itself as `e2fsck` does: `s_state`
+  valid when nothing is left wrong (not valid otherwise), `s_lastcheck` now,
+  `s_mnt_count` zero. Marking an uncleanly unmounted filesystem clean counts
+  as a correction (exit 1). It used to touch the superblock only when a pass
+  repaired something, so a filesystem left invalid stayed invalid.
 - **docs:** Second pass over the docs against the code since 2026-09-18 (no
   code change since v3.0.0). Every CLI option, default, exit code, the cache
   defaults and the `read` API matched. The README's `cargo test` suite list

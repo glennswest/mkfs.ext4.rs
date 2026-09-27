@@ -117,9 +117,8 @@ to point at, not an open-ended guess about feature flags.
       `MemDevice::strict` is the test device that refuses unaligned I/O.
 - [x] stormblock integration path: stormblock formats its templates through
       the `BlockDevice` seam and depends on `v3.0.0`. stormblock#39 is closed.
-- [ ] Issue #6 — **decided (owner, on #6): match `e2fsck`.** A clean
-      filesystem is skipped unless `-f` / `FsckOptions::force`. In progress:
-      pass 0 runs first, then `e2fsck`'s `check_if_skip` reasons in its order
+- [x] Issue #6 — **decided (owner, on #6): match `e2fsck`.** A clean
+      filesystem is skipped unless `-f` / `FsckOptions::force`. Pass 0 runs first, then `e2fsck`'s `check_if_skip` reasons in its order
       (errors or pass-0 findings, not cleanly unmounted, backup superblock
       differs when repairing, mount count, last-check time in the future,
       check interval). Two added reasons in the safe direction: journal needs

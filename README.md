@@ -67,10 +67,21 @@ so to have `mkfs -t ext4` / `fsck -t ext4` dispatch to them, install them as
   body are not written), `--mkfs-time` for reproducible images,
   `--mmp-update-interval` (implies `-O mmp`), `-n` dry run and `-q` quiet.
 - `fsck-ext4 [-n|-y] [-f] [-v] DEVICE`: `-n` (the default) reports and
-  changes nothing, and `-y` repairs. `-f` is accepted for compatibility with
-  `e2fsck`, but every check runs every pass, marked clean or not
-  ([#6](https://github.com/glennswest/mkfs.ext4.rs/issues/6)). Exit codes follow `e2fsck`: 0 clean,
-  1 errors corrected, 4 errors left uncorrected, 8 operational error.
+  changes nothing, and `-y` repairs. As with `e2fsck`, a filesystem that is
+  clean and not due for a check is skipped (`DEVICE: clean, N/M files, A/B
+  blocks`) unless `-f` is given; `-y` alone does not force it. A check falls
+  due for `e2fsck`'s reasons — errors recorded or found in the superblock and
+  descriptors, not cleanly unmounted, the backup superblock differs (when
+  repairing), the mount count or check interval reached — and, erring towards
+  checking, for a journal that needs recovery or orphans still to release,
+  since this checker does neither. A repairing check records itself the way
+  `e2fsck` does (`s_state`, `s_lastcheck`, `s_mnt_count`). Exit codes follow
+  `e2fsck`: 0 clean, 1 errors corrected, 4 errors left uncorrected, 8
+  operational error.
+
+  In the library, `FsckOptions::check_only()` is `e2fsck -n` and skips a
+  clean filesystem; `.force(true)` makes it `-fn`. `FsckOptions::repair()` is
+  `-fy`. `FsckReport::scope` says whether the passes ran and why.
 
 ## Sector size
 
