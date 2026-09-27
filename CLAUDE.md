@@ -129,6 +129,14 @@ to point at, not an open-ended guess about feature flags.
       `s_mnt_count` the way `e2fsck` does, or a filesystem due by mount count
       would stay due for ever. `FsckReport::scope` says which happened.
       `FsckReport` gains a field, so this is 4.0.0.
+      **State 2026-09-27 (session restart):** code 53019ac, docs 5e6312f, both
+      pushed. `sc-build` on 53019ac exited 0 (integration suites seen
+      passing; the lib unit-test summary was cut off by `tail`). A
+      `sc-build 'cargo test --lib'` re-run was in flight. **Next:** confirm
+      the `fsck::tests` pass by name, then `chore(release): v4.0.0` (Cargo.toml,
+      CHANGELOG heading, version line above), tag and push, and close #6.
+- [ ] Issue #7 (P2): check and repair run without journal replay or orphan
+      release. Found during #6; not started.
 
 ## Features
 
