@@ -190,8 +190,9 @@ All eight configurations pass: ext2, ext3 and ext4, with and without a journal,
 at 1 KiB and 4 KiB blocks, from 16 MiB to 1 GiB.
 The script loop-mounts, so it needs root on the Linux host it targets (by
 default `root@dev.g8.lo`; pass `user@host` to choose another). It is not part of
-`cargo test`. `cargo test` runs the golden, sector-size and strict-sector
-suites in `tests/` and needs no privilege.
+`cargo test`. `cargo test` runs the golden (geometry and structural compare),
+sector-size, journal-floor and strict-sector suites in `tests/` and needs no
+privilege.
 
 Geometry and feature masks are asserted against golden filesystems produced by
 real `mke2fs` 1.47.3, which is byte-reproducible once the UUID, hash seed and

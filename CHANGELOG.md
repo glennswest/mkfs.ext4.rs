@@ -3,6 +3,10 @@
 ## [Unreleased]
 
 ### 2026-09-27
+- **docs:** Second pass over the docs against the code since 2026-09-18 (no
+  code change since v3.0.0). Every CLI option, default, exit code, the cache
+  defaults and the `read` API matched. The README's `cargo test` suite list
+  now names the journal-floor suite as CLAUDE.md does. No new gaps beyond #6.
 - **docs:** Documentation refreshed from the code. No code has changed since
   v3.0.0. README: the dependency example pins `v3.0.0` with
   `default-features = false, features = ["std"]` (it still said `v1.0.0`);
