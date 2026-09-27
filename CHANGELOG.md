@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### 2026-09-27
+- **docs:** Third pass against the code since 2026-09-18 (no code change since
+  the last pass). The README's `fsck-ext4` section now says the four flags
+  are the whole command line: `e2fsck`'s `-p` / `-a` / `-C` are refused as a
+  usage error that exits 2 rather than 16, so `fsck.ext4` doesn't belong in a
+  boot path until #8 is fixed. CLAUDE.md's work plan lists #8.
 - **docs:** Docs re-checked against the code since 2026-09-18, now that #6
   has landed. The README, `fsck` rustdoc and `fsck-ext4` help match the code:
   the skip rules, `CheckScope`, `FsckOptions::force` / `repair()`, the output

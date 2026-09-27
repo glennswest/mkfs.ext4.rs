@@ -80,6 +80,13 @@ so to have `mkfs -t ext4` / `fsck -t ext4` dispatch to them, install them as
   `e2fsck`: 0 clean, 1 errors corrected, 4 errors left uncorrected, 8
   operational error.
 
+  Those four flags are the whole command line. `e2fsck`'s other flags are
+  refused, including the `-p` / `-a` that `fsck -A` and `systemd-fsck` pass at
+  boot, and `-C`. They are refused as a clap usage error, which exits 2, not
+  `e2fsck`'s 16, and to an `e2fsck` caller 2 means "errors corrected, reboot".
+  Don't put `fsck.ext4` in a boot path until
+  [#8](https://github.com/glennswest/mkfs.ext4.rs/issues/8) is fixed.
+
   In the library, `FsckOptions::check_only()` is `e2fsck -n` and skips a
   clean filesystem; `.force(true)` makes it `-fn`. `FsckOptions::repair()` is
   `-fy`. `FsckReport::scope` says whether the passes ran and why.

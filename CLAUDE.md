@@ -140,6 +140,11 @@ to point at, not an open-ended guess about feature flags.
       CHANGELOG heading, version line above), tag and push, and close #6.
 - [ ] Issue #7 (P2): check and repair run without journal replay or orphan
       release. Found during #6; not started.
+- [ ] Issue #8 (P2): `fsck-ext4` takes only `-n -y -f -v`. `e2fsck`'s `-p`/`-a`,
+      `-C` and the rest are clap usage errors that exit 2 ("corrected,
+      reboot") instead of working or exiting 16. Against the owner's #6 rule
+      that e2fsck scripts must work unchanged. The README warns about it. Not
+      started.
 
 ## Features
 
