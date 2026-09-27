@@ -30,7 +30,7 @@ fn pinned(profile: Profile) -> Params {
 }
 
 async fn assert_clean(dev: &MemDevice, what: &str) {
-    let report = fsck::check(dev, &FsckOptions::check_only()).await.unwrap();
+    let report = fsck::check(dev, &FsckOptions::check_only().force(true)).await.unwrap();
     assert!(
         report.is_clean(),
         "{what}: not clean:\n{}",

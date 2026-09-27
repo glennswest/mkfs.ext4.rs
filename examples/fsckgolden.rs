@@ -11,7 +11,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         flate2::read::GzDecoder::new(std::fs::File::open(&path)?).read_to_end(&mut raw)?;
         let dev = MemDevice::new(raw.len() as u64);
         dev.write_at(0, &raw).await?;
-        let report = fsck::check(&dev, &FsckOptions::check_only()).await?;
+        let report = fsck::check(&dev, &FsckOptions::check_only().force(true)).await?;
         if report.is_clean() {
             println!("  {name}: clean");
         } else {

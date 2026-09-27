@@ -15,6 +15,30 @@
 //! Checking never writes. Repair writes only what a pass proved wrong, and
 //! records every change in the report, so a caller can see what was done rather
 //! than trusting that something was.
+//!
+//! # A clean filesystem is skipped
+//!
+//! As `e2fsck` does it (`check_if_skip` in `e2fsck/unix.c`): unless the caller
+//! forces the check, pass 0 runs and then the superblock is asked whether a
+//! full check is due. It is due when the filesystem
+//!
+//! - records errors, or pass 0 found anything wrong,
+//! - was not cleanly unmounted,
+//! - has a primary superblock whose features, size or UUID differ from the
+//!   first backup's (only when repairing, as in `e2fsck`),
+//! - has been mounted `s_max_mnt_count` times since its last check,
+//! - has a last-check time more than a day in the future, or
+//! - has gone `s_checkinterval` seconds since its last check.
+//!
+//! Two more reasons are this checker's own, and both err towards checking: a
+//! journal that needs recovery, and orphan inodes waiting to be released.
+//! `e2fsck` replays the one and releases the other before it decides; this
+//! checker does neither, so it does not call such a filesystem clean.
+//!
+//! Otherwise the passes do not run. The report's [`FsckReport::scope`] says
+//! which of the three happened, and a skipped report takes its counts from the
+//! superblock. `e2fsck`'s battery and `broken_system_clock` exceptions do not
+//! apply here.
 
 #[cfg(not(feature = "std"))]
 use alloc::{string::String, vec::Vec};
@@ -22,36 +46,63 @@ use alloc::{string::String, vec::Vec};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::csum::{self, GroupDescCsum};
-use crate::features::CompatFeatures;
+use crate::features::{CompatFeatures, IncompatFeatures, RoCompatFeatures};
 use crate::device::BlockDevice;
 use crate::error::Result;
 use crate::fs::Filesystem;
 use crate::structs::dirent::{self, file_type};
 use crate::structs::inode::{mode, Inode};
-use crate::structs::superblock::{ino, state};
+use crate::structs::superblock::{ino, state, Superblock, SUPERBLOCK_LEN};
 
 /// How to run the check.
 #[derive(Debug, Clone, Default)]
 pub struct FsckOptions {
     /// Write the fixes rather than only reporting them.
     pub repair: bool,
-    /// Check even when the superblock says the filesystem is clean.
+    /// Check even when the superblock says the filesystem is clean
+    /// (`e2fsck -f`). Without it a clean filesystem that is not due for a
+    /// check is skipped; see the module docs.
     pub force: bool,
 }
 
 impl FsckOptions {
-    /// Report only; never write. The default.
+    /// Report only; never write. The default, and `e2fsck -n`: a clean
+    /// filesystem is skipped unless [`Self::force`] is set as well.
     pub fn check_only() -> Self {
         Self::default()
     }
 
-    /// Report and repair.
+    /// Report and repair, checking whatever the superblock says: `e2fsck -fy`.
     pub fn repair() -> Self {
         Self {
             repair: true,
             force: true,
         }
     }
+
+    /// Set [`FsckOptions::force`].
+    pub fn force(mut self, force: bool) -> Self {
+        self.force = force;
+        self
+    }
+}
+
+/// Whether the passes ran, and why.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum CheckScope {
+    /// Every pass ran because the caller forced it.
+    #[default]
+    Forced,
+    /// Every pass ran because the superblock made a check due. The reason is
+    /// `e2fsck`'s wording: "was not cleanly unmounted", "has been mounted 20
+    /// times without being checked".
+    Due(String),
+    /// The filesystem is clean and not due, so the passes did not run.
+    Skipped {
+        /// Mounts until a check falls due, when that is five or fewer; `1`
+        /// means after the next mount. `e2fsck` prints it after "clean".
+        next_check: Option<u32>,
+    },
 }
 
 /// How bad a finding is.
@@ -95,9 +146,16 @@ pub struct FsckReport {
     pub blocks_count: u64,
     /// Directories found.
     pub directories: u32,
+    /// Whether the passes ran, and why.
+    pub scope: CheckScope,
 }
 
 impl FsckReport {
+    /// Whether the check was skipped because the filesystem is clean.
+    pub fn skipped(&self) -> bool {
+        matches!(self.scope, CheckScope::Skipped { .. })
+    }
+
     /// Nothing wrong at all.
     pub fn is_clean(&self) -> bool {
         self.problems.is_empty()
@@ -205,8 +263,15 @@ pub async fn check_opened<D: BlockDevice>(
     };
 
     let mut state = ScanState::new(fs);
+    let now = unix_now();
 
     pass0_superblock(fs, &mut report, &mut state).await?;
+    if !options.force {
+        match check_due(fs, &report, options, now).await? {
+            Some(reason) => report.scope = CheckScope::Due(reason),
+            None => return skip(fs, report, options, now).await,
+        }
+    }
     pass1_inodes(fs, &mut report, &mut state).await?;
     pass2_directories(fs, &mut report, &mut state).await?;
     pass3_connectivity(fs, &mut report, &mut state).await?;
@@ -217,15 +282,183 @@ pub async fn check_opened<D: BlockDevice>(
     report.inodes_used = state.inodes_in_use.len() as u32;
     report.directories = state.directories.len() as u32;
 
-    if options.repair && report.repaired_anything() {
-        // A repaired filesystem is a clean one; say so where a mounter looks.
+    if options.repair {
+        // What e2fsck writes at the end of every full check it may write to:
+        // valid if nothing is left wrong, not valid otherwise, and the check
+        // recorded, which is what makes the next run skip it.
+        let left_wrong = report
+            .problems
+            .iter()
+            .any(|p| !p.fixed && p.severity > Severity::Info);
+        let was_valid = fs.superblock().state & state::VALID_FS != 0;
+        if left_wrong {
+            fs.superblock_mut().state &= !state::VALID_FS;
+        } else {
+            if !was_valid {
+                // e2fsck exits 1 for this alone: marking a filesystem clean
+                // is a correction.
+                report.push_fixed(
+                    0,
+                    "marked-clean",
+                    Severity::Fixable,
+                    "filesystem was not cleanly unmounted; marked clean".into(),
+                    true,
+                );
+            }
+            // Clearing the errors flag corrects what pass 0 noted about it.
+            for p in &mut report.problems {
+                if p.code == "fs-has-errors" {
+                    p.fixed = true;
+                }
+            }
+            fs.superblock_mut().state = state::VALID_FS;
+        }
         let sb = fs.superblock_mut();
-        sb.state = state::VALID_FS;
+        sb.lastcheck = now;
+        sb.mnt_count = 0;
         fs.flush_superblock().await?;
-        fs.flush_group_descs().await?;
+        if report.repaired_anything() {
+            fs.flush_group_descs().await?;
+        }
         fs.device().flush().await?;
     }
 
+    Ok(report)
+}
+
+/// Seconds since the epoch, as `e2fsck`'s `ctx->now`.
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
+/// How far in the future a last-check time may be before it counts as wrong:
+/// `e2fsck`'s default `time_fudge`, for clocks set to local time.
+const TIME_FUDGE: u64 = 86_400;
+
+/// Why a full check is due, or `None` if the filesystem may be skipped.
+///
+/// `e2fsck`'s `check_if_skip`, in its order, with the two reasons of this
+/// checker's own described in the module docs.
+async fn check_due<D: BlockDevice>(
+    fs: &Filesystem<D>,
+    report: &FsckReport,
+    options: &FsckOptions,
+    now: u64,
+) -> Result<Option<String>> {
+    let sb = fs.superblock();
+
+    // e2fsck's check_super_block marks the filesystem invalid for what it
+    // finds, and an invalid filesystem is one "with errors".
+    let pass0_found = report.problems.iter().any(|p| p.severity > Severity::Info);
+    if sb.state & state::ERROR_FS != 0 || pass0_found {
+        return Ok(Some("contains a file system with errors".into()));
+    }
+    if sb.state & state::VALID_FS == 0 {
+        return Ok(Some("was not cleanly unmounted".into()));
+    }
+    if sb.feature_incompat.contains(IncompatFeatures::RECOVER) {
+        return Ok(Some("needs journal recovery".into()));
+    }
+    if sb.last_orphan != 0 || sb.feature_ro_compat.contains(RoCompatFeatures::ORPHAN_PRESENT) {
+        return Ok(Some("has orphan inodes to release".into()));
+    }
+    // e2fsck compares against the backup only when it could rewrite the
+    // backups, so never on a read-only check.
+    if options.repair && backup_superblock_differs(fs).await? {
+        return Ok(Some("primary superblock features different from backup".into()));
+    }
+    if sb.max_mnt_count > 0 && sb.mnt_count as i32 >= sb.max_mnt_count as i32 {
+        return Ok(Some(format!(
+            "has been mounted {} times without being checked",
+            sb.mnt_count
+        )));
+    }
+    let mut lastcheck = sb.lastcheck;
+    if lastcheck > now {
+        lastcheck = lastcheck.saturating_sub(TIME_FUDGE);
+    }
+    if sb.checkinterval != 0 && now < lastcheck {
+        return Ok(Some("has filesystem last checked time in the future".into()));
+    }
+    if sb.checkinterval != 0 && now - lastcheck >= sb.checkinterval as u64 {
+        return Ok(Some(format!(
+            "has gone {} days without being checked",
+            now.saturating_sub(sb.lastcheck) / 86_400
+        )));
+    }
+    Ok(None)
+}
+
+/// `e2fsck`'s `check_backup_super_block`: the first backup that decodes is
+/// compared for features (less the ones only the primary tracks), size and
+/// UUID.
+async fn backup_superblock_differs<D: BlockDevice>(fs: &Filesystem<D>) -> Result<bool> {
+    let sb = fs.superblock();
+    let incompat_ignore = IncompatFeatures::EXTENTS | IncompatFeatures::RECOVER;
+    let ro_ignore = RoCompatFeatures::LARGE_FILE | RoCompatFeatures::DIR_NLINK;
+    for group in 1..fs.group_count() {
+        if !fs.group_has_super(group) {
+            continue;
+        }
+        let block = fs.read_block(fs.group_first_block(group)).await?;
+        let Ok(backup) = Superblock::decode(&block[..SUPERBLOCK_LEN]) else {
+            continue;
+        };
+        return Ok(backup.feature_compat != sb.feature_compat
+            || backup.feature_incompat.difference(incompat_ignore)
+                != sb.feature_incompat.difference(incompat_ignore)
+            || backup.feature_ro_compat.difference(ro_ignore)
+                != sb.feature_ro_compat.difference(ro_ignore)
+            || backup.blocks_count != sb.blocks_count
+            || backup.inodes_count != sb.inodes_count
+            || backup.uuid != sb.uuid);
+    }
+    Ok(false)
+}
+
+/// Skip a clean filesystem, as `e2fsck` does once `check_if_skip` finds no
+/// reason to check.
+async fn skip<D: BlockDevice>(
+    fs: &mut Filesystem<D>,
+    mut report: FsckReport,
+    options: &FsckOptions,
+    now: u64,
+) -> Result<FsckReport> {
+    // Pass 0 found nothing that forces a check; its notes go unreported, as
+    // e2fsck says nothing on this path but "clean".
+    report.problems.clear();
+
+    // A kernel keeps the free counts in the group descriptors and lets the
+    // superblock's drift. e2fsck brings them into line when it may write, for
+    // anyone reading them with dumpe2fs, and does not count it as a repair.
+    if options.repair {
+        let free_blocks: u64 = fs.group_descs().iter().map(|d| d.free_blocks_count as u64).sum();
+        let free_inodes: u32 = fs.group_descs().iter().map(|d| d.free_inodes_count).sum();
+        let sb = fs.superblock_mut();
+        if sb.free_blocks_count != free_blocks || sb.free_inodes_count != free_inodes {
+            sb.free_blocks_count = free_blocks;
+            sb.free_inodes_count = free_inodes;
+            fs.flush_superblock().await?;
+            fs.device().flush().await?;
+        }
+    }
+
+    let sb = fs.superblock();
+    report.inodes_used = sb.inodes_count.saturating_sub(sb.free_inodes_count);
+    report.blocks_used = sb.blocks_count.saturating_sub(sb.free_blocks_count);
+
+    let mut next_check: i64 = 100_000;
+    if sb.max_mnt_count > 0 {
+        next_check = (sb.max_mnt_count as i64 - sb.mnt_count as i64).max(1);
+    }
+    if sb.checkinterval != 0 && now.saturating_sub(sb.lastcheck) >= sb.checkinterval as u64 {
+        next_check = 1;
+    }
+    report.scope = CheckScope::Skipped {
+        next_check: (next_check <= 5).then_some(next_check as u32),
+    };
     Ok(report)
 }
 
@@ -1141,7 +1374,7 @@ mod tests {
                     .mkfs_time(1_700_000_000);
                 format(&dev, &params).await.unwrap();
 
-                let report = check(dev, &FsckOptions::check_only()).await.unwrap();
+                let report = check(dev, &FsckOptions::check_only().force(true)).await.unwrap();
                 assert!(
                     report.is_clean(),
                     "{} at {size} bytes on a dirty medium:\n{}",
@@ -1159,7 +1392,7 @@ mod tests {
         for profile in [Profile::Ext2, Profile::Ext3, Profile::Ext4] {
             for size in [16 * MIB, 64 * MIB, 256 * MIB] {
                 let dev = formatted(profile, size).await;
-                let report = check(dev, &FsckOptions::check_only()).await.unwrap();
+                let report = check(dev, &FsckOptions::check_only().force(true)).await.unwrap();
                 assert!(
                     report.is_clean(),
                     "{} at {size} bytes:\n{}",
@@ -1195,7 +1428,7 @@ mod tests {
             .mkfs_time(1_700_000_000);
         format(&dev, &params).await.unwrap();
 
-        let report = check(&dev, &FsckOptions::check_only()).await.unwrap();
+        let report = check(&dev, &FsckOptions::check_only().force(true)).await.unwrap();
         assert_eq!(report.blocks_count, 65536);
         assert_eq!(report.inodes_count, 16384);
         assert_eq!(report.blocks_used, 5417);
@@ -1207,7 +1440,7 @@ mod tests {
     #[tokio::test]
     async fn a_journal_and_orphan_file_are_counted_too() {
         let dev = formatted(Profile::Ext4, 64 * MIB).await;
-        let report = check(&dev, &FsckOptions::check_only()).await.unwrap();
+        let report = check(&dev, &FsckOptions::check_only().force(true)).await.unwrap();
         assert!(report.is_clean(), "{}", describe(&report));
         assert_eq!(report.blocks_used, 5417 + 4096 + 32);
         assert_eq!(report.inodes_used, 12);
@@ -1233,7 +1466,7 @@ mod tests {
         let names = fs.read_dir(&root).await.unwrap();
         assert!(names.iter().all(|e| e.inode != orphan));
 
-        let report = check(&dev, &FsckOptions::check_only()).await.unwrap();
+        let report = check(&dev, &FsckOptions::check_only().force(true)).await.unwrap();
         assert!(report.is_clean(), "{}", describe(&report));
     }
 
@@ -1245,7 +1478,7 @@ mod tests {
         fs.flush_superblock().await.unwrap();
 
         let dev = fs.into_device();
-        let report = check(dev, &FsckOptions::check_only()).await.unwrap();
+        let report = check(dev, &FsckOptions::check_only().force(true)).await.unwrap();
         assert!(report
             .problems
             .iter()
@@ -1267,7 +1500,7 @@ mod tests {
         assert_eq!(report.exit_code(), 1, "corrected");
 
         // And a second pass finds nothing left to do.
-        let again = check(&dev, &FsckOptions::check_only()).await.unwrap();
+        let again = check(&dev, &FsckOptions::check_only().force(true)).await.unwrap();
         assert!(again.is_clean(), "after repair:\n{}", describe(&again));
 
         let fs = Filesystem::open(&dev).await.unwrap();
@@ -1286,7 +1519,7 @@ mod tests {
         }
         fs.write_block(desc.block_bitmap, &bitmap).await.unwrap();
 
-        let report = check(&dev, &FsckOptions::check_only()).await.unwrap();
+        let report = check(&dev, &FsckOptions::check_only().force(true)).await.unwrap();
         assert!(
             report
                 .problems
@@ -1298,7 +1531,7 @@ mod tests {
 
         let report = check(&dev, &FsckOptions::repair()).await.unwrap();
         assert!(report.repaired_anything());
-        let again = check(&dev, &FsckOptions::check_only()).await.unwrap();
+        let again = check(&dev, &FsckOptions::check_only().force(true)).await.unwrap();
         assert!(again.is_clean(), "after repair:\n{}", describe(&again));
     }
 
@@ -1310,7 +1543,7 @@ mod tests {
         root.links_count = 99;
         fs.write_inode(ino::ROOT, &root).await.unwrap();
 
-        let report = check(&dev, &FsckOptions::check_only()).await.unwrap();
+        let report = check(&dev, &FsckOptions::check_only().force(true)).await.unwrap();
         assert!(
             report.problems.iter().any(|p| p.code == "link-count-wrong"),
             "{}",
@@ -1322,7 +1555,7 @@ mod tests {
         let root = fs.read_inode(ino::ROOT).await.unwrap();
         assert_eq!(root.links_count, 3);
 
-        let again = check(&dev, &FsckOptions::check_only()).await.unwrap();
+        let again = check(&dev, &FsckOptions::check_only().force(true)).await.unwrap();
         assert!(again.is_clean(), "after repair:\n{}", describe(&again));
     }
 
@@ -1341,7 +1574,7 @@ mod tests {
         let gdt_block = if sb.block_size() == 1024 { 2 } else { 1 };
         fs.write_block(gdt_block, &raw).await.unwrap();
 
-        let report = check(&dev, &FsckOptions::check_only()).await.unwrap();
+        let report = check(&dev, &FsckOptions::check_only().force(true)).await.unwrap();
         assert!(
             report.problems.iter().any(|p| p.code == "group-desc-csum"),
             "{}",
@@ -1352,7 +1585,198 @@ mod tests {
     #[tokio::test]
     async fn a_device_that_is_not_a_filesystem_is_refused() {
         let dev = MemDevice::new(4 * MIB);
-        assert!(check(dev, &FsckOptions::check_only()).await.is_err());
+        assert!(check(dev, &FsckOptions::check_only().force(true)).await.is_err());
+    }
+
+    async fn edit_superblock(dev: &MemDevice, edit: impl FnOnce(&mut Superblock)) {
+        let mut fs = Filesystem::open(dev).await.unwrap();
+        edit(fs.superblock_mut());
+        fs.flush_superblock().await.unwrap();
+    }
+
+    /// #6: a clean filesystem that is not due is skipped unless forced, as
+    /// `e2fsck` does, and the skip really does skip — a problem only the
+    /// passes can find goes unseen until `-f`.
+    #[tokio::test]
+    async fn a_clean_filesystem_is_skipped_unless_forced() {
+        let dev = formatted(Profile::Ext4, 16 * MIB).await;
+        let fs = Filesystem::open(&dev).await.unwrap();
+        let mut root = fs.read_inode(ino::ROOT).await.unwrap();
+        root.links_count = 99;
+        fs.write_inode(ino::ROOT, &root).await.unwrap();
+
+        let report = check(&dev, &FsckOptions::check_only()).await.unwrap();
+        assert_eq!(report.scope, CheckScope::Skipped { next_check: None });
+        assert!(report.skipped() && report.is_clean());
+        assert_eq!(report.exit_code(), 0);
+        assert_eq!(report.directories, 0, "no pass ran");
+        let sb = fs.superblock();
+        assert_eq!(report.inodes_used, sb.inodes_count - sb.free_inodes_count);
+        assert_eq!(report.blocks_used, sb.blocks_count - sb.free_blocks_count);
+
+        let forced = check(&dev, &FsckOptions::check_only().force(true)).await.unwrap();
+        assert_eq!(forced.scope, CheckScope::Forced);
+        assert!(forced.problems.iter().any(|p| p.code == "link-count-wrong"));
+    }
+
+    /// Each of `e2fsck`'s reasons to check, plus this checker's two, makes a
+    /// clean-looking filesystem due, with `e2fsck`'s wording.
+    #[tokio::test]
+    async fn a_check_falls_due_for_each_reason() {
+        let now = unix_now();
+        type Edit = Box<dyn FnOnce(&mut Superblock)>;
+        let cases: Vec<(&str, Edit)> = vec![
+            ("was not cleanly unmounted", Box::new(|sb| sb.state = 0)),
+            (
+                "contains a file system with errors",
+                Box::new(|sb| sb.state |= state::ERROR_FS),
+            ),
+            // Pass 0 finds this, and anything pass 0 finds forces the check.
+            (
+                "contains a file system with errors",
+                Box::new(|sb| sb.journal_inum = 0),
+            ),
+            (
+                "needs journal recovery",
+                Box::new(|sb| sb.feature_incompat |= IncompatFeatures::RECOVER),
+            ),
+            ("has orphan inodes to release", Box::new(|sb| sb.last_orphan = 12)),
+            (
+                "has been mounted 20 times without being checked",
+                Box::new(|sb| {
+                    sb.max_mnt_count = 20;
+                    sb.mnt_count = 20;
+                }),
+            ),
+            (
+                "has filesystem last checked time in the future",
+                Box::new(move |sb| {
+                    sb.checkinterval = 3600;
+                    sb.lastcheck = now + 3 * 86_400;
+                }),
+            ),
+            (
+                "has gone 10 days without being checked",
+                Box::new(move |sb| {
+                    sb.checkinterval = 86_400;
+                    sb.lastcheck = now - 10 * 86_400 - 60;
+                }),
+            ),
+        ];
+        for (reason, edit) in cases {
+            let dev = formatted(Profile::Ext4, 16 * MIB).await;
+            edit_superblock(&dev, edit).await;
+            let report = check(&dev, &FsckOptions::check_only()).await.unwrap();
+            assert_eq!(report.scope, CheckScope::Due(reason.into()));
+        }
+    }
+
+    /// A last-check time less than a day ahead is `e2fsck`'s time fudge: a
+    /// clock kept in local time, not a reason to check.
+    #[tokio::test]
+    async fn a_last_check_a_few_hours_ahead_is_not_a_reason() {
+        let now = unix_now();
+        let dev = formatted(Profile::Ext4, 16 * MIB).await;
+        edit_superblock(&dev, |sb| {
+            sb.checkinterval = 7 * 86_400;
+            sb.lastcheck = now + 5 * 3600;
+        })
+        .await;
+        let report = check(&dev, &FsckOptions::check_only()).await.unwrap();
+        assert!(report.skipped(), "{:?}", report.scope);
+    }
+
+    /// Close to the mount limit, the skip says how close, as `e2fsck` does.
+    #[tokio::test]
+    async fn a_skip_counts_down_the_last_five_mounts() {
+        for (mounts, next) in [(10, None), (17, Some(3)), (19, Some(1))] {
+            let dev = formatted(Profile::Ext4, 16 * MIB).await;
+            edit_superblock(&dev, |sb| {
+                sb.max_mnt_count = 20;
+                sb.mnt_count = mounts;
+            })
+            .await;
+            let report = check(&dev, &FsckOptions::check_only()).await.unwrap();
+            assert_eq!(report.scope, CheckScope::Skipped { next_check: next });
+        }
+    }
+
+    /// The backup comparison runs only when repairing, as in `e2fsck`.
+    #[tokio::test]
+    async fn a_backup_that_differs_forces_a_repairing_check() {
+        let dev = formatted(Profile::Ext4, 16 * MIB).await;
+        edit_superblock(&dev, |sb| {
+            sb.feature_compat |= CompatFeatures::DIR_PREALLOC;
+        })
+        .await;
+        let report = check(&dev, &FsckOptions::check_only()).await.unwrap();
+        assert!(report.skipped(), "{:?}", report.scope);
+
+        let repairing = FsckOptions {
+            repair: true,
+            force: false,
+        };
+        let report = check(&dev, &repairing).await.unwrap();
+        assert_eq!(
+            report.scope,
+            CheckScope::Due("primary superblock features different from backup".into())
+        );
+    }
+
+    /// A repairing check records itself the way `e2fsck` does — valid,
+    /// mount count zero, last check now — so the next run skips; and marking
+    /// an uncleanly unmounted filesystem clean is a correction (exit 1).
+    #[tokio::test]
+    async fn a_repairing_check_marks_the_filesystem_checked() {
+        let dev = formatted(Profile::Ext4, 16 * MIB).await;
+        edit_superblock(&dev, |sb| {
+            sb.state = 0;
+            sb.max_mnt_count = 20;
+            sb.mnt_count = 5;
+            sb.lastcheck = 0;
+        })
+        .await;
+        let repairing = FsckOptions {
+            repair: true,
+            force: false,
+        };
+        let report = check(&dev, &repairing).await.unwrap();
+        assert_eq!(report.scope, CheckScope::Due("was not cleanly unmounted".into()));
+        assert_eq!(report.exit_code(), 1, "{}", describe(&report));
+
+        let fs = Filesystem::open(&dev).await.unwrap();
+        let sb = fs.superblock();
+        assert_eq!(sb.state, state::VALID_FS);
+        assert_eq!(sb.mnt_count, 0);
+        assert!(sb.lastcheck + 60 >= unix_now());
+
+        let again = check(&dev, &FsckOptions::check_only()).await.unwrap();
+        assert!(again.skipped(), "{:?}", again.scope);
+    }
+
+    /// Skipping while repairing brings the superblock's free counts into line
+    /// with the descriptors, as `e2fsck` does, and does not call it a repair.
+    /// A read-only skip leaves them alone.
+    #[tokio::test]
+    async fn a_repairing_skip_updates_the_free_counts() {
+        let dev = formatted(Profile::Ext4, 16 * MIB).await;
+        let real = Filesystem::open(&dev).await.unwrap().superblock().free_blocks_count;
+        edit_superblock(&dev, |sb| sb.free_blocks_count = 42).await;
+
+        let report = check(&dev, &FsckOptions::check_only()).await.unwrap();
+        assert!(report.skipped());
+        let fs = Filesystem::open(&dev).await.unwrap();
+        assert_eq!(fs.superblock().free_blocks_count, 42);
+
+        let repairing = FsckOptions {
+            repair: true,
+            force: false,
+        };
+        let report = check(&dev, &repairing).await.unwrap();
+        assert!(report.skipped());
+        assert_eq!(report.exit_code(), 0);
+        let fs = Filesystem::open(&dev).await.unwrap();
+        assert_eq!(fs.superblock().free_blocks_count, real);
     }
 
     #[tokio::test]

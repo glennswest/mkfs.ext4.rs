@@ -109,7 +109,7 @@ pub use format::{format, Report};
 #[cfg(feature = "std")]
 pub use fs::Filesystem;
 #[cfg(feature = "std")]
-pub use fsck::{FsckOptions, FsckReport};
+pub use fsck::{CheckScope, FsckOptions, FsckReport};
 pub use layout::Geometry;
 pub use params::{JournalSize, Params, Profile};
 pub use error::{Error, Result};

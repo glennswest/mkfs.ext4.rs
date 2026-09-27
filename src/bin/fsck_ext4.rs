@@ -3,11 +3,14 @@
 //! Exit codes follow `e2fsck`: 0 clean, 1 errors corrected, 4 errors left
 //! uncorrected, 8 an operational error. A caller that already scripts around
 //! `e2fsck` does not have to learn anything new.
+//!
+//! As with `e2fsck`, a filesystem that is clean and not due for a check is
+//! skipped unless `-f` is given, and `-y` alone does not force a check.
 
 use clap::Parser;
 
 use mkfs_ext4::device::FileDevice;
-use mkfs_ext4::fsck::{self, FsckOptions, Severity};
+use mkfs_ext4::fsck::{self, CheckScope, FsckOptions, Severity};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -65,6 +68,27 @@ async fn main() -> anyhow::Result<()> {
             std::process::exit(8);
         }
     };
+
+    match &report.scope {
+        CheckScope::Skipped { next_check } => {
+            let note = match next_check {
+                Some(1) => " (check after next mount)".to_string(),
+                Some(n) => format!(" (check in {n} mounts)"),
+                None => String::new(),
+            };
+            println!(
+                "{}: clean, {}/{} files, {}/{} blocks{note}",
+                args.device,
+                report.inodes_used,
+                report.inodes_count,
+                report.blocks_used,
+                report.blocks_count
+            );
+            std::process::exit(report.exit_code());
+        }
+        CheckScope::Due(reason) => println!("{} {reason}, check forced.", args.device),
+        CheckScope::Forced => {}
+    }
 
     for problem in &report.problems {
         let mark = match (problem.fixed, problem.severity) {

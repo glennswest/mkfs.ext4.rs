@@ -283,9 +283,12 @@ async fn fsck_reports_an_extent_block_whose_checksum_does_not_match() {
         .unwrap();
 
     // As written, the filesystem is clean — including the new check.
-    let report = fsck::check(FileDevice::open(&path).await.unwrap(), &FsckOptions::check_only())
-        .await
-        .unwrap();
+    let report = fsck::check(
+        FileDevice::open(&path).await.unwrap(),
+        &FsckOptions::check_only().force(true),
+    )
+    .await
+    .unwrap();
     assert!(
         !report.problems.iter().any(|p| p.code == "extent-csum"),
         "a filesystem we just wrote must not have a bad extent checksum: {:?}",
@@ -316,9 +319,12 @@ async fn fsck_reports_an_extent_block_whose_checksum_does_not_match() {
     dev.write_at(leaf * block_size, &block).await.unwrap();
     BlockDevice::flush(&dev).await.unwrap();
 
-    let report = fsck::check(FileDevice::open(&path).await.unwrap(), &FsckOptions::check_only())
-        .await
-        .unwrap();
+    let report = fsck::check(
+        FileDevice::open(&path).await.unwrap(),
+        &FsckOptions::check_only().force(true),
+    )
+    .await
+    .unwrap();
     assert!(
         report.problems.iter().any(|p| p.code == "extent-csum"),
         "a corrupted extent tail must be reported, got: {:?}",

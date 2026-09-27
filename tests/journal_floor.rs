@@ -135,7 +135,7 @@ async fn fsck_reports_a_journal_the_superblock_only_claims_to_have() {
     // As written it is clean, and it really does have a journal.
     let report = fsck::check(
         FileDevice::open(&path).await.unwrap(),
-        &FsckOptions::check_only(),
+        &FsckOptions::check_only().force(true),
     )
     .await
     .unwrap();
@@ -161,7 +161,7 @@ async fn fsck_reports_a_journal_the_superblock_only_claims_to_have() {
 
     let report = fsck::check(
         FileDevice::open(&path).await.unwrap(),
-        &FsckOptions::check_only(),
+        &FsckOptions::check_only().force(true),
     )
     .await
     .unwrap();
