@@ -9,8 +9,17 @@ specific points where the two differ.
 - **Version:** 3.0.0 — see `Cargo.toml` (single version location)
 - **License:** MIT OR Apache-2.0
 - **Repo:** https://github.com/glennswest/mkfs.ext4.rs
-- **Directory:** `~/projects/mkfs.ext4.rs`. The crate covers ext2/ext3/ext4
-  from one code path, exactly as `mke2fs` does.
+- **Directory:** `~/src/mkfs.ext4.rs` (the stormcentral session checkout). The
+  crate covers ext2/ext3/ext4 from one code path, exactly as `mke2fs` does.
+- **Ships as:** a git dependency pinned to a release tag. It is not on
+  crates.io and has no container or golden. Consumers are stormblock (tag
+  `v3.0.0`, `default-features = false, features = ["std"]`) and fio-ext4. The
+  `cli` feature also builds the `mkfs-ext4` / `fsck-ext4` binaries.
+- **Build/test:** `sc-build` (`cargo build && cargo test`). The golden,
+  sector-size, journal-floor and strict-sector suites in `tests/` need no
+  privilege. `tests/verify-on-linux.sh` loop-mounts, so it needs root on its
+  target host (`root@dev.g8.lo` by default). A session does not run it: see the
+  root rule in `../CLAUDE.md`.
 
 ## Why this exists
 
@@ -106,16 +115,19 @@ to point at, not an open-ended guess about feature flags.
       superblock lives in, the unit the kernel's buffer heads use. `open`
       alone consults the sector size, before the block size is known.
       `MemDevice::strict` is the test device that refuses unaligned I/O.
-- [ ] stormblock integration path (file against stormblock#39, do not edit it
-      from this repo)
+- [x] stormblock integration path: stormblock formats its templates through
+      the `BlockDevice` seam and depends on `v3.0.0`. stormblock#39 is closed.
+- [ ] Issue #6: `FsckOptions::force` / `fsck-ext4 -f` are documented but never
+      read, so every check is a full one. Either honour them the way `e2fsck`
+      does or drop the claim.
 
 ## Features
 
 | Feature | Default | What it brings |
 |---|---|---|
-| `std` | yes | the async formatter, checker and device layer — everything that was here before |
+| `std` | yes | the async formatter, checker, `Filesystem`, block cache and device layer |
 | `cli` | yes | the `mkfs-ext4` / `fsck-ext4` binaries |
-| *(neither)* | — | `structs`, `layout`, `csum`, `bytes` and the synchronous `read` path: what a UEFI driver links |
+| *(neither)* | — | `structs`, `layout`, `csum`, `features`, `params`, `journal`, `bytes` and the synchronous `read` path: what a UEFI driver links |
 
 `default-features = false` used to leave the crate whole. As of 2.0.0 it leaves
 the `no_std` core, so a library consumer that wants the formatter asks for

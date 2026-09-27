@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### 2026-09-27
+- **docs:** Documentation refreshed from the code. No code has changed since
+  v3.0.0. README: the dependency example pins `v3.0.0` with
+  `default-features = false, features = ["std"]` (it still said `v1.0.0`);
+  added a feature table, the `no_std` `read` path with `ReadError`, the
+  `mkfs-ext4` / `fsck-ext4` options and exit codes, and a note that
+  `verify-on-linux.sh` needs root on its host while `cargo test` does not.
+  Rustdoc: the crate docs said `Params::sector_size` "wins over whatever the
+  device says", which has been false since 2.2.1 (it is a floor, and the
+  device's sector wins when larger). `Params::sector_size` now says so too,
+  and the module table lists every module. CLAUDE.md: the checkout path, how
+  the crate ships, and the stormblock integration marked done (stormblock
+  pins v3.0.0 and stormblock#39 is closed). `fsck-ext4 -f` /
+  `FsckOptions::force` is documented but never read, so every check is a full
+  one. Filed as #6.
+
 ## [v3.0.0] — 2026-09-06
 
 ### Breaking

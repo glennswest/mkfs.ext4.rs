@@ -36,8 +36,10 @@
 //! ```
 //!
 //! [`FileDevice`] asks the kernel, so a real block device needs nothing. For
-//! anything else, either override the method or set
-//! [`params::Params::sector_size`], which wins over whatever the device says.
+//! anything else, override the method. [`params::Params::sector_size`] can
+//! raise the sector a format assumes (an image built in a file for a 4 KiB
+//! drive), but never lower it below the device's own: `format` uses the larger
+//! of the two.
 //!
 //! # Layout of this crate
 //!
@@ -45,10 +47,23 @@
 //! |---|---|
 //! | [`device`] | the [`BlockDevice`] trait and its file / memory implementations |
 //! | [`cache`] | a write-back block cache over any [`BlockDevice`], for write-heavy consumers |
+//! | [`format`] | the parallel async formatter, [`format()`] and its [`Report`] |
+//! | [`fs`] | [`Filesystem`]: open, read and write an existing filesystem |
+//! | [`fsck`] | check passes and repair |
+//! | [`compare`] | structural diff between two filesystems |
+//! | [`mmp`] | multiple mount protection |
+//! | [`read`] | synchronous, `no_std` read-only path over [`BlockReader`] |
+//! | [`params`] | `mke2fs` profiles and per-format parameters |
+//! | [`layout`] | `mke2fs` geometry |
+//! | [`journal`] | JBD2 journal creation and sizing |
 //! | [`structs`] | byte-exact on-disk structures |
 //! | [`features`] | feature masks and `mke2fs -O` parsing |
 //! | [`csum`] | crc32c and crc16 metadata checksums |
+//! | [`bytes`] | little-endian field encoding |
 //! | [`error`] | [`Error`] and [`Result`] |
+//!
+//! Everything but `structs`, `layout`, `csum`, `features`, `params`,
+//! `journal`, `bytes`, `read` and `error` needs the `std` feature.
 
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]

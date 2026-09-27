@@ -14,8 +14,17 @@ Not on crates.io; take it by git, pinned to a tag so builds are reproducible:
 
 ```toml
 [dependencies]
-mkfs-ext4 = { git = "https://github.com/glennswest/mkfs.ext4.rs", tag = "v1.0.0" }
+mkfs-ext4 = { git = "https://github.com/glennswest/mkfs.ext4.rs", tag = "v3.0.0", default-features = false, features = ["std"] }
 ```
+
+| Feature | Default | What it brings |
+|---|---|---|
+| `std` | yes | the async formatter, checker, `Filesystem`, block cache and device layer |
+| `cli` | yes | the `mkfs-ext4` / `fsck-ext4` binaries (implies `std`) |
+| *(neither)* | — | the `no_std` core: `structs`, `layout`, `csum`, `features`, `params`, `journal`, `bytes` and the synchronous `read` path |
+
+A library consumer turns `cli` off and asks for `std` explicitly, as above.
+Since 2.0.0, `default-features = false` alone leaves only the `no_std` core.
 
 ```rust
 use mkfs_ext4::{format, FileDevice, Params, Profile};
@@ -24,6 +33,44 @@ let dev = FileDevice::open("/dev/sdb1").await?;
 let report = format(&dev, &Params::new(Profile::Ext4).label("data")).await?;
 println!("{} blocks, {} inodes", report.blocks_count, report.inodes_count);
 ```
+
+### Reading without a runtime
+
+The `read` module is a synchronous, read-only path over the same on-disk
+structures, and it builds with neither feature, for a UEFI driver loading a
+kernel before any runtime exists. You implement `BlockReader::read_at`, and a
+failed read returns `ReadError::new(status)` carrying the device's own status
+word (an `EFI_STATUS` or an errno). That status comes back, together with the
+offset, in `Error::DeviceRead`.
+
+```rust
+use mkfs_ext4::{BlockReader, Ext4};
+
+let fs = Ext4::open(&dev)?;
+let kernel = fs.read_file(&dev, "/vmlinuz")?;
+```
+
+### Command line
+
+`cargo install --git https://github.com/glennswest/mkfs.ext4.rs --tag v3.0.0`
+builds `mkfs-ext4` and `fsck-ext4`. Rust does not allow a `.` in a binary name,
+so to have `mkfs -t ext4` / `fsck -t ext4` dispatch to them, install them as
+`mkfs.ext4` and `fsck.ext4`.
+
+- `mkfs-ext4 [options] DEVICE [BLOCKS]`: `-t ext2|ext3|ext4` (default
+  `ext4`), `-b` block size, `--sector-size`, `-I` inode size, `-N` inode
+  count, `-i` bytes per inode, `-m` reserved percent (default 5), `-L` label,
+  `-U` UUID, `-O` features in `mke2fs -O` syntax (`^feature` clears a
+  feature), `-g` blocks per group, `-G` flex_bg size, `-J` journal blocks (0
+  means no journal), `--no-journal`, `--lazy-itable-init`, `--zeroed-medium`
+  (the device already reads back as zeros, so the inode tables and journal
+  body are not written), `--mkfs-time` for reproducible images,
+  `--mmp-update-interval` (implies `-O mmp`), `-n` dry run and `-q` quiet.
+- `fsck-ext4 [-n|-y] [-f] [-v] DEVICE`: `-n` (the default) reports and
+  changes nothing, and `-y` repairs. `-f` is accepted for compatibility with
+  `e2fsck`, but every check runs every pass, marked clean or not
+  ([#6](https://github.com/glennswest/mkfs.ext4.rs/issues/6)). Exit codes follow `e2fsck`: 0 clean,
+  1 errors corrected, 4 errors left uncorrected, 8 operational error.
 
 ## Sector size
 
@@ -141,6 +188,10 @@ builds images, ships them to a Linux host and runs each through
 `e2fsck -fn` -> loop mount read-write -> write -> unmount -> `e2fsck -fn`.
 All eight configurations pass: ext2, ext3 and ext4, with and without a journal,
 at 1 KiB and 4 KiB blocks, from 16 MiB to 1 GiB.
+The script loop-mounts, so it needs root on the Linux host it targets (by
+default `root@dev.g8.lo`; pass `user@host` to choose another). It is not part of
+`cargo test`. `cargo test` runs the golden, sector-size and strict-sector
+suites in `tests/` and needs no privilege.
 
 Geometry and feature masks are asserted against golden filesystems produced by
 real `mke2fs` 1.47.3, which is byte-reproducible once the UUID, hash seed and
@@ -152,8 +203,9 @@ See `CLAUDE.md` for the work plan and what is still outstanding.
 
 - [`fio-ext4`](https://github.com/glennswest/fio.ext4.rs) — reads and writes
   files inside the filesystems this crate creates, in userspace
-- [`stormblock`](https://github.com/glennswest/stormblock) — filesystem
-  templates ("mkfs once, clone forever")
+- [`stormblock`](https://github.com/glennswest/stormblock): filesystem
+  templates ("mkfs once, clone forever"), formatted in place through the
+  `BlockDevice` seam. It depends on `v3.0.0` with `features = ["std"]`.
 
 ## Licence
 

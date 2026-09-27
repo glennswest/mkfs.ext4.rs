@@ -287,6 +287,11 @@ impl Params {
     /// The block size can never be smaller than this: a filesystem laid out in
     /// 1 KiB blocks on a device that only accepts 4 KiB writes cannot be
     /// written a block at a time.
+    ///
+    /// This is a floor on top of the device's own
+    /// [`logical_sector_size`](crate::device::BlockDevice::logical_sector_size):
+    /// `format` takes the larger of the two, so it can raise the sector (an
+    /// image in a file for a 4 KiB drive) but never lower it.
     pub fn sector_size(mut self, size: u32) -> Self {
         self.sector_size = Some(size);
         self
