@@ -191,7 +191,9 @@ to point at, not an open-ended guess about feature flags.
 - [x] Issue #14 (P2): release #10's streaming format as a tag — consumers
       pinned to `v3.0.0` still held ~18 GiB at 256 TiB. `chore(release):
       v4.0.0` (with #6, #8, #9, #10), tagged after sc-build passed on the
-      release commit. stormblock moves its pin (filed there by stormcos#92).
+      release commit (all suites, clippy `-D warnings`, `formatscale 256
+      --check`: 20.6 MiB over stored, 0 problems). Tag pushed, #14 and #6
+      closed; stormblock#300 / #289 told to move their pin.
 
 ## Features
 
