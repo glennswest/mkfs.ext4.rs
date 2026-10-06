@@ -37,6 +37,7 @@ use alloc::{string::String, vec::Vec};
 
 use core::future::Future;
 use core::pin::Pin;
+use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::bytes::{get_u32, put_u32};
@@ -687,11 +688,10 @@ impl AllocStats {
         }
         let group = fs.group_of_block(block);
         let bit = block - fs.group_first_block(group);
-        if !self.block_bitmaps.contains_key(&group) {
-            let bitmap = fs.read_block_bitmap(group).await?;
-            self.block_bitmaps.insert(group, bitmap);
-        }
-        let bitmap = self.block_bitmaps.get_mut(&group).unwrap();
+        let bitmap = match self.block_bitmaps.entry(group) {
+            Entry::Occupied(e) => e.into_mut(),
+            Entry::Vacant(e) => e.insert(fs.read_block_bitmap(group).await?),
+        };
         if !Filesystem::<D>::test_bit(bitmap, bit) {
             return Ok(());
         }
@@ -711,11 +711,10 @@ impl AllocStats {
         let ipg = fs.superblock().inodes_per_group;
         let group = (inum - 1) / ipg;
         let bit = ((inum - 1) % ipg) as u64;
-        if !self.inode_bitmaps.contains_key(&group) {
-            let bitmap = fs.read_inode_bitmap(group).await?;
-            self.inode_bitmaps.insert(group, bitmap);
-        }
-        let bitmap = self.inode_bitmaps.get_mut(&group).unwrap();
+        let bitmap = match self.inode_bitmaps.entry(group) {
+            Entry::Occupied(e) => e.into_mut(),
+            Entry::Vacant(e) => e.insert(fs.read_inode_bitmap(group).await?),
+        };
         if !Filesystem::<D>::test_bit(bitmap, bit) {
             return Ok(());
         }
