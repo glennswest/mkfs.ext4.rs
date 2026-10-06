@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### 2026-10-06
+- **fix:** The default inode count no longer wraps at 256 TiB (#9). The
+  ratio's answer, `bytes / ratio`, was cast to 32 bits: exactly 2^32 at
+  256 TiB and the huge class's 64 KiB ratio, so 0, which left 8 inodes per
+  group (16 M inodes in all). It is now capped at 2^32 − 1 as `mke2fs` does
+  with `64bit` (refused without it: "too many inodes, raise the inode
+  ratio"), and, as `initialize.c`'s `ipg_retry` does, inodes per group are
+  lowered until the rounded total fits 32 bits: 2032 per group
+  (4,261,412,864) at 256 TiB, 496 (4,160,749,568) at 1 PiB. An explicit
+  `inodes_count` is floored at 12, `ext2fs_initialize`'s minimum.
+- **fix:** A layout whose inodes per group cannot hold what group 0 must
+  (inodes 1–11, 12 with `orphan_file`) is refused. This is why `fsck` found
+  the wrapped 256 TiB filesystem not clean: the formatter writes all of them
+  into group 0, so at 8 per group inodes 9–11 sat in group 0's table and
+  bitmap while their numbers belong to group 1, and group 0's free-inode count
+  underflowed.
+- **test:** `examples/formatscale.rs` takes `--check` to run a forced check of
+  the formatted filesystem and fail unless it is clean.
+
 ### 2026-09-27
 - **perf:** `format()` memory no longer grows with the group count (#10). It
   used to build every group's bitmaps (8 KiB a group at 4 KiB blocks) and the

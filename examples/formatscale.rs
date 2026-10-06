@@ -10,13 +10,17 @@
 //! ```text
 //! cargo run --release --example formatscale -- 256   # TiB
 //! ```
+//!
+//! `--check` after the size runs a forced check (`e2fsck -fn`) of the result
+//! and exits non-zero unless it is clean (#9). The check's own block map is
+//! one bit per block (#11), so the peak RSS then includes it.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::Instant;
 
 use mkfs_ext4::device::BlockDevice;
-use mkfs_ext4::{format, Params, Profile};
+use mkfs_ext4::{format, fsck, FsckOptions, Params, Profile};
 
 const PAGE: u64 = 4096;
 
@@ -121,6 +125,7 @@ fn vm_hwm_kib() -> u64 {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let check = std::env::args().nth(2).as_deref() == Some("--check");
     let tib: u64 = std::env::args()
         .nth(1)
         .ok_or_else(|| anyhow::anyhow!("usage: formatscale TIB"))?
@@ -140,12 +145,36 @@ async fn main() -> anyhow::Result<()> {
     let stored = dev.stored_bytes();
     let hwm = vm_hwm_kib() * 1024;
     println!(
-        "{tib} TiB: {} groups, {:.1} s, stored {:.1} MiB, peak RSS {:.1} MiB, RSS - stored {:.1} MiB",
+        "{tib} TiB: {} groups, {} inodes ({} per group), {:.1} s, stored {:.1} MiB, peak RSS {:.1} MiB, RSS - stored {:.1} MiB",
         report.group_count,
+        report.inodes_count,
+        report.inodes_count / report.group_count,
         secs,
         stored as f64 / (1 << 20) as f64,
         hwm as f64 / (1 << 20) as f64,
         hwm.saturating_sub(stored) as f64 / (1 << 20) as f64,
     );
+
+    if check {
+        let options = FsckOptions {
+            force: true,
+            ..FsckOptions::check_only()
+        };
+        let started = Instant::now();
+        let fsck = fsck::check(&dev, &options).await?;
+        println!(
+            "{tib} TiB: fsck -fn {:.1} s, {}/{} inodes, {}/{} blocks, {} problems",
+            started.elapsed().as_secs_f64(),
+            fsck.inodes_used,
+            fsck.inodes_count,
+            fsck.blocks_used,
+            fsck.blocks_count,
+            fsck.problems.len(),
+        );
+        for p in fsck.problems.iter().take(20) {
+            println!("  pass {} {}: {}", p.pass, p.code, p.message);
+        }
+        anyhow::ensure!(fsck.is_clean(), "{tib} TiB is not clean");
+    }
     Ok(())
 }

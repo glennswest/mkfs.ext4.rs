@@ -199,6 +199,11 @@ Two properties the C tools cannot offer a Rust storage engine:
   growth is the test device's own page index.
   `fsck` does not do this yet: its block map is one bit per block, 8 GiB at
   256 TiB ([#11](https://github.com/glennswest/mkfs.ext4.rs/issues/11)).
+- **Inode counts that fit 32 bits.** From 256 TiB the size class's inode
+  ratio asks for 2^32 inodes or more. As with `mke2fs`, the request is capped
+  at 2^32 − 1 (with `64bit`; refused without it) and inodes per group come
+  down until the total fits: 2032 per group at 256 TiB, 496 at 1 PiB
+  ([#9](https://github.com/glennswest/mkfs.ext4.rs/issues/9)).
 - **No device round trip.** The `BlockDevice` trait is the seam. A consumer
   formats its own in-memory or network-backed volume directly — no loopback,
   no `/dev` node, no shelling out to `mkfs.ext4`.

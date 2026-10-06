@@ -15,7 +15,7 @@ use alloc::vec::Vec;
 use crate::error::{Error, Result};
 use crate::features::{CompatFeatures, FeatureMasks, IncompatFeatures, RoCompatFeatures};
 use crate::params::{JournalSize, Params, SizeType};
-use crate::structs::superblock::{MIN_DESC_SIZE, MIN_DESC_SIZE_64BIT};
+use crate::structs::superblock::{self, MIN_DESC_SIZE, MIN_DESC_SIZE_64BIT};
 
 /// Metadata blocks a single block group holds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -132,12 +132,33 @@ impl Geometry {
         }
 
         // Requested inode count, before it is rounded to fill inode tables.
-        let requested_inodes = params.inodes_count.unwrap_or_else(|| {
-            let ratio = params
-                .inode_ratio
-                .unwrap_or_else(|| class.inode_ratio()) as u64;
-            ((blocks_count * block_size as u64) / ratio).max(16) as u32
-        });
+        //
+        // The ratio's answer is a 64-bit number, and from 256 TiB at the huge
+        // class's 64 KiB ratio it no longer fits the 32-bit `s_inodes_count`
+        // (exactly 2^32 there, which a cast makes 0 — #9). `mke2fs` caps it at
+        // 2^32 − 1 when the filesystem is 64bit and otherwise refuses ("too
+        // many inodes, raise inode ratio?"). Either way, never fewer than the
+        // reserved inodes plus one (`ext2fs_initialize`).
+        let requested_inodes = match params.inodes_count {
+            Some(n) => n.max(superblock::GOOD_OLD_FIRST_INO + 1),
+            None => {
+                let ratio = params
+                    .inode_ratio
+                    .unwrap_or_else(|| class.inode_ratio()) as u64;
+                let n = ((blocks_count * block_size as u64) / ratio).max(16);
+                match u32::try_from(n) {
+                    Ok(n) => n,
+                    Err(_) if features.incompat.contains(IncompatFeatures::SIXTY_FOUR_BIT) => {
+                        u32::MAX
+                    }
+                    Err(_) => {
+                        return Err(Error::invalid(format!(
+                            "too many inodes ({n}), raise the inode ratio"
+                        )))
+                    }
+                }
+            }
+        };
 
         let mut blocks_per_group = params
             .blocks_per_group
@@ -183,11 +204,24 @@ impl Geometry {
 
             // Round the inode count out to fill whole inode-table blocks, then
             // down to a multiple of 8 so the bitmap splices on byte boundaries.
+            // Rounding out can carry the total past 32 bits; `initialize.c`'s
+            // `ipg_retry` then takes one inode off the request and rounds
+            // again until it fits.
             let inodes_per_block = block_size / inode_size as u32;
-            let mut itable_blocks = ipg.div_ceil(inodes_per_block);
-            ipg = itable_blocks * inodes_per_block;
-            ipg = ipg.max(8) & !7;
-            itable_blocks = (ipg * inode_size as u32).div_ceil(block_size);
+            let (ipg, itable_blocks) = loop {
+                let itable_blocks = ipg.div_ceil(inodes_per_block);
+                let rounded = (itable_blocks * inodes_per_block).max(8) & !7;
+                if rounded as u64 * group_count as u64 <= u32::MAX as u64 {
+                    break (rounded, (rounded * inode_size as u32).div_ceil(block_size));
+                }
+                if ipg <= 1 {
+                    return Err(Error::invalid(format!(
+                        "{group_count} block groups cannot each hold an inode table \
+                         within the 32-bit inode count"
+                    )));
+                }
+                ipg -= 1;
+            };
 
             let reserved_gdt = if features.compat.contains(CompatFeatures::RESIZE_INODE) {
                 calc_reserved_gdt_blocks(
@@ -237,6 +271,19 @@ impl Geometry {
         let inodes_count = inodes_per_group
             .checked_mul(group_count)
             .ok_or_else(|| Error::invalid("inode count overflows 32 bits"))?;
+
+        // The reserved inodes (1 to 10), lost+found (11) and the orphan file
+        // (12) are all written into group 0. A group too small to hold them
+        // would put some in group 1's numbering and group 0's table, which
+        // no checker accepts (#9 reached it at 8 inodes per group).
+        let group0_inodes = superblock::GOOD_OLD_FIRST_INO
+            + features.compat.contains(CompatFeatures::ORPHAN_FILE) as u32;
+        if inodes_per_group < group0_inodes {
+            return Err(Error::invalid(format!(
+                "{inodes_per_group} inodes per group cannot hold the {group0_inodes} \
+                 inodes group 0 needs; request more inodes"
+            )));
+        }
 
         // A descriptor table that would swallow three quarters of a block group
         // is the point at which a contiguous table stops being workable, and
@@ -1042,6 +1089,70 @@ mod tests {
         assert_eq!(mk(2048 * MIB).inodes_count, (2048 * MIB / 16384) as u32);
         assert_eq!(mk(12 * TIB).inodes_count, (12 * TIB / 32768) as u32);
         assert_eq!(mk(32 * TIB).inodes_count, (32 * TIB / 65536) as u32);
+    }
+
+    /// From 256 TiB the huge class's ratio asks for 2^32 inodes or more, one
+    /// past what `s_inodes_count` holds. `mke2fs` caps the request at
+    /// 2^32 − 1, then lowers inodes per group until the rounded total fits;
+    /// it used to wrap to 0 and leave 8 inodes per group (#9).
+    #[test]
+    fn the_inode_count_is_capped_at_32_bits() {
+        const TIB: u64 = 1024 * 1024 * MIB;
+        let params = Params::new(Profile::Ext4).no_journal();
+
+        // 2^21 groups; 2048 per group would be exactly 2^32, so the next whole
+        // inode-table block down: 127 blocks of 16.
+        let g = Geometry::compute(256 * TIB, &params).unwrap();
+        assert_eq!(g.group_count, 1 << 21);
+        assert_eq!(g.inodes_per_group, 2032);
+        assert_eq!(g.itable_blocks_per_group, 127);
+        assert_eq!(g.inodes_count, 2032 << 21);
+
+        // 1 PiB: 2^23 groups, 512 per group would be 2^32; 496 it is.
+        let g = Geometry::compute(1024 * TIB, &params).unwrap();
+        assert_eq!(g.group_count, 1 << 23);
+        assert_eq!(g.inodes_per_group, 496);
+        assert_eq!(g.inodes_count, 496 << 23);
+
+        // An explicit ratio that stays under 2^32 is left alone.
+        let g = Geometry::compute(256 * TIB, &params.clone().inode_ratio(1 << 20)).unwrap();
+        assert_eq!(g.inodes_count, (256 * TIB >> 20) as u32);
+
+        // Every size between keeps a full inode table per group, and never
+        // drops below what group 0 must hold.
+        for tib in [128, 192, 255, 256, 257, 300, 512, 1000] {
+            let g = Geometry::compute(tib * TIB, &params).unwrap();
+            assert!(g.inodes_per_group >= 64, "{tib} TiB: {}", g.inodes_per_group);
+            assert_eq!(g.inodes_count as u64, g.inodes_per_group as u64 * g.group_count as u64);
+        }
+    }
+
+    /// Without 64bit, `mke2fs` refuses an inode count past 32 bits rather than
+    /// capping it.
+    #[test]
+    fn too_many_inodes_without_64bit_is_refused() {
+        const TIB: u64 = 1024 * 1024 * MIB;
+        let params = Params::new(Profile::Ext4)
+            .no_journal()
+            .features("^64bit")
+            .inode_ratio(1024);
+        let err = Geometry::compute(8 * TIB, &params).unwrap_err();
+        assert!(err.to_string().contains("too many inodes"), "{err}");
+    }
+
+    /// Group 0 holds inodes 1 to 11 (12 with orphan_file); a layout that
+    /// cannot is refused, not written with them spilling into group 1.
+    #[test]
+    fn group_0_must_hold_the_reserved_inodes() {
+        // 1 KiB blocks of 1 KiB inodes: one inode per table block, so a small
+        // request leaves 8 per group.
+        let params = Params::new(Profile::Ext4)
+            .no_journal()
+            .block_size(1024)
+            .inode_size(1024)
+            .inodes_count(12);
+        let err = Geometry::compute(64 * MIB, &params).unwrap_err();
+        assert!(err.to_string().contains("group 0"), "{err}");
     }
 
     #[test]
