@@ -405,7 +405,7 @@ async fn write_orphan_block<D: BlockDevice>(
     fs.write_block(physical, buf).await
 }
 
-type Boxed<'a, T> = Pin<Box<dyn Future<Output = Result<T>> + 'a>>;
+type Boxed<'a, T> = Pin<Box<dyn Future<Output = Result<T>> + Send + 'a>>;
 
 /// Free every block past logical block `cut`, through an extent tree or an
 /// indirect map, collecting the blocks freed (map structure included).

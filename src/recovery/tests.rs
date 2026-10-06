@@ -585,3 +585,14 @@ async fn an_aborted_journal_marks_the_filesystem_as_having_errors() {
     let fs = Filesystem::open(&dev).await.unwrap();
     assert_eq!(Journal::open(&fs).await.unwrap().unwrap().header.errno, 0);
 }
+
+/// A caller may spawn a check on a multi-threaded runtime, so its future
+/// must stay `Send` with replay and orphan release in it.
+#[test]
+fn the_check_future_is_send() {
+    fn assert_send<T: Send>(_: &T) {}
+    let dev = MemDevice::new(MIB);
+    let options = FsckOptions::repair();
+    let future = check(&dev, &options);
+    assert_send(&future);
+}
