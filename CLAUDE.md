@@ -227,6 +227,16 @@ to point at, not an open-ended guess about feature flags.
       --check`: 20.6 MiB over stored, 0 problems). Tag pushed, #14 and #6
       closed; stormblock#300 / #289 told to move their pin.
 
+- [ ] Issue #11 (P2): fsck's pass-1 block map is a flat bitmap, one bit per
+      block — 8 GiB at 256 TiB, 32 GiB at 1 PiB. `e2fsck` has used rbtree
+      (extent) bitmaps by default since 1.42. **In progress.** Plan: replace
+      `Bitmap` with `BlockRuns`, a `BTreeMap<u64, u64>` of start → end that
+      merges on insert and reports the overlap (duplicate detection); pass 0
+      claims inode tables and superblock/descriptor areas as ranges; pass 5
+      builds each group's expected bitmap from a range query. Measure at
+      256 TiB with `formatscale 256 --check` (now prints the peak after the
+      check). Output unchanged: the existing fsck tests and goldens.
+
 ## Features
 
 | Feature | Default | What it brings |
