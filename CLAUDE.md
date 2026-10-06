@@ -176,8 +176,16 @@ to point at, not an open-ended guess about feature flags.
 - [ ] Issue #8 (P2): `fsck-ext4` takes only `-n -y -f -v`. `e2fsck`'s `-p`/`-a`,
       `-C` and the rest are clap usage errors that exit 2 ("corrected,
       reboot") instead of working or exiting 16. Against the owner's #6 rule
-      that e2fsck scripts must work unchanged. The README warns about it. Not
-      started.
+      that e2fsck scripts must work unchanged. **In progress.** Plan:
+      clap errors exit 16 (`--help`/`-V` 0); `-p`/`-a` = new
+      `FsckOptions::preen`: repair only what `e2fsck` flags `PR_PREEN_OK`
+      (the link-count, bitmap and free-count repairs this checker makes),
+      and on anything else write nothing, set `ERROR_FS` as `preenhalt`
+      does and exit 4 with "UNEXPECTED INCONSISTENCY; RUN fsck MANUALLY";
+      pass 4 decides before it writes so a halt leaves no partial repair.
+      `-p`/`-a`/`-n`/`-y` conflicts exit 8 with e2fsck's message (owner,
+      on #8). `-C fd` accepted and ignored, `-t` prints elapsed time.
+      `-b -B -c -D -E -j -k -l -L -z` refused with exit 16. README lists both.
 
 ## Features
 
