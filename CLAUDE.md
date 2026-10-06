@@ -159,6 +159,16 @@ to point at, not an open-ended guess about feature flags.
       different (a flat one-bit-per-block map), filed as #11 (P2). Next
       release: this is a perf fix plus a `Params::concurrency` fix, and it
       rides in 4.0.0 with #6.
+- [ ] Issue #9 (P1): the default inode count wraps at 256 TiB —
+      `(bytes / ratio) as u32` is exactly 2^32, so 0, and the layout gets 8
+      inodes per group. Fix as `mke2fs` does: past 2^32 − 1 requested inodes,
+      cap at 2^32 − 1 with `64bit` and refuse without it ("raise inode
+      ratio?"); then `initialize.c`'s `ipg_retry` — while `ipg × groups`
+      overflows 32 bits, `ipg − 1` and round again. fsck's "not clean" is the
+      formatter: inodes 1–11 (12 with orphan_file) are written to group 0, and
+      at 8 per group inodes 9–11 belong to group 1 (group 0's free-inode count
+      underflows). `Geometry::compute` refuses a layout whose group 0 cannot
+      hold the reserved inodes. Tests at 256 TiB and 1 PiB.
 - [ ] Issue #8 (P2): `fsck-ext4` takes only `-n -y -f -v`. `e2fsck`'s `-p`/`-a`,
       `-C` and the rest are clap usage errors that exit 2 ("corrected,
       reboot") instead of working or exiting 16. Against the owner's #6 rule
