@@ -1,6 +1,38 @@
 # Changelog
 
 ## [Unreleased]
+<!-- New unreleased changes go here -->
+
+## [v4.0.0] — 2026-10-06
+
+Released for #14: consumers pinned to `v3.0.0` still format with the
+non-streaming formatter (about 18 GiB at 256 TiB, 1 PiB out of memory at
+32 GiB). Major because `FsckReport` and `FsckOptions` gain public fields and
+a clean filesystem is now skipped unless forced. The dated entries below are
+the detail.
+
+### Breaking
+- `fsck` skips a clean filesystem unless forced, as `e2fsck` does (#6).
+  `FsckReport` gains `scope` and `preen_halted`; `FsckOptions` gains `preen`.
+  A struct literal naming every field must add them.
+
+### Added
+- `CheckScope`, `FsckOptions::force(bool)`, `e2fsck`'s `check_if_skip`
+  reasons (#6).
+- `fsck-ext4` takes `e2fsck`'s command line: `-p`/`-a` preen, `-C`, `-t`;
+  usage errors exit 16 (#8). `FsckOptions::preen()`, `FsckOptions::writes()`.
+- `examples/formatscale.rs`, with `--check` (#10, #9).
+
+### Fixed
+- `format()` memory no longer grows with the group count: 20 MiB at 256 TiB,
+  71 MiB at 1 PiB (#10).
+- `Params::concurrency` is honoured (#10).
+- The default inode count no longer wraps at 256 TiB; it is capped and
+  rounded as `mke2fs` does, and equals real `mke2fs -n` 1.47.3 at 256, 300
+  and 1024 TiB (#9). A layout whose group 0 cannot hold the reserved inodes
+  is refused.
+- A repairing full check records `s_state`, `s_lastcheck` and `s_mnt_count`
+  as `e2fsck` does (#6).
 
 ### 2026-10-06
 - **feat:** `fsck-ext4` takes `e2fsck`'s command line (#8). `-p`/`-a` preen:

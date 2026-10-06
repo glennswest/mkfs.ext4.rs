@@ -6,7 +6,7 @@ output by a comparison tool, with the e2fsprogs source consulted at the
 specific points where the two differ.
 
 - **Crate:** `mkfs-ext4` (lib `mkfs_ext4`)
-- **Version:** 3.0.0 — see `Cargo.toml` (single version location)
+- **Version:** 4.0.0 — see `Cargo.toml` (single version location)
 - **License:** MIT OR Apache-2.0
 - **Repo:** https://github.com/glennswest/mkfs.ext4.rs
 - **Directory:** `~/src/mkfs.ext4.rs` (the stormcentral session checkout). The
@@ -134,10 +134,8 @@ to point at, not an open-ended guess about feature flags.
       passing; the lib unit-test summary was cut off by `tail`). The
       `sc-build 'cargo test --lib fsck::'` re-run never started: dev.g8.lo
       dropped the connection, then refused SSH (2026-09-27, doc refresh
-      527a10d). The README says the skip is unreleased at `v3.0.0`; drop that
-      note when 4.0.0 is tagged. The `fsck::tests` (19) passed by name on
-      bca2817 (#10's sc-build). **Next:** `chore(release): v4.0.0` (Cargo.toml,
-      CHANGELOG heading, version line above), tag and push, and close #6.
+      527a10d). The `fsck::tests` (19) passed by name on bca2817 (#10's
+      sc-build). **Released** in v4.0.0 (#14).
 - [ ] Issue #7 (P2): check and repair run without journal replay or orphan
       release. Found during #6; not started.
 - [x] Issue #10 (P1): `format()` RSS grows ~8 KiB per group (18 GiB at
@@ -190,6 +188,10 @@ to point at, not an open-ended guess about feature flags.
       `-D warnings`; `tests/fsck_cli.rs` runs the binary for each exit code,
       `fsck::tests::preening_*` cover the library. Rides in 4.0.0 with #6,
       #9 and #10 (`FsckOptions` gains `preen`, `FsckReport` `preen_halted`).
+- [x] Issue #14 (P2): release #10's streaming format as a tag — consumers
+      pinned to `v3.0.0` still held ~18 GiB at 256 TiB. `chore(release):
+      v4.0.0` (with #6, #8, #9, #10), tagged after sc-build passed on the
+      release commit. stormblock moves its pin (filed there by stormcos#92).
 
 ## Features
 

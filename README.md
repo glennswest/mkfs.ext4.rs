@@ -14,7 +14,7 @@ Not on crates.io; take it by git, pinned to a tag so builds are reproducible:
 
 ```toml
 [dependencies]
-mkfs-ext4 = { git = "https://github.com/glennswest/mkfs.ext4.rs", tag = "v3.0.0", default-features = false, features = ["std"] }
+mkfs-ext4 = { git = "https://github.com/glennswest/mkfs.ext4.rs", tag = "v4.0.0", default-features = false, features = ["std"] }
 ```
 
 | Feature | Default | What it brings |
@@ -52,7 +52,7 @@ let kernel = fs.read_file(&dev, "/vmlinuz")?;
 
 ### Command line
 
-`cargo install --git https://github.com/glennswest/mkfs.ext4.rs --tag v3.0.0`
+`cargo install --git https://github.com/glennswest/mkfs.ext4.rs --tag v4.0.0`
 builds `mkfs-ext4` and `fsck-ext4`. Rust does not allow a `.` in a binary name,
 so to have `mkfs -t ext4` / `fsck -t ext4` dispatch to them, install them as
 `mkfs.ext4` and `fsck.ext4`.
@@ -99,12 +99,12 @@ so to have `mkfs -t ext4` / `fsck -t ext4` dispatch to them, install them as
   `-fy`, and `FsckOptions::preen()` is `-p`. `FsckReport::scope` says whether
   the passes ran and why, and `FsckReport::preen_halted` that a preen stopped.
 
-  The skip, preening and this command line are on `main` and ship in the next
-  release (4.0.0, a breaking change: `FsckReport` gains `scope` and
-  `preen_halted`, `FsckOptions` gains `preen`). At tag `v3.0.0`, `-f` and
-  `FsckOptions::force` are accepted but not read, every check runs every
-  pass, and the command line is only `-n -y -f -v`, with clap's exit 2 for
-  anything else: don't put that release's `fsck.ext4` in a boot path.
+  The skip, preening and this command line arrived in 4.0.0 (a breaking
+  change: `FsckReport` gains `scope` and `preen_halted`, `FsckOptions` gains
+  `preen`). At tag `v3.0.0`, `-f` and `FsckOptions::force` are accepted but
+  not read, every check runs every pass, and the command line is only
+  `-n -y -f -v`, with clap's exit 2 for anything else: don't put that
+  release's `fsck.ext4` in a boot path.
 
 ## Sector size
 
@@ -258,7 +258,8 @@ See `CLAUDE.md` for the work plan and what is still outstanding.
   files inside the filesystems this crate creates, in userspace
 - [`stormblock`](https://github.com/glennswest/stormblock): filesystem
   templates ("mkfs once, clone forever"), formatted in place through the
-  `BlockDevice` seam. It depends on `v3.0.0` with `features = ["std"]`.
+  `BlockDevice` seam. It depends on `v3.0.0` with `features = ["std"]`; moving to `v4.0.0`
+  brings the streaming formatter (#10, #14).
 
 ## Licence
 
