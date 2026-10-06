@@ -11,7 +11,9 @@
   ratio"), and, as `initialize.c`'s `ipg_retry` does, inodes per group are
   lowered until the rounded total fits 32 bits: 2032 per group
   (4,261,412,864) at 256 TiB, 496 (4,160,749,568) at 1 PiB. An explicit
-  `inodes_count` is floored at 12, `ext2fs_initialize`'s minimum.
+  `inodes_count` is floored at 12, `ext2fs_initialize`'s minimum. The counts
+  equal real `mke2fs -n` (1.47.3) at 256, 300 and 1024 TiB, and a 256 TiB
+  format now passes a forced check with no problems.
 - **fix:** A layout whose inodes per group cannot hold what group 0 must
   (inodes 1–11, 12 with `orphan_file`) is refused. This is why `fsck` found
   the wrapped 256 TiB filesystem not clean: the formatter writes all of them

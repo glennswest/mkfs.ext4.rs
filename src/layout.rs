@@ -1114,6 +1114,13 @@ mod tests {
         assert_eq!(g.inodes_per_group, 496);
         assert_eq!(g.inodes_count, 496 << 23);
 
+        // What real mke2fs 1.47.3 reports (`mke2fs -n -t ext4 img <size>`)
+        // at each of these sizes, and at one that is not a power of two.
+        for (tib, mke2fs) in [(256, 4_261_412_864), (300, 4_286_054_400), (1024, 4_160_749_568)] {
+            let g = Geometry::compute(tib * TIB, &params).unwrap();
+            assert_eq!(g.inodes_count, mke2fs, "{tib} TiB");
+        }
+
         // An explicit ratio that stays under 2^32 is left alone.
         let g = Geometry::compute(256 * TIB, &params.clone().inode_ratio(1 << 20)).unwrap();
         assert_eq!(g.inodes_count, ((256 * TIB) >> 20) as u32);
