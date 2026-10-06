@@ -367,6 +367,7 @@ impl BlockRuns {
         overlaps
     }
 
+    #[cfg(test)]
     fn contains(&self, block: u64) -> bool {
         self.runs
             .range(..=block)
