@@ -137,7 +137,31 @@ to point at, not an open-ended guess about feature flags.
       527a10d). The `fsck::tests` (19) passed by name on bca2817 (#10's
       sc-build). **Released** in v4.0.0 (#14).
 - [ ] Issue #7 (P2): check and repair run without journal replay or orphan
-      release. Found during #6; not started.
+      release. **In progress.** Option 1 of the issue (the owner's #6 rule:
+      match `e2fsck`). Plan, in `e2fsck`'s order (`unix.c`, `journal.c`,
+      `super.c`):
+      1. `recovery` module: load the internal journal (inode 8), validate
+         the JBD2 superblock, and replay as `jbd2_journal_recover` does —
+         PASS_SCAN / PASS_REVOKE / PASS_REPLAY, descriptor tags in all four
+         layouts (32/64-bit, csum v2, csum v3), escaped blocks, revoke
+         records, wrap-around, commit/descriptor/data checksums. Then
+         `s_start = 0`, `s_sequence = end + 1`, `s_errno` carried into
+         `ERROR_FS`, the filesystem reloaded and `needs_recovery` cleared.
+         Read-only (`-n`): skipped with `e2fsck`'s warning. Journal data with
+         the flag clear: `PR_0_JOURNAL_RUN` (fixed with `-y`, halts `-p`).
+         A journal this code cannot replay (external, fast_commit, unknown
+         features, corrupt superblock): Serious, and nothing is written.
+      2. Orphan release after pass 0, writing modes only (`release_orphan_
+         inodes`): the `s_last_orphan` chain and `orphan_file` entries;
+         links 0 → free blocks, xattr block ref, inode; links > 0 → truncate
+         to `i_size` (extent trees and indirect maps). Bitmaps, descriptors
+         and superblock counts updated as `ext2fs_*_alloc_stats2` does.
+      3. Both are reported as notes (`e2fsck`'s messages, which it does not
+         count as fixes: exit 0 alone), not as repairs. Non-breaking: 4.1.0.
+      4. Tests: synthetic journals in every tag layout; and, where `debugfs`
+         and `e2fsck` are on the host, a differential test — journal written
+         by `debugfs jo/jw/jc`, replayed by real `e2fsck` and by us, images
+         compared.
 - [x] Issue #10 (P1): `format()` RSS grows ~8 KiB per group (18 GiB at
       256 TiB, 1 PiB > 32 GiB). Cause: `write_filesystem` builds every
       group's `GroupState` (a block-sized block bitmap and inode bitmap each)
