@@ -303,35 +303,93 @@ impl FsckReport {
     }
 }
 
-/// A bitmap sized to the filesystem, used to rebuild what should be on disk.
+/// The blocks something owns, held as runs, used to rebuild what should be on
+/// disk.
 ///
-/// One bit per block. A 1 TiB filesystem of 4 KiB blocks needs 32 MiB of this,
-/// which is the same trade e2fsck makes.
-struct Bitmap {
-    bits: Vec<u64>,
+/// A `BTreeMap` of run start to run end (exclusive), merged on insert, so the
+/// memory is per run of used blocks rather than per block of the device: the
+/// trade `e2fsck` has made by default since 1.42 (`EXT2FS_BMAP64_RBTREE`). A
+/// flat bitmap was 8 GiB at 256 TiB (#11); a fresh filesystem is a few runs
+/// per flex group.
+#[derive(Debug, Default)]
+struct BlockRuns {
+    runs: BTreeMap<u64, u64>,
+    /// Blocks at or past this are ignored, as the device has none there.
     len: u64,
+    /// Blocks held, kept as runs merge.
+    count: u64,
 }
 
-impl Bitmap {
+impl BlockRuns {
     fn new(len: u64) -> Self {
         Self {
-            bits: vec![0u64; (len as usize).div_ceil(64)],
             len,
+            ..Self::default()
         }
     }
 
-    fn set(&mut self, index: u64) {
-        if index < self.len {
-            self.bits[(index / 64) as usize] |= 1u64 << (index % 64);
+    /// Add `start..end`, returning the parts that were already held.
+    fn insert(&mut self, start: u64, end: u64) -> Vec<(u64, u64)> {
+        let end = end.min(self.len);
+        let mut overlaps = Vec::new();
+        if start >= end {
+            return overlaps;
         }
+        let mut lo = start;
+        let mut hi = end;
+        // A run that starts before `start` and reaches it (or touches it).
+        if let Some((&s, &e)) = self.runs.range(..start).next_back() {
+            if e >= start {
+                if e > start {
+                    overlaps.push((start, e.min(end)));
+                }
+                lo = s;
+                hi = hi.max(e);
+                self.runs.remove(&s);
+            }
+        }
+        // Runs that start inside `start..=end` are swallowed.
+        let inside: Vec<(u64, u64)> = self
+            .runs
+            .range(start..=end)
+            .map(|(&s, &e)| (s, e))
+            .collect();
+        for (s, e) in inside {
+            if s < end {
+                overlaps.push((s, e.min(end)));
+            }
+            hi = hi.max(e);
+            self.runs.remove(&s);
+        }
+        self.runs.insert(lo, hi);
+        let held: u64 = overlaps.iter().map(|(s, e)| e - s).sum();
+        self.count += (end - start) - held;
+        overlaps
     }
 
-    fn get(&self, index: u64) -> bool {
-        index < self.len && self.bits[(index / 64) as usize] & (1u64 << (index % 64)) != 0
+    fn contains(&self, block: u64) -> bool {
+        self.runs
+            .range(..=block)
+            .next_back()
+            .is_some_and(|(_, &e)| e > block)
     }
 
     fn count(&self) -> u64 {
-        self.bits.iter().map(|w| w.count_ones() as u64).sum()
+        self.count
+    }
+
+    /// The held parts of `start..end`, in order.
+    fn within(&self, start: u64, end: u64) -> impl Iterator<Item = (u64, u64)> + '_ {
+        let from = self
+            .runs
+            .range(..start)
+            .next_back()
+            .filter(|(_, &e)| e > start)
+            .map_or(start, |(&s, _)| s);
+        self.runs
+            .range(from..end.max(from))
+            .map(move |(&s, &e)| (s.max(start), e.min(end)))
+            .filter(|(s, e)| s < e)
     }
 }
 
@@ -786,7 +844,7 @@ async fn skip<D: BlockDevice>(
 /// What the passes accumulate.
 struct ScanState {
     /// Blocks claimed by metadata or by some inode.
-    blocks: Bitmap,
+    blocks: BlockRuns,
     /// Blocks claimed more than once.
     duplicates: BTreeSet<u64>,
     /// Inodes that are in use, and whether each is a directory.
@@ -807,7 +865,7 @@ struct ScanState {
 impl ScanState {
     fn new<D: BlockDevice>(fs: &Filesystem<D>) -> Self {
         Self {
-            blocks: Bitmap::new(fs.superblock().blocks_count),
+            blocks: BlockRuns::new(fs.superblock().blocks_count),
             duplicates: BTreeSet::new(),
             inodes_in_use: BTreeSet::new(),
             directories: BTreeSet::new(),
@@ -821,10 +879,13 @@ impl ScanState {
 
     /// Claim a block, noting a collision if someone already had it.
     fn claim(&mut self, block: u64) {
-        if self.blocks.get(block) {
-            self.duplicates.insert(block);
-        } else {
-            self.blocks.set(block);
+        self.claim_range(block, block.saturating_add(1));
+    }
+
+    /// Claim `start..end`, noting every block someone already had.
+    fn claim_range(&mut self, start: u64, end: u64) {
+        for (s, e) in self.blocks.insert(start, end) {
+            self.duplicates.extend(s..e);
         }
     }
 }
@@ -906,9 +967,7 @@ async fn pass0_superblock<D: BlockDevice>(
         // Superblock copy and descriptors, however many this group holds.
         // Under meta_bg a group can carry a superblock backup and no
         // descriptor block, or a descriptor block and no superblock.
-        for b in first..first + fs.super_overhead(group) as u64 {
-            state.claim(b);
-        }
+        state.claim_range(first, first + fs.super_overhead(group) as u64);
 
         let Some(desc) = fs.group_descs().get(group as usize) else {
             continue;
@@ -932,9 +991,11 @@ async fn pass0_superblock<D: BlockDevice>(
 
         state.claim(desc.block_bitmap);
         state.claim(desc.inode_bitmap);
-        for i in 0..sb.itable_blocks_per_group() as u64 {
-            state.claim(desc.inode_table + i);
-        }
+        state.claim_range(
+            desc.inode_table,
+            desc.inode_table
+                .saturating_add(sb.itable_blocks_per_group() as u64),
+        );
 
         // The descriptor checksum.
         if fs.csum_scheme() != GroupDescCsum::None {
@@ -963,9 +1024,7 @@ async fn pass0_superblock<D: BlockDevice>(
     }
 
     // Block 0 of a 1 KiB filesystem is not part of any group.
-    for b in 0..sb.first_data_block as u64 {
-        state.claim(b);
-    }
+    state.claim_range(0, sb.first_data_block as u64);
 
     // The multiple-mount-protection block belongs to no inode and no group's
     // metadata, so nothing else would ever claim it.
@@ -1072,11 +1131,9 @@ async fn pass1_inodes<D: BlockDevice>(
                     // shared blocks are not reported as owned twice, and the
                     // indirect block it really does own still gets counted.
                     if is_resize {
-                        state.blocks.set(b.physical);
-                    } else if state.blocks.get(b.physical) {
-                        state.duplicates.insert(b.physical);
+                        state.blocks.insert(b.physical, b.physical + 1);
                     } else {
-                        state.blocks.set(b.physical);
+                        state.claim(b.physical);
                     }
                 })
                 .await;
@@ -1464,6 +1521,23 @@ async fn pass4_link_counts<D: BlockDevice>(
     Ok(fixes)
 }
 
+/// Set bits `start..end` of a bitmap block, whole bytes where it can.
+fn set_bits(bitmap: &mut [u8], start: u64, end: u64) {
+    let end = end.min(bitmap.len() as u64 * 8);
+    let mut bit = start;
+    while bit < end {
+        if bit % 8 == 0 && end - bit >= 8 {
+            let bytes = ((end - bit) / 8) as usize;
+            let at = (bit / 8) as usize;
+            bitmap[at..at + bytes].fill(0xff);
+            bit += bytes as u64 * 8;
+        } else {
+            bitmap[(bit / 8) as usize] |= 1 << (bit % 8);
+            bit += 1;
+        }
+    }
+}
+
 /// Pass 5 — bitmaps and free counters.
 async fn pass5_bitmaps<D: BlockDevice>(
     fs: &mut Filesystem<D>,
@@ -1481,19 +1555,16 @@ async fn pass5_bitmaps<D: BlockDevice>(
         let in_group = fs.group_block_count(group) as u64;
 
         // What the block bitmap should say.
+        // Bits past the group's last block (the last group is short) and
+        // past blocks_per_group are set, as mke2fs writes them.
         let mut expected = vec![0u8; block_size];
-        let mut free_blocks = 0u32;
-        for i in 0..sb.blocks_per_group as u64 {
-            let used = i >= in_group || state.blocks.get(first + i);
-            if used {
-                expected[(i / 8) as usize] |= 1 << (i % 8);
-            } else {
-                free_blocks += 1;
-            }
+        let mut used_blocks = 0u64;
+        for (s, e) in state.blocks.within(first, first + in_group) {
+            set_bits(&mut expected, s - first, e - first);
+            used_blocks += e - s;
         }
-        for bit in sb.blocks_per_group as usize..block_size * 8 {
-            expected[bit / 8] |= 1 << (bit % 8);
-        }
+        set_bits(&mut expected, in_group, block_size as u64 * 8);
+        let free_blocks = (in_group - used_blocks) as u32;
 
         let actual = fs.read_block_bitmap(group).await?;
         if actual != expected {
@@ -1655,6 +1726,62 @@ mod tests {
     use crate::params::{Params, Profile};
 
     const MIB: u64 = 1024 * 1024;
+
+    /// `BlockRuns` against a set of single blocks: membership, count, the
+    /// overlap it reports on each insert, and range queries (#11).
+    #[test]
+    fn block_runs_match_a_set_of_blocks() {
+        let len = 500u64;
+        let mut runs = BlockRuns::new(len);
+        let mut set = BTreeSet::new();
+        let mut x = 0x2545_f491_4f6c_dd1du64;
+        for _ in 0..2000 {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            let start = x % (len + 20);
+            let end = start + (x >> 32) % 12;
+            let overlap: BTreeSet<u64> = runs
+                .insert(start, end)
+                .into_iter()
+                .flat_map(|(s, e)| s..e)
+                .collect();
+            let expect: BTreeSet<u64> =
+                (start..end.min(len)).filter(|b| set.contains(b)).collect();
+            assert_eq!(overlap, expect, "insert {start}..{end}");
+            set.extend(start..end.min(len));
+            assert_eq!(runs.count(), set.len() as u64);
+            // Runs are disjoint and never touch: merging is complete.
+            let mut last = None;
+            for (&s, &e) in &runs.runs {
+                assert!(s < e);
+                if let Some(l) = last {
+                    assert!(l < s, "runs touch at {s}");
+                }
+                last = Some(e);
+            }
+        }
+        for b in 0..len + 10 {
+            assert_eq!(runs.contains(b), set.contains(&b), "block {b}");
+        }
+        for (a, z) in [(0, len), (17, 18), (100, 333), (499, 600), (250, 250)] {
+            let got: Vec<u64> = runs.within(a, z).flat_map(|(s, e)| s..e).collect();
+            let want: Vec<u64> = set.range(a..z.max(a)).copied().collect();
+            assert_eq!(got, want, "within {a}..{z}");
+        }
+    }
+
+    #[test]
+    fn set_bits_sets_exactly_the_range() {
+        for (start, end) in [(0, 0), (0, 64), (3, 5), (5, 29), (8, 16), (7, 57), (60, 200)] {
+            let mut bitmap = vec![0u8; 8];
+            set_bits(&mut bitmap, start, end);
+            for bit in 0..64u64 {
+                let set = bitmap[(bit / 8) as usize] & (1 << (bit % 8)) != 0;
+                assert_eq!(set, bit >= start && bit < end, "{start}..{end} bit {bit}");
+            }
+        }
+    }
 
     async fn formatted(profile: Profile, size: u64) -> MemDevice {
         let dev = MemDevice::new(size);

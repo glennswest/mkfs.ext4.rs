@@ -12,8 +12,9 @@
 //! ```
 //!
 //! `--check` after the size runs a forced check (`e2fsck -fn`) of the result
-//! and exits non-zero unless it is clean (#9). The check's own block map is
-//! one bit per block (#11), so the peak RSS then includes it.
+//! and exits non-zero unless it is clean (#9), then prints the peak RSS again:
+//! the check's block map is held as runs of used blocks (#11), so its share is
+//! the growth over the format's peak.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -162,9 +163,12 @@ async fn main() -> anyhow::Result<()> {
         };
         let started = Instant::now();
         let fsck = fsck::check(&dev, &options).await?;
+        let hwm_after = vm_hwm_kib() * 1024;
         println!(
-            "{tib} TiB: fsck -fn {:.1} s, {}/{} inodes, {}/{} blocks, {} problems",
+            "{tib} TiB: fsck -fn {:.1} s, peak RSS {:.1} MiB (+{:.1} MiB over the format), {}/{} inodes, {}/{} blocks, {} problems",
             started.elapsed().as_secs_f64(),
+            hwm_after as f64 / (1 << 20) as f64,
+            hwm_after.saturating_sub(hwm) as f64 / (1 << 20) as f64,
             fsck.inodes_used,
             fsck.inodes_count,
             fsck.blocks_used,

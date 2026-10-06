@@ -3,6 +3,16 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-10-06
+- **perf:** `fsck`'s block map is held as runs of used blocks, not one bit
+  per block of the device (#11). It was 8 GiB at 256 TiB and 32 GiB at
+  1 PiB; it now grows with the runs in use, as `e2fsck`'s rbtree bitmaps
+  have since 1.42. Pass 0 claims inode tables and superblock/descriptor
+  areas as ranges, and pass 5 builds each group's expected bitmap from a
+  range query. Findings and repairs are unchanged.
+- **chore:** `examples/formatscale.rs --check` prints the peak RSS after the
+  check and its growth over the format's.
+
 ## [v4.1.0] — 2026-10-06
 
 Journal replay and orphan release before the passes (#7), matching
