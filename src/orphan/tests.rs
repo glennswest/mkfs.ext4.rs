@@ -223,7 +223,8 @@ async fn an_unlinked_orphan_is_freed_and_the_counts_come_back() {
         let dev = formatted(profile).await;
         let mut fs = Filesystem::open(&dev).await.unwrap();
         let before = counts(&fs);
-        let (inum, _) = make_file(&mut fs, 30, runs, 30 * fs.block_size() as u64, 0).await;
+        let size = 30 * fs.block_size() as u64;
+        let (inum, _) = make_file(&mut fs, 30, runs, size, 0).await;
         chain(&mut fs, &[inum]).await;
         drop(fs);
 
@@ -346,7 +347,8 @@ async fn orphan_file_slots_are_released_and_emptied() {
 async fn a_read_only_check_releases_nothing() {
     let dev = formatted(Profile::Ext4).await;
     let mut fs = Filesystem::open(&dev).await.unwrap();
-    let (a, _) = make_file(&mut fs, 5, 1, 5 * fs.block_size() as u64, 0).await;
+    let size = 5 * fs.block_size() as u64;
+    let (a, _) = make_file(&mut fs, 5, 1, size, 0).await;
     chain(&mut fs, &[a]).await;
     drop(fs);
     let before = dev.to_vec();
@@ -359,7 +361,8 @@ async fn a_read_only_check_releases_nothing() {
 async fn a_filesystem_with_errors_drops_the_chain_unwalked() {
     let dev = formatted(Profile::Ext4).await;
     let mut fs = Filesystem::open(&dev).await.unwrap();
-    let (a, _) = make_file(&mut fs, 5, 1, 5 * fs.block_size() as u64, 0).await;
+    let size = 5 * fs.block_size() as u64;
+    let (a, _) = make_file(&mut fs, 5, 1, size, 0).await;
     chain(&mut fs, &[a]).await;
     fs.superblock_mut().state |= state::ERROR_FS;
     fs.flush_superblock().await.unwrap();
