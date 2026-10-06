@@ -3,6 +3,13 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+## [v4.1.0] — 2026-10-06
+
+Journal replay and orphan release before the passes (#7), matching
+`e2fsck`. Backward-compatible: new modules (`recovery`, `orphan`) and
+methods; notes are a new kind of finding that leaves exit codes as `e2fsck`
+leaves them.
+
 ### 2026-10-06
 - **feat:** `fsck` replays the journal before it checks, as `e2fsck` does
   (#7). New `recovery` module: `jbd2_journal_recover`'s three passes (scan,

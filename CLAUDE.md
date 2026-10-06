@@ -6,7 +6,7 @@ output by a comparison tool, with the e2fsprogs source consulted at the
 specific points where the two differ.
 
 - **Crate:** `mkfs-ext4` (lib `mkfs_ext4`)
-- **Version:** 4.0.0 — see `Cargo.toml` (single version location)
+- **Version:** 4.1.0 — see `Cargo.toml` (single version location)
 - **License:** MIT OR Apache-2.0
 - **Repo:** https://github.com/glennswest/mkfs.ext4.rs
 - **Directory:** `~/src/mkfs.ext4.rs` (the stormcentral session checkout). The
@@ -136,8 +136,8 @@ to point at, not an open-ended guess about feature flags.
       dropped the connection, then refused SSH (2026-09-27, doc refresh
       527a10d). The `fsck::tests` (19) passed by name on bca2817 (#10's
       sc-build). **Released** in v4.0.0 (#14).
-- [ ] Issue #7 (P2): check and repair run without journal replay or orphan
-      release. **In progress.** Option 1 of the issue (the owner's #6 rule:
+- [x] Issue #7 (P2): check and repair run without journal replay or orphan
+      release. **Done, released in v4.1.0.** Option 1 of the issue (the owner's #6 rule:
       match `e2fsck`). Plan, in `e2fsck`'s order (`unix.c`, `journal.c`,
       `super.c`):
       1. `recovery` module: load the internal journal (inode 8), validate
@@ -168,9 +168,8 @@ to point at, not an open-ended guess about feature flags.
       `e2fsck -fy`; the orphan case differed only in backup descriptor
       blocks (e2fsck writes the primary only, `MASTER_SB_ONLY`) — fixed in
       783da0b with `Filesystem::flush_primary_group_descs`, plus two
-      test-helper bugs. **Next:** a clean sc-build of 783da0b (every suite,
-      clippy both feature sets; the first attempt got no slot, exit 75),
-      then close #7 and release 4.1.0.
+      test-helper bugs. sc-build on 3bdfd42: 195 lib tests, every suite,
+      the 6 differential cases, clippy `-D warnings` on both feature sets.
 - [x] Issue #10 (P1): `format()` RSS grows ~8 KiB per group (18 GiB at
       256 TiB, 1 PiB > 32 GiB). Cause: `write_filesystem` builds every
       group's `GroupState` (a block-sized block bitmap and inode bitmap each)
