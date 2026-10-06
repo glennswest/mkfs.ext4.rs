@@ -162,6 +162,15 @@ to point at, not an open-ended guess about feature flags.
          and `e2fsck` are on the host, a differential test — journal written
          by `debugfs jo/jw/jc`, replayed by real `e2fsck` and by us, images
          compared.
+      **State 2026-10-06:** all four done (`src/recovery.rs`,
+      `src/orphan.rs`, fsck wiring, `tests/journal_e2fsprogs.rs`). sc-build on
+      89edf35: all five journal differential cases byte-identical to real
+      `e2fsck -fy`; the orphan case differed only in backup descriptor
+      blocks (e2fsck writes the primary only, `MASTER_SB_ONLY`) — fixed in
+      783da0b with `Filesystem::flush_primary_group_descs`, plus two
+      test-helper bugs. **Next:** a clean sc-build of 783da0b (every suite,
+      clippy both feature sets; the first attempt got no slot, exit 75),
+      then close #7 and release 4.1.0.
 - [x] Issue #10 (P1): `format()` RSS grows ~8 KiB per group (18 GiB at
       256 TiB, 1 PiB > 32 GiB). Cause: `write_filesystem` builds every
       group's `GroupState` (a block-sized block bitmap and inode bitmap each)
