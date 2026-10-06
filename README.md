@@ -66,35 +66,45 @@ so to have `mkfs -t ext4` / `fsck -t ext4` dispatch to them, install them as
   (the device already reads back as zeros, so the inode tables and journal
   body are not written), `--mkfs-time` for reproducible images,
   `--mmp-update-interval` (implies `-O mmp`), `-n` dry run and `-q` quiet.
-- `fsck-ext4 [-n|-y] [-f] [-v] DEVICE`: `-n` (the default) reports and
-  changes nothing, and `-y` repairs. As with `e2fsck`, a filesystem that is
-  clean and not due for a check is skipped (`DEVICE: clean, N/M files, A/B
-  blocks`) unless `-f` is given; `-y` alone does not force it. A check falls
-  due for `e2fsck`'s reasons — errors recorded or found in the superblock and
-  descriptors, not cleanly unmounted, the backup superblock differs (when
-  repairing), the mount count or check interval reached — and, erring towards
-  checking, for a journal that needs recovery or orphans still to release,
-  since this checker does neither; `fsck-ext4` then prints `DEVICE <reason>,
-  check forced.` before the passes run. A repairing check records itself the way
-  `e2fsck` does (`s_state`, `s_lastcheck`, `s_mnt_count`). Exit codes follow
-  `e2fsck`: 0 clean, 1 errors corrected, 4 errors left uncorrected, 8
-  operational error.
+- `fsck-ext4 [-n|-y|-p|-a] [-f] [-v] [-t] [-C fd] DEVICE`: `-n` (the
+  default) reports and changes nothing, and `-y` repairs. `-p` (or `-a`)
+  preens, as `fsck -A` and `systemd-fsck` run it at boot: it repairs without
+  asking what `e2fsck -p` does (`e2fsck`'s `PR_PREEN_OK` problems; here link
+  counts, bitmaps and free counts), and on anything else it repairs nothing,
+  marks the superblock as having errors, prints `DEVICE: UNEXPECTED
+  INCONSISTENCY; RUN fsck MANUALLY.` and exits 4. As with `e2fsck`, a
+  filesystem that is clean and not due for a check is skipped (`DEVICE: clean,
+  N/M files, A/B blocks`) unless `-f` is given; `-y` or `-p` alone does not
+  force it. A check falls due for `e2fsck`'s reasons — errors recorded or
+  found in the superblock and descriptors, not cleanly unmounted, the backup
+  superblock differs (when repairing), the mount count or check interval
+  reached — and, erring towards checking, for a journal that needs recovery
+  or orphans still to release, since this checker does neither; `fsck-ext4`
+  then prints `DEVICE <reason>, check forced.` before the passes run. A
+  repairing check records itself the way `e2fsck` does (`s_state`,
+  `s_lastcheck`, `s_mnt_count`). `-t` prints the time taken. `-C fd` is
+  accepted and ignored: this checker reports no progress.
 
-  Those four flags are the whole command line. `e2fsck`'s other flags are
-  refused, including the `-p` / `-a` that `fsck -A` and `systemd-fsck` pass at
-  boot, and `-C`. They are refused as a clap usage error, which exits 2, not
-  `e2fsck`'s 16, and to an `e2fsck` caller 2 means "errors corrected, reboot".
-  Don't put `fsck.ext4` in a boot path until
-  [#8](https://github.com/glennswest/mkfs.ext4.rs/issues/8) is fixed.
+  Exit codes follow `e2fsck`: 0 clean, 1 errors corrected, 4 errors left
+  uncorrected, 8 operational error, or more than one of `-p`/`-a`, `-n` and
+  `-y` (`e2fsck`'s "Only one of the options -p/-a, -n or -y may be
+  specified."), 16 usage error. `e2fsck`'s flags this checker cannot honour —
+  `-b`, `-B`, `-c`, `-D`, `-E`, `-j`, `-k`, `-l`, `-L` and `-z` — are refused
+  by name with 16; none is accepted and ignored. An unknown flag or a missing
+  device is 16 as well, never 2 (to an `e2fsck` caller, "errors corrected,
+  reboot").
 
   In the library, `FsckOptions::check_only()` is `e2fsck -n` and skips a
   clean filesystem; `.force(true)` makes it `-fn`. `FsckOptions::repair()` is
-  `-fy`. `FsckReport::scope` says whether the passes ran and why.
+  `-fy`, and `FsckOptions::preen()` is `-p`. `FsckReport::scope` says whether
+  the passes ran and why, and `FsckReport::preen_halted` that a preen stopped.
 
-  The skip is on `main` and ships in the next release (4.0.0, a breaking
-  change: `FsckReport` gains `scope`). At tag `v3.0.0`, `-f` and
-  `FsckOptions::force` are accepted but not read, and every check runs every
-  pass.
+  The skip, preening and this command line are on `main` and ship in the next
+  release (4.0.0, a breaking change: `FsckReport` gains `scope` and
+  `preen_halted`, `FsckOptions` gains `preen`). At tag `v3.0.0`, `-f` and
+  `FsckOptions::force` are accepted but not read, every check runs every
+  pass, and the command line is only `-n -y -f -v`, with clap's exit 2 for
+  anything else: don't put that release's `fsck.ext4` in a boot path.
 
 ## Sector size
 

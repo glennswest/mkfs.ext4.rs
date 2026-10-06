@@ -39,6 +39,18 @@
 //! which of the three happened, and a skipped report takes its counts from the
 //! superblock. `e2fsck`'s battery and `broken_system_clock` exceptions do not
 //! apply here.
+//!
+//! # Preening
+//!
+//! [`FsckOptions::preen`] is `e2fsck -p` (and `-a`), the mode boot scripts and
+//! `fsck -A` run in. It repairs what `e2fsck`'s problem table marks
+//! `PR_PREEN_OK` — here the link counts, bitmaps and free counts this checker
+//! repairs — without asking. Anything else needs a person: as `e2fsck`'s
+//! `preenhalt` does, the check stops, the superblock is marked as having
+//! errors (so the next boot does not skip it), and the report says
+//! [`FsckReport::preen_halted`]. The decision is made before the first repair
+//! is written, so a halted check leaves the filesystem as it found it apart
+//! from that flag.
 
 #[cfg(not(feature = "std"))]
 use alloc::{string::String, vec::Vec};
@@ -63,6 +75,10 @@ pub struct FsckOptions {
     /// (`e2fsck -f`). Without it a clean filesystem that is not due for a
     /// check is skipped; see the module docs.
     pub force: bool,
+    /// Repair only what `e2fsck -p` repairs without asking, and stop on
+    /// anything else; see the module docs. Writes whether or not
+    /// [`Self::repair`] is set.
+    pub preen: bool,
 }
 
 impl FsckOptions {
@@ -77,7 +93,22 @@ impl FsckOptions {
         Self {
             repair: true,
             force: true,
+            preen: false,
         }
+    }
+
+    /// Repair what is safe and stop on anything else: `e2fsck -p`. A clean
+    /// filesystem is skipped unless [`Self::force`] is set as well.
+    pub fn preen() -> Self {
+        Self {
+            preen: true,
+            ..Self::default()
+        }
+    }
+
+    /// Whether this run may write: [`Self::repair`] or [`Self::preen`].
+    pub fn writes(&self) -> bool {
+        self.repair || self.preen
     }
 
     /// Set [`FsckOptions::force`].
@@ -148,6 +179,10 @@ pub struct FsckReport {
     pub directories: u32,
     /// Whether the passes ran, and why.
     pub scope: CheckScope,
+    /// A preening check found something it may not repair without a person,
+    /// and stopped: `e2fsck -p`'s "UNEXPECTED INCONSISTENCY; RUN fsck
+    /// MANUALLY". Nothing was repaired, and the superblock now records errors.
+    pub preen_halted: bool,
 }
 
 impl FsckReport {
@@ -275,14 +310,29 @@ pub async fn check_opened<D: BlockDevice>(
     pass1_inodes(fs, &mut report, &mut state).await?;
     pass2_directories(fs, &mut report, &mut state).await?;
     pass3_connectivity(fs, &mut report, &mut state).await?;
-    pass4_link_counts(fs, &mut report, &mut state, options).await?;
-    pass5_bitmaps(fs, &mut report, &mut state, options).await?;
+    let link_fixes = pass4_link_counts(fs, &mut report, &mut state).await?;
 
     report.blocks_used = state.blocks.count();
     report.inodes_used = state.inodes_in_use.len() as u32;
     report.directories = state.directories.len() as u32;
 
-    if options.repair {
+    // Passes 0 to 4 have written nothing yet, so this is the last point a
+    // preening check can stop and leave the filesystem as it was.
+    if options.preen && report.problems.iter().any(needs_a_person) {
+        return preen_halt(fs, report).await;
+    }
+
+    if options.writes() {
+        for (index, inum, observed) in link_fixes {
+            let mut inode = fs.read_inode(inum).await?;
+            inode.links_count = observed;
+            fs.write_inode(inum, &inode).await?;
+            report.problems[index].fixed = true;
+        }
+    }
+    pass5_bitmaps(fs, &mut report, &mut state, options).await?;
+
+    if options.writes() {
         // What e2fsck writes at the end of every full check it may write to:
         // valid if nothing is left wrong, not valid otherwise, and the check
         // recorded, which is what makes the next run skip it.
@@ -326,6 +376,38 @@ pub async fn check_opened<D: BlockDevice>(
     Ok(report)
 }
 
+/// What `e2fsck -p` repairs without asking: the problems `e2fsck`'s problem
+/// table flags `PR_PREEN_OK` that this checker repairs (`PR_4_BAD_REF_COUNT`,
+/// pass 5's bitmap differences and free counts).
+const PREEN_OK: &[&str] = &[
+    "link-count-wrong",
+    "block-bitmap-differs",
+    "inode-bitmap-differs",
+    "group-free-blocks-wrong",
+    "group-free-inodes-wrong",
+    "group-dir-count-wrong",
+    "superblock-free-blocks-wrong",
+    "superblock-free-inodes-wrong",
+];
+
+/// Whether a finding stops a preening check.
+fn needs_a_person(problem: &Problem) -> bool {
+    problem.severity > Severity::Info && !PREEN_OK.contains(&problem.code)
+}
+
+/// `e2fsck`'s `preenhalt`: record that the filesystem has errors, so the next
+/// boot checks it again rather than skipping it, and stop.
+async fn preen_halt<D: BlockDevice>(
+    fs: &mut Filesystem<D>,
+    mut report: FsckReport,
+) -> Result<FsckReport> {
+    fs.superblock_mut().state |= state::ERROR_FS;
+    fs.flush_superblock().await?;
+    fs.device().flush().await?;
+    report.preen_halted = true;
+    Ok(report)
+}
+
 /// Seconds since the epoch, as `e2fsck`'s `ctx->now`.
 fn unix_now() -> u64 {
     std::time::SystemTime::now()
@@ -366,7 +448,7 @@ async fn check_due<D: BlockDevice>(
     }
     // e2fsck compares against the backup only when it could rewrite the
     // backups, so never on a read-only check.
-    if options.repair && backup_superblock_differs(fs).await? {
+    if options.writes() && backup_superblock_differs(fs).await? {
         return Ok(Some("primary superblock features different from backup".into()));
     }
     if sb.max_mnt_count > 0 && sb.mnt_count as i32 >= sb.max_mnt_count as i32 {
@@ -433,7 +515,7 @@ async fn skip<D: BlockDevice>(
     // A kernel keeps the free counts in the group descriptors and lets the
     // superblock's drift. e2fsck brings them into line when it may write, for
     // anyone reading them with dumpe2fs, and does not count it as a repair.
-    if options.repair {
+    if options.writes() {
         let free_blocks: u64 = fs.group_descs().iter().map(|d| d.free_blocks_count as u64).sum();
         let free_inodes: u32 = fs.group_descs().iter().map(|d| d.free_inodes_count).sum();
         let sb = fs.superblock_mut();
@@ -1085,12 +1167,15 @@ async fn pass3_connectivity<D: BlockDevice>(
 }
 
 /// Pass 4 — link counts.
+///
+/// Writes nothing: it returns the corrections, as (problem index, inode,
+/// links), for the caller to make once it knows it may.
 async fn pass4_link_counts<D: BlockDevice>(
     fs: &Filesystem<D>,
     report: &mut FsckReport,
     state: &mut ScanState,
-    options: &FsckOptions,
-) -> Result<()> {
+) -> Result<Vec<(usize, u32, u16)>> {
+    let mut fixes = Vec::new();
     let inodes: Vec<u32> = state.inodes_in_use.iter().copied().collect();
 
     let orphan_file = fs.superblock().orphan_file_inum;
@@ -1107,7 +1192,7 @@ async fn pass4_link_counts<D: BlockDevice>(
         if orphan_file != 0 && inum == orphan_file {
             continue;
         }
-        let mut inode = fs.read_inode(inum).await?;
+        let inode = fs.read_inode(inum).await?;
         let observed = state.observed_links.get(&inum).copied().unwrap_or(0);
 
         if observed == 0 {
@@ -1124,8 +1209,8 @@ async fn pass4_link_counts<D: BlockDevice>(
         }
 
         if inode.links_count != observed {
-            let fixed = options.repair;
-            report.push_fixed(
+            fixes.push((report.problems.len(), inum, observed));
+            report.push(
                 4,
                 "link-count-wrong",
                 Severity::Fixable,
@@ -1133,16 +1218,11 @@ async fn pass4_link_counts<D: BlockDevice>(
                     "inode {inum} link count is {}, but {observed} names refer to it",
                     inode.links_count
                 ),
-                fixed,
             );
-            if fixed {
-                inode.links_count = observed;
-                fs.write_inode(inum, &inode).await?;
-            }
         }
     }
 
-    Ok(())
+    Ok(fixes)
 }
 
 /// Pass 5 — bitmaps and free counters.
@@ -1178,7 +1258,7 @@ async fn pass5_bitmaps<D: BlockDevice>(
 
         let actual = fs.read_block_bitmap(group).await?;
         if actual != expected {
-            let fixed = options.repair;
+            let fixed = options.writes();
             report.push_fixed(
                 5,
                 "block-bitmap-differs",
@@ -1214,7 +1294,7 @@ async fn pass5_bitmaps<D: BlockDevice>(
 
         let actual_inodes = fs.read_inode_bitmap(group).await?;
         if actual_inodes != expected_inodes {
-            let fixed = options.repair;
+            let fixed = options.writes();
             report.push_fixed(
                 5,
                 "inode-bitmap-differs",
@@ -1231,7 +1311,7 @@ async fn pass5_bitmaps<D: BlockDevice>(
         // Counters in the descriptor.
         let desc = fs.group_descs()[group as usize];
         if desc.free_blocks_count != free_blocks {
-            let fixed = options.repair;
+            let fixed = options.writes();
             report.push_fixed(
                 5,
                 "group-free-blocks-wrong",
@@ -1244,7 +1324,7 @@ async fn pass5_bitmaps<D: BlockDevice>(
             );
         }
         if desc.free_inodes_count != free_inodes {
-            let fixed = options.repair;
+            let fixed = options.writes();
             report.push_fixed(
                 5,
                 "group-free-inodes-wrong",
@@ -1257,7 +1337,7 @@ async fn pass5_bitmaps<D: BlockDevice>(
             );
         }
         if desc.used_dirs_count != used_dirs {
-            let fixed = options.repair;
+            let fixed = options.writes();
             report.push_fixed(
                 5,
                 "group-dir-count-wrong",
@@ -1270,7 +1350,7 @@ async fn pass5_bitmaps<D: BlockDevice>(
             );
         }
 
-        if options.repair {
+        if options.writes() {
             let seed = fs.csum_seed();
             let has_csum = fs.has_metadata_csum();
             let bb_len = (sb.blocks_per_group as usize).div_ceil(8);
@@ -1292,7 +1372,7 @@ async fn pass5_bitmaps<D: BlockDevice>(
 
     // And the superblock's totals.
     if sb.free_blocks_count != total_free_blocks {
-        let fixed = options.repair;
+        let fixed = options.writes();
         report.push_fixed(
             5,
             "superblock-free-blocks-wrong",
@@ -1308,7 +1388,7 @@ async fn pass5_bitmaps<D: BlockDevice>(
         }
     }
     if sb.free_inodes_count != total_free_inodes {
-        let fixed = options.repair;
+        let fixed = options.writes();
         report.push_fixed(
             5,
             "superblock-free-inodes-wrong",
@@ -1714,7 +1794,7 @@ mod tests {
 
         let repairing = FsckOptions {
             repair: true,
-            force: false,
+            ..FsckOptions::default()
         };
         let report = check(&dev, &repairing).await.unwrap();
         assert_eq!(
@@ -1738,7 +1818,7 @@ mod tests {
         .await;
         let repairing = FsckOptions {
             repair: true,
-            force: false,
+            ..FsckOptions::default()
         };
         let report = check(&dev, &repairing).await.unwrap();
         assert_eq!(report.scope, CheckScope::Due("was not cleanly unmounted".into()));
@@ -1770,13 +1850,84 @@ mod tests {
 
         let repairing = FsckOptions {
             repair: true,
-            force: false,
+            ..FsckOptions::default()
         };
         let report = check(&dev, &repairing).await.unwrap();
         assert!(report.skipped());
         assert_eq!(report.exit_code(), 0);
         let fs = Filesystem::open(&dev).await.unwrap();
         assert_eq!(fs.superblock().free_blocks_count, real);
+    }
+
+    /// `e2fsck -p` repairs a wrong link count and the free counts on its own,
+    /// and like `-y` exits 1 for it.
+    #[tokio::test]
+    async fn preening_repairs_what_e2fsck_preens() {
+        let dev = formatted(Profile::Ext4, 16 * MIB).await;
+        let fs = Filesystem::open(&dev).await.unwrap();
+        let mut root = fs.read_inode(ino::ROOT).await.unwrap();
+        root.links_count = 99;
+        fs.write_inode(ino::ROOT, &root).await.unwrap();
+        drop(fs);
+        edit_superblock(&dev, |sb| sb.free_blocks_count -= 7).await;
+
+        let report = check(&dev, &FsckOptions::preen().force(true)).await.unwrap();
+        assert!(!report.preen_halted, "{}", describe(&report));
+        assert_eq!(report.exit_code(), 1, "{}", describe(&report));
+        assert_eq!(report.unfixed().count(), 0, "{}", describe(&report));
+
+        let fs = Filesystem::open(&dev).await.unwrap();
+        assert_eq!(fs.read_inode(ino::ROOT).await.unwrap().links_count, 3);
+        let again = check(&dev, &FsckOptions::check_only().force(true)).await.unwrap();
+        assert!(again.is_clean(), "after preen:\n{}", describe(&again));
+    }
+
+    /// A finding `e2fsck -p` may not repair stops the check before anything
+    /// is written — not even the link count it could have fixed — and marks
+    /// the filesystem as having errors, so the next preen checks it again.
+    #[tokio::test]
+    async fn preening_stops_on_what_needs_a_person() {
+        let dev = formatted(Profile::Ext4, 16 * MIB).await;
+        let mut fs = Filesystem::open(&dev).await.unwrap();
+        let mut root = fs.read_inode(ino::ROOT).await.unwrap();
+        root.links_count = 99;
+        fs.write_inode(ino::ROOT, &root).await.unwrap();
+        fs.group_descs_mut()[0].checksum ^= 0xffff;
+        let sb = fs.superblock().clone();
+        let desc_size = sb.desc_size() as usize;
+        let mut raw = vec![0u8; sb.gdt_blocks() as usize * sb.block_size() as usize];
+        for (g, d) in fs.group_descs().iter().enumerate() {
+            d.encode_into(&mut raw[g * desc_size..], desc_size);
+        }
+        let gdt_block = if sb.block_size() == 1024 { 2 } else { 1 };
+        fs.write_block(gdt_block, &raw).await.unwrap();
+        drop(fs);
+
+        let report = check(&dev, &FsckOptions::preen()).await.unwrap();
+        assert!(report.preen_halted, "{}", describe(&report));
+        assert_eq!(report.exit_code(), 4);
+        assert!(!report.repaired_anything(), "{}", describe(&report));
+
+        let fs = Filesystem::open(&dev).await.unwrap();
+        assert_eq!(fs.read_inode(ino::ROOT).await.unwrap().links_count, 99);
+        assert_ne!(fs.superblock().state & state::ERROR_FS, 0);
+        drop(fs);
+
+        let again = check(&dev, &FsckOptions::preen()).await.unwrap();
+        assert_eq!(
+            again.scope,
+            CheckScope::Due("contains a file system with errors".into())
+        );
+        assert!(again.preen_halted);
+    }
+
+    /// A clean filesystem is skipped by `-p` as by `-n` and `-y`.
+    #[tokio::test]
+    async fn preening_skips_a_clean_filesystem() {
+        let dev = formatted(Profile::Ext4, 16 * MIB).await;
+        let report = check(&dev, &FsckOptions::preen()).await.unwrap();
+        assert!(report.skipped(), "{:?}", report.scope);
+        assert_eq!(report.exit_code(), 0);
     }
 
     #[tokio::test]

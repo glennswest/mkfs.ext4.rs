@@ -3,6 +3,20 @@
 ## [Unreleased]
 
 ### 2026-10-06
+- **feat:** `fsck-ext4` takes `e2fsck`'s command line (#8). `-p`/`-a` preen:
+  repair what `e2fsck -p` repairs without asking (link counts, bitmaps, free
+  counts) and, on anything else, repair nothing, mark the superblock as having
+  errors and exit 4 with `e2fsck`'s "UNEXPECTED INCONSISTENCY; RUN fsck
+  MANUALLY". `-C fd` is accepted and ignored, `-t` prints the time taken.
+  Library: `FsckOptions::preen` / `FsckOptions::preen()`,
+  `FsckOptions::writes()`, `FsckReport::preen_halted`.
+- **fix:** A usage error exits 16, `e2fsck`'s `FSCK_USAGE`, not clap's 2,
+  which to an `e2fsck` caller means "errors corrected, reboot" (#8).
+  `--help` and `-V` still exit 0. `e2fsck`'s flags this checker cannot honour
+  (`-b -B -c -D -E -j -k -l -L -z`) are refused by name with 16. More than one
+  of `-p`/`-a`, `-n`, `-y` exits 8 with `e2fsck`'s message.
+- **refactor:** Pass 4 decides its link-count repairs before writing any, so
+  a preen that stops leaves the filesystem as it found it.
 - **fix:** The default inode count no longer wraps at 256 TiB (#9). The
   ratio's answer, `bytes / ratio`, was cast to 32 bits: exactly 2^32 at
   256 TiB and the huge class's 64 KiB ratio, so 0, which left 8 inodes per
