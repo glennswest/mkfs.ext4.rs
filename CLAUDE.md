@@ -173,7 +173,7 @@ to point at, not an open-ended guess about feature flags.
       inode counts equal real `mke2fs -n` 1.47.3 at 256, 300 and 1024 TiB;
       `formatscale 256 --check` formats and force-checks clean (0 problems).
       Rides in 4.0.0 with #6 and #10.
-- [ ] Issue #8 (P2): `fsck-ext4` takes only `-n -y -f -v`. `e2fsck`'s `-p`/`-a`,
+- [x] Issue #8 (P2): `fsck-ext4` takes only `-n -y -f -v`. `e2fsck`'s `-p`/`-a`,
       `-C` and the rest are clap usage errors that exit 2 ("corrected,
       reboot") instead of working or exiting 16. Against the owner's #6 rule
       that e2fsck scripts must work unchanged. **In progress.** Plan:
@@ -186,6 +186,10 @@ to point at, not an open-ended guess about feature flags.
       `-p`/`-a`/`-n`/`-y` conflicts exit 8 with e2fsck's message (owner,
       on #8). `-C fd` accepted and ignored, `-t` prints elapsed time.
       `-b -B -c -D -E -j -k -l -L -z` refused with exit 16. README lists both.
+      **Done** (5790681): sc-build passed every suite and clippy
+      `-D warnings`; `tests/fsck_cli.rs` runs the binary for each exit code,
+      `fsck::tests::preening_*` cover the library. Rides in 4.0.0 with #6,
+      #9 and #10 (`FsckOptions` gains `preen`, `FsckReport` `preen_halted`).
 
 ## Features
 
