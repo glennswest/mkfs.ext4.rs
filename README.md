@@ -78,9 +78,23 @@ so to have `mkfs -t ext4` / `fsck -t ext4` dispatch to them, install them as
   force it. A check falls due for `e2fsck`'s reasons — errors recorded or
   found in the superblock and descriptors, not cleanly unmounted, the backup
   superblock differs (when repairing), the mount count or check interval
-  reached — and, erring towards checking, for a journal that needs recovery
-  or orphans still to release, since this checker does neither; `fsck-ext4`
-  then prints `DEVICE <reason>, check forced.` before the passes run. A
+  reached — and, on a read-only check, for a journal that needs recovery or
+  orphans still to release (`e2fsck -n` calls those clean); `fsck-ext4`
+  then prints `DEVICE <reason>, check forced.` before the passes run.
+
+  Before anything else, a check that may write (`-y`, `-p`) does what
+  `e2fsck` does first: it **replays the journal** (`DEVICE: recovering
+  journal: …`) — every JBD2 tag layout, revokes, csum v2/v3 — and **releases
+  orphan inodes** from the `s_last_orphan` chain and the orphan file
+  (`DEVICE: Clearing orphaned inode N (uid=…, gid=…, mode=…, size=…)`, or
+  `Truncating` for one still linked). Neither counts as a correction, so on
+  its own the exit is 0, as with `e2fsck`. `-n` skips the replay with
+  `e2fsck`'s warning and checks the metadata as it stands. A journal that
+  needs recovery but cannot be replayed here — external, `fast_commit`, or a
+  journal superblock this checker does not understand — is an error, and
+  then nothing is written at all, since the kernel's replay at the next mount
+  would undo any repair; mount and unmount it, or use `e2fsck`. A
+  repairing check records itself the way `e2fsck` does (`s_state`,
   repairing check records itself the way `e2fsck` does (`s_state`,
   `s_lastcheck`, `s_mnt_count`). `-t` prints the time taken. `-C fd` is
   accepted and ignored: this checker reports no progress.
@@ -98,6 +112,8 @@ so to have `mkfs -t ext4` / `fsck -t ext4` dispatch to them, install them as
   clean filesystem; `.force(true)` makes it `-fn`. `FsckOptions::repair()` is
   `-fy`, and `FsckOptions::preen()` is `-p`. `FsckReport::scope` says whether
   the passes ran and why, and `FsckReport::preen_halted` that a preen stopped.
+  The replay and the orphans are in `FsckReport::notes()`; `recovery` and
+  `orphan` are public modules for a caller that wants either on its own.
 
   The skip, preening and this command line arrived in 4.0.0 (a breaking
   change: `FsckReport` gains `scope` and `preen_halted`, `FsckOptions` gains
@@ -244,7 +260,10 @@ The script loop-mounts, so it needs root on the Linux host it targets (by
 default `root@dev.g8.lo`; pass `user@host` to choose another). It is not part of
 `cargo test`. `cargo test` runs the golden (geometry and structural compare),
 sector-size, journal-floor and strict-sector suites in `tests/` and needs no
-privilege.
+privilege. Where `debugfs` and `e2fsck` are installed it also runs
+`tests/journal_e2fsprogs.rs`: journals and orphans set up by `debugfs`,
+repaired by real `e2fsck -fy` and by this checker, and the images compared
+block by block.
 
 Geometry and feature masks are asserted against golden filesystems produced by
 real `mke2fs` 1.47.3, which is byte-reproducible once the UUID, hash seed and

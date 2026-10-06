@@ -3,6 +3,43 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-10-06
+- **feat:** `fsck` replays the journal before it checks, as `e2fsck` does
+  (#7). New `recovery` module: `jbd2_journal_recover`'s three passes (scan,
+  revoke, replay), descriptor tags in all four layouts (32/64-bit, csum v2,
+  csum v3), escaped blocks, revoke records, wrap-around, and every
+  descriptor, revoke, commit and data checksum verified as the kernel
+  verifies it. Afterwards the journal is empty and restarted past its last
+  transaction, the filesystem is reloaded (`Filesystem::reload`, new) and
+  `needs_recovery` is cleared. A bad data block is skipped, a torn commit
+  ends the replay before it, and either marks the filesystem not clean so the
+  full check runs. A journal the kernel aborted (`s_errno`) marks the
+  filesystem as having errors. Journal data with `needs_recovery` clear is
+  `e2fsck`'s `PR_0_JOURNAL_RUN`: replayed by `-y`, a stop for `-p`.
+- **feat:** `fsck` releases orphan inodes after pass 0, as `e2fsck`'s
+  `release_orphan_inodes` does (#7). New `orphan` module: the `s_last_orphan`
+  chain, then the orphan file's slots. An unlinked orphan's blocks, xattr
+  block reference and inode are freed; a linked one is truncated to its
+  size, through extent trees (emptied nodes freed, a tree cut to nothing
+  made a leaf again) or indirect maps. Bitmaps, descriptors and free counts
+  follow. With errors recorded the chain is dropped unwalked, as in
+  `e2fsck`; on bigalloc the orphans are left (#12).
+- **feat:** Both are reported as notes: `Problem::is_note`, `NOTES`,
+  `FsckReport::notes()`. A note is neither a problem left nor a repair, so a
+  replay or a release alone exits 0, as with `e2fsck`. `fsck-ext4` prints
+  them first, `DEVICE: recovering journal: …`, `DEVICE: Clearing orphaned
+  inode …`. A read-only check does neither and notes the skipped replay.
+- **fix:** A repair or preen no longer runs beneath a journal that needs
+  recovery (#7). A journal that cannot be replayed here (external,
+  `fast_commit`, unknown features, a corrupt journal superblock) is a Serious
+  problem and nothing is written: the next mount's replay would undo any
+  repair made under it.
+- **test:** `tests/journal_e2fsprogs.rs`: logs written by `debugfs` (`jo`,
+  `jw`, `jc`, with and without checksums, revokes, an uncommitted tail, ext3
+  and ext4, 1 KiB and 4 KiB blocks) and orphans set by `debugfs`, repaired by
+  real `e2fsck -fy` and by this checker, the images compared block by block,
+  and ours checked clean by `e2fsck -fn`. Skipped where e2fsprogs is absent.
+
 ## [v4.0.0] — 2026-10-06
 
 Released for #14: consumers pinned to `v3.0.0` still format with the
