@@ -52,7 +52,9 @@
 //! | [`fsck`] | check passes and repair |
 //! | [`compare`] | structural diff between two filesystems |
 //! | [`mmp`] | multiple mount protection |
+//! | [`orphan`] | orphan inode release, as `e2fsck` runs it before checking |
 //! | [`read`] | synchronous, `no_std` read-only path over [`BlockReader`] |
+//! | [`recovery`] | JBD2 journal replay, as `e2fsck` runs it before checking |
 //! | [`params`] | `mke2fs` profiles and per-format parameters |
 //! | [`layout`] | `mke2fs` geometry |
 //! | [`journal`] | JBD2 journal creation and sizing |
@@ -93,8 +95,12 @@ pub mod journal;
 pub mod layout;
 #[cfg(feature = "std")]
 pub mod mmp;
+#[cfg(feature = "std")]
+pub mod orphan;
 pub mod params;
 pub mod read;
+#[cfg(feature = "std")]
+pub mod recovery;
 pub mod structs;
 
 // The things a caller reaches for first, so a simple use looks simple.

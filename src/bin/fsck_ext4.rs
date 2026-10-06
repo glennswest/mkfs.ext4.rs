@@ -170,6 +170,12 @@ async fn run(args: &Args) -> i32 {
         }
     };
 
+    // What was done before the check, e2fsck's way: "DEVICE: recovering
+    // journal", "Clearing orphaned inode ...".
+    for note in report.notes() {
+        println!("{}: {}", args.device, note.message);
+    }
+
     match &report.scope {
         CheckScope::Skipped { next_check } => {
             let note = match next_check {
@@ -191,7 +197,7 @@ async fn run(args: &Args) -> i32 {
         CheckScope::Forced => {}
     }
 
-    for problem in &report.problems {
+    for problem in report.problems.iter().filter(|p| !p.is_note()) {
         let mark = match (problem.fixed, problem.severity) {
             (true, _) => "FIXED",
             (false, Severity::Info) => "note ",

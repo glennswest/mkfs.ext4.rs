@@ -16,6 +16,30 @@
 //! records every change in the report, so a caller can see what was done rather
 //! than trusting that something was.
 //!
+//! # Before the passes: the journal and the orphans
+//!
+//! As `e2fsck` does, a check that may write (repairing or preening) first
+//! finishes what the kernel left unfinished, so that the passes read the
+//! metadata the filesystem really has:
+//!
+//! 1. **Journal recovery** ([`crate::recovery`]): a journal that needs
+//!    recovery is replayed, the filesystem reloaded and `needs_recovery`
+//!    cleared. A journal holding data with the flag clear is `e2fsck`'s
+//!    `PR_0_JOURNAL_RUN`: replayed when repairing, a reason to stop when
+//!    preening. A journal this checker cannot replay (external, `fast_commit`,
+//!    a superblock it does not understand) is a Serious problem, and then
+//!    nothing at all is written: a repair made beneath an unreplayed journal
+//!    is what the next mount's replay would undo. A journal the kernel
+//!    aborted (`s_errno`) marks the filesystem as having errors.
+//! 2. **Orphan release** ([`crate::orphan`]), after pass 0: inodes the kernel
+//!    was freeing are freed, and inodes it was truncating are truncated.
+//!
+//! Both are reported as notes ([`Problem::is_note`]): they are not repairs,
+//! and on their own leave the exit status 0, as in `e2fsck`. Either going
+//! wrong part way marks the filesystem not clean, so the full check runs. A
+//! read-only check does neither: the journal is noted as skipped, and the
+//! passes see the metadata from before the replay, as `e2fsck -n` does.
+//!
 //! # A clean filesystem is skipped
 //!
 //! As `e2fsck` does it (`check_if_skip` in `e2fsck/unix.c`): unless the caller
@@ -32,8 +56,9 @@
 //!
 //! Two more reasons are this checker's own, and both err towards checking: a
 //! journal that needs recovery, and orphan inodes waiting to be released.
-//! `e2fsck` replays the one and releases the other before it decides; this
-//! checker does neither, so it does not call such a filesystem clean.
+//! A check that writes has dealt with both before it gets here, as `e2fsck`
+//! has; a read-only check has not, and does not call such a filesystem clean
+//! (`e2fsck -n` does).
 //!
 //! Otherwise the passes do not run. The report's [`FsckReport::scope`] says
 //! which of the three happened, and a skipped report takes its counts from the
@@ -50,7 +75,8 @@
 //! errors (so the next boot does not skip it), and the report says
 //! [`FsckReport::preen_halted`]. The decision is made before the first repair
 //! is written, so a halted check leaves the filesystem as it found it apart
-//! from that flag.
+//! from that flag — and from the journal replay and orphan release, which
+//! `e2fsck -p` makes too.
 
 #[cfg(not(feature = "std"))]
 use alloc::{string::String, vec::Vec};
@@ -62,6 +88,8 @@ use crate::features::{CompatFeatures, IncompatFeatures, RoCompatFeatures};
 use crate::device::BlockDevice;
 use crate::error::Result;
 use crate::fs::Filesystem;
+use crate::orphan;
+use crate::recovery::{self, Journal};
 use crate::structs::dirent::{self, file_type};
 use crate::structs::inode::{mode, Inode};
 use crate::structs::superblock::{ino, state, Superblock, SUPERBLOCK_LEN};
@@ -162,6 +190,26 @@ pub struct Problem {
     pub fixed: bool,
 }
 
+/// Findings that report something done, or not done, rather than something
+/// wrong: journal recovery and orphan release, the work `e2fsck` does before
+/// it checks and prints without counting as a fix (`PR_0_ORPHAN_CLEAR_INODE`
+/// is `PROMPT_NONE`; "recovering journal" is not a problem at all).
+pub const NOTES: &[&str] = &[
+    "journal-recovered",
+    "journal-recovery-error",
+    "journal-recovery-skipped",
+    "orphan-released",
+    "orphan-release-error",
+];
+
+impl Problem {
+    /// Whether this is a note ([`NOTES`]): reported, but neither a problem
+    /// left nor a repair made, so it changes no exit status.
+    pub fn is_note(&self) -> bool {
+        NOTES.contains(&self.code)
+    }
+}
+
 /// The result of a check.
 #[derive(Debug, Clone, Default)]
 pub struct FsckReport {
@@ -191,19 +239,26 @@ impl FsckReport {
         matches!(self.scope, CheckScope::Skipped { .. })
     }
 
-    /// Nothing wrong at all.
+    /// Nothing wrong at all. Notes ([`Problem::is_note`]) do not count.
     pub fn is_clean(&self) -> bool {
-        self.problems.is_empty()
+        self.problems.iter().all(Problem::is_note)
     }
 
     /// Problems that remain after this run.
     pub fn unfixed(&self) -> impl Iterator<Item = &Problem> {
-        self.problems.iter().filter(|p| !p.fixed)
+        self.problems.iter().filter(|p| !p.fixed && !p.is_note())
     }
 
-    /// Whether anything was corrected.
+    /// Whether anything was corrected. A journal replayed or an orphan
+    /// released is not a correction, as in `e2fsck`, whose exit status for
+    /// those alone is 0.
     pub fn repaired_anything(&self) -> bool {
-        self.problems.iter().any(|p| p.fixed)
+        self.problems.iter().any(|p| p.fixed && !p.is_note())
+    }
+
+    /// The notes: what was done before the check, and why it was skipped.
+    pub fn notes(&self) -> impl Iterator<Item = &Problem> {
+        self.problems.iter().filter(|p| p.is_note())
     }
 
     /// An `e2fsck`-compatible exit code.
@@ -291,16 +346,28 @@ pub async fn check_opened<D: BlockDevice>(
     fs: &mut Filesystem<D>,
     options: &FsckOptions,
 ) -> Result<FsckReport> {
-    let mut report = FsckReport {
-        inodes_count: fs.superblock().inodes_count,
-        blocks_count: fs.superblock().blocks_count,
-        ..Default::default()
-    };
-
-    let mut state = ScanState::new(fs);
+    let mut report = FsckReport::default();
     let now = unix_now();
 
+    // e2fsck_check_ext3_journal and the replay come before anything else
+    // reads the metadata: the journal may hold newer copies of any of it.
+    let stop = journal_stage(fs, options, &mut report).await?;
+    report.inodes_count = fs.superblock().inodes_count;
+    report.blocks_count = fs.superblock().blocks_count;
+    if stop {
+        return Ok(report);
+    }
+
+    let mut state = ScanState::new(fs);
+
     pass0_superblock(fs, &mut report, &mut state).await?;
+    // release_orphan_inodes, which e2fsck runs at the end of its superblock
+    // checks — never on a read-only check, and not on geometry pass 0 could
+    // not trust.
+    let pass0_serious = report.problems.iter().any(|p| p.severity == Severity::Serious);
+    if options.writes() && !pass0_serious && orphan::has_orphans(fs.superblock()) {
+        orphan_stage(fs, &mut report, now).await?;
+    }
     if !options.force {
         match check_due(fs, &report, options, now).await? {
             Some(reason) => report.scope = CheckScope::Due(reason),
@@ -316,8 +383,9 @@ pub async fn check_opened<D: BlockDevice>(
     report.inodes_used = state.inodes_in_use.len() as u32;
     report.directories = state.directories.len() as u32;
 
-    // Passes 0 to 4 have written nothing yet, so this is the last point a
-    // preening check can stop and leave the filesystem as it was.
+    // Passes 0 to 4 have written nothing yet (the journal replay and orphan
+    // release before them are not repairs), so this is the last point a
+    // preening check can stop without having repaired anything.
     if options.preen && report.problems.iter().any(needs_a_person) {
         return preen_halt(fs, report).await;
     }
@@ -376,10 +444,180 @@ pub async fn check_opened<D: BlockDevice>(
     Ok(report)
 }
 
+/// The journal, before anything else: `e2fsck_check_ext3_journal`, then
+/// `e2fsck_run_ext3_journal` when it needs recovery. Returns whether the
+/// check must stop here.
+async fn journal_stage<D: BlockDevice>(
+    fs: &mut Filesystem<D>,
+    options: &FsckOptions,
+    report: &mut FsckReport,
+) -> Result<bool> {
+    let sb = fs.superblock().clone();
+    let recover = sb.feature_incompat.contains(IncompatFeatures::RECOVER);
+    let writes = options.writes();
+
+    if !sb.feature_compat.contains(CompatFeatures::HAS_JOURNAL) {
+        if recover {
+            // PR_0_JOURNAL_RECOVER_SET, which e2fsck -p fixes unasked.
+            report.push_fixed(
+                0,
+                "recover-flag-without-journal",
+                Severity::Fixable,
+                "superblock needs_recovery flag is set, but no journal is present".into(),
+                writes,
+            );
+            if writes {
+                fs.superblock_mut().feature_incompat.remove(IncompatFeatures::RECOVER);
+                fs.flush_superblock().await?;
+            }
+        }
+        return Ok(false);
+    }
+
+    let mut journal = match Journal::open(fs).await? {
+        Ok(j) => j,
+        Err(why) => {
+            if !recover {
+                // Nothing to replay, and the passes check the journal inode.
+                return Ok(false);
+            }
+            report.push(
+                0,
+                "journal-unreplayable",
+                Severity::Serious,
+                format!(
+                    "the journal needs recovery, and {why}; mount and unmount the \
+                     filesystem to let the kernel replay it, or run e2fsck"
+                ),
+            );
+            if !writes {
+                return Ok(false);
+            }
+            // Repairs made under an unreplayed journal are what the next
+            // mount's replay would undo, so none are made.
+            if options.preen {
+                *report = preen_halt(fs, core::mem::take(report)).await?;
+            }
+            return Ok(true);
+        }
+    };
+
+    let has_data = !journal.is_empty();
+    if !recover && has_data {
+        // PR_0_JOURNAL_RUN: "Journal has data, but recovery flag is clear.
+        // Run journal anyway?" — a question, so -p stops on it.
+        report.push_fixed(
+            0,
+            "journal-has-data",
+            Severity::Fixable,
+            "journal has data, but the needs_recovery flag is clear; journal replayed".into(),
+            options.repair && !options.preen,
+        );
+        if options.preen {
+            *report = preen_halt(fs, core::mem::take(report)).await?;
+            return Ok(true);
+        }
+        if !writes {
+            report.problems.last_mut().unwrap().message =
+                "journal has data, but the needs_recovery flag is clear".into();
+            return Ok(false);
+        }
+    }
+
+    if !recover && !has_data {
+        // s_errno says the kernel aborted the journal: the filesystem has
+        // errors, whatever its superblock says.
+        if journal.header.errno != 0 {
+            fs.superblock_mut().state |= state::ERROR_FS;
+            if writes {
+                journal.clear_errno(fs).await?;
+                fs.flush_superblock().await?;
+            }
+        }
+        return Ok(false);
+    }
+
+    if !writes {
+        report.push(
+            0,
+            "journal-recovery-skipped",
+            Severity::Info,
+            "skipping journal recovery because doing a read-only filesystem check".into(),
+        );
+        if journal.header.errno != 0 {
+            fs.superblock_mut().state |= state::ERROR_FS;
+        }
+        return Ok(false);
+    }
+
+    let recovery = recovery::recover(fs, &mut journal).await?;
+    // The superblock and descriptors are journalled like any other block.
+    fs.reload().await?;
+    let sb = fs.superblock_mut();
+    sb.feature_incompat.remove(IncompatFeatures::RECOVER);
+    if !recovery.errors.is_empty() {
+        // e2fsck_clear_recover(ctx, error): a full check is due.
+        sb.state &= !state::VALID_FS;
+    }
+    if recovery.errno != 0 {
+        sb.state |= state::ERROR_FS;
+    }
+    fs.flush_superblock().await?;
+    fs.device().flush().await?;
+
+    report.push_fixed(
+        0,
+        "journal-recovered",
+        Severity::Info,
+        format!(
+            "recovering journal: {} transactions, {} blocks replayed, {} revoked",
+            recovery.transaction_count(),
+            recovery.blocks_replayed,
+            recovery.revoke_hits
+        ),
+        true,
+    );
+    for error in recovery.errors {
+        report.push(0, "journal-recovery-error", Severity::Info, error);
+    }
+    Ok(false)
+}
+
+/// Release the orphans, and note each, as `e2fsck`'s `release_orphan_inodes`
+/// does. A release that stops part way leaves the filesystem not clean, so
+/// the full check runs.
+async fn orphan_stage<D: BlockDevice>(
+    fs: &mut Filesystem<D>,
+    report: &mut FsckReport,
+    now: u64,
+) -> Result<()> {
+    let released = orphan::release_orphans(fs, now as u32).await?;
+    for r in &released.released {
+        report.push_fixed(0, "orphan-released", Severity::Info, r.message(), true);
+    }
+    if released.skipped_for_errors {
+        report.push(
+            0,
+            "orphan-release-error",
+            Severity::Info,
+            "orphan list not processed: the filesystem records errors".into(),
+        );
+    }
+    if !released.errors.is_empty() {
+        for e in released.errors {
+            report.push(0, "orphan-release-error", Severity::Info, e);
+        }
+        fs.superblock_mut().state &= !state::VALID_FS;
+        fs.flush_superblock().await?;
+    }
+    Ok(())
+}
+
 /// What `e2fsck -p` repairs without asking: the problems `e2fsck`'s problem
 /// table flags `PR_PREEN_OK` that this checker repairs (`PR_4_BAD_REF_COUNT`,
 /// pass 5's bitmap differences and free counts).
 const PREEN_OK: &[&str] = &[
+    "recover-flag-without-journal",
     "link-count-wrong",
     "block-bitmap-differs",
     "inode-bitmap-differs",
@@ -508,9 +746,10 @@ async fn skip<D: BlockDevice>(
     options: &FsckOptions,
     now: u64,
 ) -> Result<FsckReport> {
-    // Pass 0 found nothing that forces a check; its notes go unreported, as
-    // e2fsck says nothing on this path but "clean".
-    report.problems.clear();
+    // Pass 0 found nothing that forces a check; its findings go unreported,
+    // as e2fsck says nothing on this path but "clean". What was done before
+    // the check — "recovering journal" — it has already printed.
+    report.problems.retain(Problem::is_note);
 
     // A kernel keeps the free counts in the group descriptors and lets the
     // superblock's drift. e2fsck brings them into line when it may write, for

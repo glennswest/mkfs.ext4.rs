@@ -93,6 +93,36 @@ impl<D: BlockDevice> Filesystem<D> {
         Ok(fs)
     }
 
+    /// Read the primary superblock and the group descriptors again, from the
+    /// device.
+    ///
+    /// For after something has rewritten them underneath this handle — a
+    /// journal replay does, since the superblock and descriptor blocks are
+    /// journalled metadata like any other. `e2fsck` closes and reopens the
+    /// filesystem at the same point.
+    pub async fn reload(&mut self) -> Result<()> {
+        let raw = self.read_superblock_raw().await?;
+        self.superblock = Superblock::decode(&raw)?;
+        self.csum_scheme = if self
+            .superblock
+            .feature_ro_compat
+            .contains(RoCompatFeatures::METADATA_CSUM)
+        {
+            GroupDescCsum::Crc32c
+        } else if self
+            .superblock
+            .feature_ro_compat
+            .contains(RoCompatFeatures::GDT_CSUM)
+        {
+            GroupDescCsum::Crc16
+        } else {
+            GroupDescCsum::None
+        };
+        self.csum_seed = self.superblock.csum_seed();
+        self.group_descs = self.read_group_descs().await?;
+        Ok(())
+    }
+
     /// Open using a superblock backup rather than the primary.
     ///
     /// What `e2fsck -b` does when the primary is unreadable.
