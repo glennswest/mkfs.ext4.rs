@@ -451,6 +451,17 @@ impl<D: BlockDevice> Filesystem<D> {
 
     /// Write the group descriptor table back, to the primary and every backup.
     pub async fn flush_group_descs(&self) -> Result<()> {
+        self.write_group_descs(false).await
+    }
+
+    /// Write the group descriptor table back to the primary copy only, as
+    /// `e2fsck` writes under `EXT2_FLAG_MASTER_SB_ONLY`: the backups are left
+    /// as they were, for a later full repair or `resize2fs` to refresh.
+    pub async fn flush_primary_group_descs(&self) -> Result<()> {
+        self.write_group_descs(true).await
+    }
+
+    async fn write_group_descs(&self, primary_only: bool) -> Result<()> {
         let sb = &self.superblock;
         let desc_size = sb.desc_size() as usize;
         let block_size = sb.block_size() as usize;
@@ -469,7 +480,7 @@ impl<D: BlockDevice> Filesystem<D> {
         }
 
         for group in 0..sb.group_count() {
-            if !self.group_has_super(group) {
+            if !self.group_has_super(group) || (primary_only && group > 0) {
                 continue;
             }
             let first = sb.first_data_block as u64 + group as u64 * sb.blocks_per_group as u64;

@@ -22,7 +22,9 @@
 //!
 //! Bitmaps, group descriptors and the superblock's free counts are updated as
 //! `ext2fs_block_alloc_stats2` and `ext2fs_inode_alloc_stats2` update them, so
-//! the check that follows finds them already right.
+//! the check that follows finds them already right. Only the primary
+//! descriptor table is written, as `e2fsck` (`EXT2_FLAG_MASTER_SB_ONLY`)
+//! writes it.
 //!
 //! When the superblock records errors the chain is not trusted, as in
 //! `e2fsck`: it is dropped unwalked, and the full check that the errors force
@@ -755,7 +757,8 @@ impl AllocStats {
             let at = desc.inode_bitmap;
             fs.write_block(at, bitmap).await?;
         }
-        fs.flush_group_descs().await
+        // Primary only, as e2fsck writes it here.
+        fs.flush_primary_group_descs().await
     }
 }
 

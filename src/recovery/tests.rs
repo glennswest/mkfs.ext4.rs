@@ -488,12 +488,13 @@ async fn fsck_reloads_a_superblock_the_journal_replays() {
     // A superblock block with a new label, as a kernel would have logged it.
     fs.superblock_mut().volume_name[..8].copy_from_slice(b"replayed");
     fs.flush_superblock().await.unwrap();
-    let block0 = fs.read_block(0).await.unwrap();
+    let sb_block = 1024 / fs.block_size() as u64;
+    let block0 = fs.read_block(sb_block).await.unwrap();
     fs.superblock_mut().volume_name = [0; 16];
     fs.flush_superblock().await.unwrap();
 
     let mut log = LogWriter::new(&fs, jbd2_incompat::CSUM_V3).await;
-    log.data(&fs, &[(0, block0)]).await;
+    log.data(&fs, &[(sb_block, block0)]).await;
     log.commit(&fs).await;
     log.finish(&mut fs, true).await;
     drop(fs);

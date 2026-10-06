@@ -52,8 +52,10 @@ async fn take(fs: &mut Filesystem<&MemDevice>, blocks: &[u64], inode: Option<u32
     let csum_on = fs.has_metadata_csum();
     let d = &mut fs.group_descs_mut()[0];
     d.free_blocks_count -= blocks.len() as u32;
-    if inode.is_some() {
+    if let Some(inum) = inode {
         d.free_inodes_count -= 1;
+        // The inode table is in use up to here now.
+        d.itable_unused = d.itable_unused.min(sb.inodes_per_group - inum);
     }
     if csum_on {
         d.block_bitmap_csum = csum::bitmap_csum(seed, &bb[..(sb.blocks_per_group as usize).div_ceil(8)]);
