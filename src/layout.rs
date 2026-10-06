@@ -1116,7 +1116,7 @@ mod tests {
 
         // An explicit ratio that stays under 2^32 is left alone.
         let g = Geometry::compute(256 * TIB, &params.clone().inode_ratio(1 << 20)).unwrap();
-        assert_eq!(g.inodes_count, (256 * TIB >> 20) as u32);
+        assert_eq!(g.inodes_count, ((256 * TIB) >> 20) as u32);
 
         // Every size between keeps a full inode table per group, and never
         // drops below what group 0 must hold.
