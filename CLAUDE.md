@@ -226,7 +226,6 @@ to point at, not an open-ended guess about feature flags.
       release commit (all suites, clippy `-D warnings`, `formatscale 256
       --check`: 20.6 MiB over stored, 0 problems). Tag pushed, #14 and #6
       closed; stormblock#300 / #289 told to move their pin.
-
 - [ ] Issue #11 (P2): fsck's pass-1 block map is a flat bitmap, one bit per
       block — 8 GiB at 256 TiB, 32 GiB at 1 PiB. `e2fsck` has used rbtree
       (extent) bitmaps by default since 1.42. **In progress.** Plan: replace
@@ -236,6 +235,12 @@ to point at, not an open-ended guess about feature flags.
       builds each group's expected bitmap from a range query. Measure at
       256 TiB with `formatscale 256 --check` (now prints the peak after the
       check). Output unchanged: the existing fsck tests and goldens.
+      **State 2026-10-06:** code 20e97d2 + 7c1e109 (`contains` test-only),
+      pushed. sc-build on 20e97d2: 197 lib tests and every suite pass;
+      on 7c1e109: clippy `-D warnings` on both feature sets, `fsck::` 24
+      tests. Remaining: the `formatscale 256 --check` / `1024 --check`
+      measurement — two sc-build attempts got no slot in an hour (exit 75).
+      Then README's #11 line gets the numbers and #11 is closed.
 
 ## Features
 
