@@ -242,6 +242,22 @@ to point at, not an open-ended guess about feature flags.
       measurement — two sc-build attempts got no slot in an hour (exit 75).
       Then README's #11 line gets the numbers and #11 is closed.
 
+- [ ] Issue #15 (P2): kernel verification in a throwaway VM through
+      `stormcentral testhost boot` (owner, 2026-10-06), not root anywhere.
+      **In progress.** Plan, after mkfs.xfs.rs#11's recipe (passed on
+      nanatest1): `tests/vm/build-image.sh OUT` (run by sc-build, out via
+      `SC_BUILD_OUT`) makes a GPT disk — ESP with the UEFI Shell, whose
+      `startup.nsh` starts dev's kernel with a busybox initramfs holding the
+      ext4/loop modules, e2fsprogs' `e2fsck` and our `mkfs-ext4` /
+      `fsck-ext4`. `tests/vm/init.sh` (PID 1) formats each case (ext2, ext3,
+      ext4 ± journal, 1 KiB blocks, 4 KiB sectors, mmp, meta_bg,
+      orphan_file, a large lazy one), `e2fsck -fn` and `fsck-ext4 -fn`,
+      loop-mounts rw, writes, unmounts, both checkers again, remounts and
+      reads back; prints `VERIFY PASS` / `VERIFY FAIL <why>`. Then
+      `testhost boot nanatest1 --image tmp/ext4-verify.img --expect
+      'VERIFY PASS' --fail 'VERIFY FAIL'` (the boot machine must list
+      `mkfs.ext4.rs`; ask the master if refused).
+
 ## Features
 
 | Feature | Default | What it brings |
