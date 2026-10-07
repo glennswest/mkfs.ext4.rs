@@ -257,6 +257,11 @@ to point at, not an open-ended guess about feature flags.
       `testhost boot nanatest1 --image tmp/ext4-verify.img --expect
       'VERIFY PASS' --fail 'VERIFY FAIL'` (the boot machine must list
       `mkfs.ext4.rs`; ask the master if refused).
+      **State 2026-10-07:** `tests/vm/` pushed (3050484). The image build
+      (`SC_BUILD_OUT=tmp/ext4-verify.img SC_BUILD_OUT_TO=tmp/ext4-verify.img
+      sc-build 'tests/vm/build-image.sh tmp/ext4-verify.img'`) has not run
+      yet: no build slot in an hour (exit 75, stormcentral#477). Next: build
+      it, boot it, fix what the kernel finds, docs, close #15.
 
 ## Features
 
