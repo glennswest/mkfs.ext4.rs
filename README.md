@@ -14,7 +14,7 @@ Not on crates.io; take it by git, pinned to a tag so builds are reproducible:
 
 ```toml
 [dependencies]
-mkfs-ext4 = { git = "https://github.com/glennswest/mkfs.ext4.rs", tag = "v4.1.0", default-features = false, features = ["std"] }
+mkfs-ext4 = { git = "https://github.com/glennswest/mkfs.ext4.rs", tag = "v4.1.1", default-features = false, features = ["std"] }
 ```
 
 | Feature | Default | What it brings |
@@ -52,7 +52,7 @@ let kernel = fs.read_file(&dev, "/vmlinuz")?;
 
 ### Command line
 
-`cargo install --git https://github.com/glennswest/mkfs.ext4.rs --tag v4.1.0`
+`cargo install --git https://github.com/glennswest/mkfs.ext4.rs --tag v4.1.1`
 builds `mkfs-ext4` and `fsck-ext4`. Rust does not allow a `.` in a binary name,
 so to have `mkfs -t ext4` / `fsck -t ext4` dispatch to them, install them as
 `mkfs.ext4` and `fsck.ext4`.

@@ -3,6 +3,14 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+## [v4.1.1] — 2026-10-07
+
+Two checker fixes; nothing in the API changes. `fsck`'s block map is held as
+runs (#11): a forced check of a fresh 256 TiB filesystem adds 256 MiB, not
+8 GiB, and 1 PiB can be checked. And `fsck` no longer reports a bad checksum
+on an htree directory root the kernel wrote (#15), found by the new kernel
+verification VM (`tests/vm/`).
+
 ### 2026-10-07
 - **fix:** `fsck` no longer reports a bad checksum on an htree directory's
   root block that the kernel wrote (#15). A directory block's checksum tail
