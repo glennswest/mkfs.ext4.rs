@@ -223,8 +223,10 @@ Two properties the C tools cannot offer a Rust storage engine:
   RSS less the metadata the device stores was 20 MiB at 256 TiB (it was
   17.6 GiB) and 71 MiB at 1 PiB, which now formats in 149 s. Most of the
   growth is the test device's own page index.
-  `fsck` does not do this yet: its block map is one bit per block, 8 GiB at
-  256 TiB ([#11](https://github.com/glennswest/mkfs.ext4.rs/issues/11)).
+  `fsck` holds its block map as runs of used blocks, as `e2fsck`'s rbtree
+  bitmaps do, not one bit per block (that was 8 GiB at 256 TiB), so it grows
+  with what is in use rather than with the device
+  ([#11](https://github.com/glennswest/mkfs.ext4.rs/issues/11)).
 - **Inode counts that fit 32 bits.** From 256 TiB the size class's inode
   ratio asks for 2^32 inodes or more. As with `mke2fs`, the request is capped
   at 2^32 − 1 (with `64bit`; refused without it) and inodes per group come
