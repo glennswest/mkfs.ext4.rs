@@ -203,8 +203,25 @@ pub fn set_block_csum(block: &mut [u8], csum: u32) {
 }
 
 /// Read the checksum from a directory block's tail, if it has one.
+///
+/// As e2fsprogs' `__get_dirent_tail` decides it: the entries' `rec_len`
+/// chain from the start of the block must land exactly on the tail. Looking
+/// only at the last twelve bytes is not enough — an htree root the kernel
+/// made from a leaf can keep a stale tail there, past its own `dx_tail`
+/// (#15), and its `..` entry runs to the end of the block, over it.
 pub fn block_csum(block: &[u8]) -> Option<u32> {
     let at = block.len().checked_sub(TAIL_LEN)?;
+    let mut off = 0usize;
+    while off < at {
+        let rec_len = get_u16(block, off + 4) as usize;
+        if rec_len < 8 || rec_len % 4 != 0 {
+            return None;
+        }
+        off += rec_len;
+    }
+    if off != at {
+        return None;
+    }
     if get_u32(block, at) == 0
         && get_u16(block, at + 4) == TAIL_LEN as u16
         && get_u16(block, at + 6) == NAME_LEN_CSUM
@@ -263,6 +280,22 @@ mod tests {
 
         set_block_csum(&mut block, 0xabcd_1234);
         assert_eq!(block_csum(&block), Some(0xabcd_1234));
+    }
+
+    /// An htree root's `..` runs to the end of the block, so a tail-shaped
+    /// twelve bytes at the end are not the block's tail (#15).
+    #[test]
+    fn a_tail_the_entry_chain_does_not_reach_is_not_a_tail() {
+        let entries = vec![
+            DirEntry::new(2, b".", file_type::DIR).unwrap(),
+            DirEntry::new(2, b"..", file_type::DIR).unwrap(),
+        ];
+        let mut block = build_block(&entries, 1024, true).unwrap();
+        set_block_csum(&mut block, 0xabcd_1234);
+        assert_eq!(block_csum(&block), Some(0xabcd_1234));
+        // Stretch ".." over the tail, as the kernel's dx root has it.
+        put_u16(&mut block, 12 + 4, 1024 - 12);
+        assert_eq!(block_csum(&block), None);
     }
 
     #[test]

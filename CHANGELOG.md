@@ -3,6 +3,21 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-10-07
+- **fix:** `fsck` no longer reports a bad checksum on an htree directory's
+  root block that the kernel wrote (#15). A directory block's checksum tail
+  is found the way e2fsprogs' `__get_dirent_tail` finds it — the entries'
+  `rec_len` chain must land on it — not by the shape of the last twelve
+  bytes, which an htree root can keep from the leaf it was made from. A
+  block without a leaf tail is then checked as an htree node against its
+  `dx_tail` (`ext2fs_dx_csum_verify`), which pass 2 did not check before.
+  Found by the new kernel verification VM: real `e2fsck -fn` was clean.
+- **test:** `tests/vm/` — the kernel verification image for `stormcentral
+  testhost boot` (#15): dev's kernel and a busybox initramfs with e2fsck and
+  our binaries; formats twelve configurations, checks each with `e2fsck -fn`
+  and `fsck-ext4 -fn`, loop-mounts read-write, writes, unmounts, checks
+  again, remounts and reads back. Prints `VERIFY PASS` / `VERIFY FAIL`.
+
 ### 2026-10-06
 - **perf:** `fsck`'s block map is held as runs of used blocks, not one bit
   per block of the device (#11). It was 8 GiB at 256 TiB and 32 GiB at

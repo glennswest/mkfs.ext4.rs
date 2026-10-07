@@ -444,20 +444,48 @@ pub fn stamp_csum(
     generation: u32,
     count_offset: usize,
 ) {
-    let limit = get_u16(block, count_offset) as usize;
-    let tail_at = count_offset + limit * ENTRY_LEN;
-    if tail_at + TAIL_LEN > block_size {
-        return;
+    if let Some((tail_at, crc)) = compute_csum(block, block_size, seed, inum, generation, count_offset) {
+        put_u32(block, tail_at + 4, crc);
     }
-    let used = count_offset + count(block, count_offset) as usize * ENTRY_LEN;
+}
+
+/// An index node's stored and computed checksums (`ext2fs_dx_csum_verify`),
+/// or `None` where the block has no room for a `dx_tail` or claims more
+/// entries than its limit.
+pub fn csum(
+    block: &[u8],
+    block_size: usize,
+    seed: u32,
+    inum: u32,
+    generation: u32,
+    count_offset: usize,
+) -> Option<(u32, u32)> {
+    let (tail_at, crc) = compute_csum(block, block_size, seed, inum, generation, count_offset)?;
+    Some((get_u32(block, tail_at + 4), crc))
+}
+
+fn compute_csum(
+    block: &[u8],
+    block_size: usize,
+    seed: u32,
+    inum: u32,
+    generation: u32,
+    count_offset: usize,
+) -> Option<(usize, u32)> {
+    let limit = get_u16(block, count_offset) as usize;
+    let entries = count(block, count_offset) as usize;
+    let tail_at = count_offset + limit * ENTRY_LEN;
+    if tail_at + TAIL_LEN > block_size || block.len() < block_size || entries > limit {
+        return None;
+    }
+    let used = count_offset + entries * ENTRY_LEN;
 
     let mut crc = crc32c(seed, &inum.to_le_bytes());
     crc = crc32c(crc, &generation.to_le_bytes());
     crc = crc32c(crc, &block[..used]);
     crc = crc32c(crc, &block[tail_at..tail_at + 4]);
     crc = crc32c(crc, &[0u8; 4]);
-
-    put_u32(block, tail_at + 4, crc);
+    Some((tail_at, crc))
 }
 
 #[cfg(test)]
@@ -640,6 +668,16 @@ mod tests {
             (0, 7),
             "the checksum was written over entry zero's block pointer"
         );
+
+        // What was stamped verifies, and a change to an entry in use does not.
+        let (stored, computed) = csum(&block, 1024, 0x1234, 12, 0, NODE_COUNT_OFFSET).unwrap();
+        assert_eq!(stored, computed);
+        set_entry(&mut block, NODE_COUNT_OFFSET, 0, 0, 8);
+        let (stored, computed) = csum(&block, 1024, 0x1234, 12, 0, NODE_COUNT_OFFSET).unwrap();
+        assert_ne!(stored, computed);
+        // A count past the limit is not an index node this can verify.
+        set_count(&mut block, NODE_COUNT_OFFSET, limit + 1);
+        assert_eq!(csum(&block, 1024, 0x1234, 12, 0, NODE_COUNT_OFFSET), None);
     }
 
     #[test]

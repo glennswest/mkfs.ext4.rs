@@ -91,6 +91,7 @@ use crate::fs::Filesystem;
 use crate::orphan;
 use crate::recovery::{self, Journal};
 use crate::structs::dirent::{self, file_type};
+use crate::structs::htree;
 use crate::structs::inode::{mode, Inode};
 use crate::structs::superblock::{ino, state, Superblock, SUPERBLOCK_LEN};
 
@@ -1246,12 +1247,24 @@ async fn pass2_directories<D: BlockDevice>(
                 }
             };
 
-            // A directory block's checksum, when the filesystem carries them.
+            // A directory block's checksum, when the filesystem carries them:
+            // a leaf's tail, else an htree node's dx_tail, in the order
+            // ext2fs_dir_block_csum_verify tries them.
             if fs.has_metadata_csum() {
-                if let Some(stored) = dirent::block_csum(&buf) {
-                    let limit = buf.len() - dirent::TAIL_LEN;
-                    let expect =
-                        csum::dirent_csum(fs.csum_seed(), dir_ino, dir.generation, &buf[..limit]);
+                let block_size = sb.block_size() as usize;
+                let sums = match dirent::block_csum(&buf) {
+                    Some(stored) => {
+                        let limit = buf.len() - dirent::TAIL_LEN;
+                        Some((
+                            stored,
+                            csum::dirent_csum(fs.csum_seed(), dir_ino, dir.generation, &buf[..limit]),
+                        ))
+                    }
+                    None => htree::count_offset(&buf, block_size).and_then(|at| {
+                        htree::csum(&buf, block_size, fs.csum_seed(), dir_ino, dir.generation, at)
+                    }),
+                };
+                if let Some((stored, expect)) = sums {
                     if stored != expect {
                         report.push(
                             2,
