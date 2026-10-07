@@ -227,7 +227,7 @@ to point at, not an open-ended guess about feature flags.
       release commit (all suites, clippy `-D warnings`, `formatscale 256
       --check`: 20.6 MiB over stored, 0 problems). Tag pushed, #14 and #6
       closed; stormblock#300 / #289 told to move their pin.
-- [ ] Issue #11 (P2): fsck's pass-1 block map is a flat bitmap, one bit per
+- [x] Issue #11 (P2): fsck's pass-1 block map is a flat bitmap, one bit per
       block — 8 GiB at 256 TiB, 32 GiB at 1 PiB. `e2fsck` has used rbtree
       (extent) bitmaps by default since 1.42. **In progress.** Plan: replace
       `Bitmap` with `BlockRuns`, a `BTreeMap<u64, u64>` of start → end that
@@ -242,6 +242,10 @@ to point at, not an open-ended guess about feature flags.
       tests. Remaining: the `formatscale 256 --check` / `1024 --check`
       measurement — two sc-build attempts got no slot in an hour (exit 75).
       Then README's #11 line gets the numbers and #11 is closed.
+      **Done 2026-10-07** (sc-build on 2386a84): `formatscale 256 --check`
+      0 problems, fsck 85 s, +255.8 MiB peak over the format (was 8 GiB of
+      bitmap); `1024 --check` 0 problems, 314 s, +1023.7 MiB (was 32 GiB).
+      What remains is mostly `Vec<GroupDesc>` (8.4 M groups at 1 PiB).
 
 - [x] Issue #15 (P2): kernel verification in a throwaway VM through
       `stormcentral testhost boot` (owner, 2026-10-06), not root anywhere.

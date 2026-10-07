@@ -20,6 +20,8 @@
 - **docs:** README "Status" and CLAUDE.md "Verified" describe the VM check
   and its commands; `tests/verify-on-linux.sh` (root on its host) is the
   older form.
+- **docs:** README gives #11's measurement: a forced check adds 256 MiB at
+  256 TiB and 1.0 GiB at 1 PiB (8 GiB and 32 GiB of bitmap before).
 
 ### 2026-10-06
 - **perf:** `fsck`'s block map is held as runs of used blocks, not one bit

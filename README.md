@@ -224,9 +224,12 @@ Two properties the C tools cannot offer a Rust storage engine:
   17.6 GiB) and 71 MiB at 1 PiB, which now formats in 149 s. Most of the
   growth is the test device's own page index.
   `fsck` holds its block map as runs of used blocks, as `e2fsck`'s rbtree
-  bitmaps do, not one bit per block (that was 8 GiB at 256 TiB), so it grows
-  with what is in use rather than with the device
-  ([#11](https://github.com/glennswest/mkfs.ext4.rs/issues/11)).
+  bitmaps do, not one bit per block, so it grows with what is in use rather
+  than with the device ([#11](https://github.com/glennswest/mkfs.ext4.rs/issues/11)).
+  `formatscale --check`: a forced check of the fresh filesystem adds 256 MiB
+  to the peak at 256 TiB (85 s; the bitmap alone was 8 GiB) and 1.0 GiB at
+  1 PiB (314 s; was 32 GiB), most of it the decoded descriptor table, which
+  `e2fsck` holds too.
 - **Inode counts that fit 32 bits.** From 256 TiB the size class's inode
   ratio asks for 2^32 inodes or more. As with `mke2fs`, the request is capped
   at 2^32 − 1 (with `64bit`; refused without it) and inodes per group come
