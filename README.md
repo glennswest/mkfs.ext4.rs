@@ -253,14 +253,35 @@ caught (36 slides):
 
 ## Status
 
-The formatter works and is verified against a real kernel. `tests/verify-on-linux.sh`
-builds images, ships them to a Linux host and runs each through
-`e2fsck -fn` -> loop mount read-write -> write -> unmount -> `e2fsck -fn`.
-All eight configurations pass: ext2, ext3 and ext4, with and without a journal,
-at 1 KiB and 4 KiB blocks, from 16 MiB to 1 GiB.
-The script loop-mounts, so it needs root on the Linux host it targets (by
-default `root@dev.g8.lo`; pass `user@host` to choose another). It is not part of
-`cargo test`. `cargo test` runs the golden (geometry and structural compare),
+The formatter works and is verified against a real kernel, in a throwaway VM
+and with no root anywhere (#15). `tests/vm/build-image.sh` (run by `sc-build`)
+makes a UEFI disk: the Shell starts the build box's kernel with a busybox
+initramfs holding real `e2fsck` and our `mkfs-ext4` / `fsck-ext4`.
+`stormcentral testhost boot` boots it in a fresh VM, watches the serial console
+and destroys the VM. Its init (`tests/vm/init.sh`) formats twelve
+configurations — ext2, ext3 and ext4, with and without a journal, 1 KiB and
+4 KiB blocks, 4 KiB sectors, `mmp`, `meta_bg`, `orphan_file`, 128-byte inodes,
+16 MiB to 64 GiB (lazy) — and runs each through:
+
+    e2fsck -fn + fsck-ext4 -fn -> loop mount rw -> write, mkdir, 300 files
+      (an htree), unlink, 4 MiB -> unmount -> e2fsck -fn + fsck-ext4 -fn
+      -> remount ro, read back
+
+It prints `VERIFY PASS` or `VERIFY FAIL <why>`:
+
+    SC_BUILD_OUT=tmp/ext4-verify.img SC_BUILD_OUT_TO=tmp/ext4-verify.img \
+      sc-build 'tests/vm/build-image.sh tmp/ext4-verify.img'
+    stormcentral testhost boot nanatest1 --image tmp/ext4-verify.img \
+      --expect 'VERIFY PASS' --fail 'VERIFY FAIL' --timeout 900 \
+      --url http://stormcentral.g8.lo
+
+Last run: `VERIFY PASS` on nanatest1 (run 660773170b), kernel 7.2.8, e2fsprogs
+1.47.3. The first run found a checker bug: `fsck-ext4` misread an htree root
+the kernel wrote (fixed in 69c45e4).
+The older `tests/verify-on-linux.sh` runs the same stages over ssh against a
+Linux host, but it loop-mounts there, so it needs root on that host. It is
+kept for a machine of your own and is not run here.
+`cargo test` runs the golden (geometry and structural compare),
 sector-size, journal-floor and strict-sector suites in `tests/` and needs no
 privilege. Where `debugfs` and `e2fsck` are installed it also runs
 `tests/journal_e2fsprogs.rs`: journals and orphans set up by `debugfs`,

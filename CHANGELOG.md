@@ -17,6 +17,9 @@
   our binaries; formats twelve configurations, checks each with `e2fsck -fn`
   and `fsck-ext4 -fn`, loop-mounts read-write, writes, unmounts, checks
   again, remounts and reads back. Prints `VERIFY PASS` / `VERIFY FAIL`.
+- **docs:** README "Status" and CLAUDE.md "Verified" describe the VM check
+  and its commands; `tests/verify-on-linux.sh` (root on its host) is the
+  older form.
 
 ### 2026-10-06
 - **perf:** `fsck`'s block map is held as runs of used blocks, not one bit

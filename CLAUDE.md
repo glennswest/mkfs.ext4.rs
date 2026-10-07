@@ -17,9 +17,10 @@ specific points where the two differ.
   `cli` feature also builds the `mkfs-ext4` / `fsck-ext4` binaries.
 - **Build/test:** `sc-build` (`cargo build && cargo test`). The golden,
   sector-size, journal-floor and strict-sector suites in `tests/` need no
-  privilege. `tests/verify-on-linux.sh` loop-mounts, so it needs root on its
-  target host (`root@dev.g8.lo` by default). A session does not run it: see the
-  root rule in `../CLAUDE.md`.
+  privilege. The real-kernel check is `tests/vm/` through `stormcentral
+  testhost boot` (see Verified). `tests/verify-on-linux.sh` loop-mounts, so it
+  needs root on its target host. A session does not run it: see the root rule
+  in `../CLAUDE.md`.
 
 ## Why this exists
 
@@ -242,9 +243,9 @@ to point at, not an open-ended guess about feature flags.
       measurement — two sc-build attempts got no slot in an hour (exit 75).
       Then README's #11 line gets the numbers and #11 is closed.
 
-- [ ] Issue #15 (P2): kernel verification in a throwaway VM through
+- [x] Issue #15 (P2): kernel verification in a throwaway VM through
       `stormcentral testhost boot` (owner, 2026-10-06), not root anywhere.
-      **In progress.** Plan, after mkfs.xfs.rs#11's recipe (passed on
+      Plan, after mkfs.xfs.rs#11's recipe (passed on
       nanatest1): `tests/vm/build-image.sh OUT` (run by sc-build, out via
       `SC_BUILD_OUT`) makes a GPT disk — ESP with the UEFI Shell, whose
       `startup.nsh` starts dev's kernel with a busybox initramfs holding the
@@ -262,6 +263,10 @@ to point at, not an open-ended guess about feature flags.
       sc-build 'tests/vm/build-image.sh tmp/ext4-verify.img'`) has not run
       yet: no build slot in an hour (exit 75, stormcentral#477). Next: build
       it, boot it, fix what the kernel finds, docs, close #15.
+      **Done 2026-10-07.** First boot (run d8b822d263): `fsck-ext4` called
+      the kernel's htree root a bad checksum (e2fsck clean). Fixed in
+      69c45e4: tail found by the rec_len chain, dx_tail checked. Second boot
+      (660773170b): `VERIFY PASS`, all twelve cases.
 
 ## Features
 
@@ -277,17 +282,27 @@ the `no_std` core, so a library consumer that wants the formatter asks for
 
 ## Verified
 
-`./tests/verify-on-linux.sh` builds images and puts them in front of a real
-Linux kernel on dev.g8.lo (Fedora 43, e2fsprogs 1.47.3). As of the formatter
-landing, all eight configurations pass every stage — ext2, ext3, ext4 with and
-without a journal, 1 KiB and 4 KiB blocks, 16 MiB to 1 GiB:
+`tests/vm/` puts our output in front of a real Linux kernel in a throwaway VM,
+through `stormcentral testhost boot` (#15, owner 2026-10-06), with no root
+anywhere. `build-image.sh` runs under `sc-build` and comes out through
+`SC_BUILD_OUT`. `init.sh` formats twelve configurations (ext2, ext3 and ext4
+± journal, 1 KiB blocks, 4 KiB sectors, mmp, meta_bg, orphan_file, 128-byte
+inodes, 16 MiB to 64 GiB lazy) and runs each through:
 
-    e2fsck -fn -> loop mount rw -> write -> mkdir -> 4 MiB write
-      -> unmount -> e2fsck -fn
+    e2fsck -fn + fsck-ext4 -fn -> loop mount rw -> write, mkdir, 300 files,
+      unlink, 4 MiB -> unmount -> e2fsck -fn + fsck-ext4 -fn -> remount, read back
 
-The second e2fsck is the one that counts. "Mounts read-write" and "is writable"
-are different claims (stormblock#39), and only a completed write proves the
-second.
+    SC_BUILD_OUT=tmp/ext4-verify.img SC_BUILD_OUT_TO=tmp/ext4-verify.img \
+      sc-build 'tests/vm/build-image.sh tmp/ext4-verify.img'
+    stormcentral testhost boot nanatest1 --image tmp/ext4-verify.img \
+      --expect 'VERIFY PASS' --fail 'VERIFY FAIL' --timeout 900 \
+      --url http://stormcentral.g8.lo
+
+The check after the kernel's write is the one that counts. "Mounts read-write"
+and "is writable" are different claims (stormblock#39), and only a completed
+write proves the second. Passed on nanatest1, run 660773170b (kernel 7.2.8,
+e2fsprogs 1.47.3, 69c45e4). `tests/verify-on-linux.sh` (ssh + root on its
+host) is the older form, and sessions do not run it.
 
 ## Conventions
 
