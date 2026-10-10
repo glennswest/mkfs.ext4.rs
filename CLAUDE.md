@@ -6,14 +6,18 @@ output by a comparison tool, with the e2fsprogs source consulted at the
 specific points where the two differ.
 
 - **Crate:** `mkfs-ext4` (lib `mkfs_ext4`)
-- **Version:** 4.1.1 — see `Cargo.toml` (single version location)
+- **Version:** 4.1.1 — see `Cargo.toml` (single version location). The
+  `chore(release): v4.1.1` commit (14d5af8) is on main but the `v4.1.1` tag
+  was never pushed (#20); the newest tag is `v4.1.0`.
 - **License:** MIT OR Apache-2.0
 - **Repo:** https://github.com/glennswest/mkfs.ext4.rs
 - **Directory:** `~/src/mkfs.ext4.rs` (the stormcentral session checkout). The
   crate covers ext2/ext3/ext4 from one code path, exactly as `mke2fs` does.
 - **Ships as:** a git dependency pinned to a release tag. It is not on
-  crates.io and has no container or golden. Consumers are stormblock (tag
-  `v3.0.0`, `default-features = false, features = ["std"]`) and fio-ext4. The
+  crates.io and has no container or golden. Consumers (2026-10-10): stormblock
+  (tag `v3.0.0`, `features = ["std"]`), stormuefi (`v3.0.0`, no_std `read`
+  path), fio-ext4 and stormcos `tools/fs-scale` (`v4.1.0`, `std`), and
+  stormblock-registry through fio-ext4's re-export. README lists them. The
   `cli` feature also builds the `mkfs-ext4` / `fsck-ext4` binaries.
 - **Build/test:** `sc-build` (`cargo build && cargo test`). The golden,
   sector-size, journal-floor and strict-sector suites in `tests/` need no
@@ -207,7 +211,7 @@ to point at, not an open-ended guess about feature flags.
 - [x] Issue #8 (P2): `fsck-ext4` takes only `-n -y -f -v`. `e2fsck`'s `-p`/`-a`,
       `-C` and the rest are clap usage errors that exit 2 ("corrected,
       reboot") instead of working or exiting 16. Against the owner's #6 rule
-      that e2fsck scripts must work unchanged. **In progress.** Plan:
+      that e2fsck scripts must work unchanged. Plan:
       clap errors exit 16 (`--help`/`-V` 0); `-p`/`-a` = new
       `FsckOptions::preen`: repair only what `e2fsck` flags `PR_PREEN_OK`
       (the link-count, bitmap and free-count repairs this checker makes),
@@ -229,7 +233,7 @@ to point at, not an open-ended guess about feature flags.
       closed; stormblock#300 / #289 told to move their pin.
 - [x] Issue #11 (P2): fsck's pass-1 block map is a flat bitmap, one bit per
       block — 8 GiB at 256 TiB, 32 GiB at 1 PiB. `e2fsck` has used rbtree
-      (extent) bitmaps by default since 1.42. **In progress.** Plan: replace
+      (extent) bitmaps by default since 1.42. Plan: replace
       `Bitmap` with `BlockRuns`, a `BTreeMap<u64, u64>` of start → end that
       merges on insert and reports the overlap (duplicate detection); pass 0
       claims inode tables and superblock/descriptor areas as ranges; pass 5
@@ -271,6 +275,10 @@ to point at, not an open-ended guess about feature flags.
       the kernel's htree root a bad checksum (e2fsck clean). Fixed in
       69c45e4: tail found by the rec_len chain, dx_tail checked. Second boot
       (660773170b): `VERIFY PASS`, all twelve cases.
+
+Open (2026-10-10): #20 (P1, tag v4.1.1), #22 and #23 (P2: zeroed_medium
+write volume per group; `sparse_super2` accepted but its layout ignored),
+#12, #13, #18, #21 (P3).
 
 ## Features
 

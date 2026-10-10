@@ -3,6 +3,15 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-10-10
+- **docs:** refreshed from the code since 2026-10-02. README's consumer list
+  names every consumer and the tag it pins — stormuefi (`v3.0.0`, no_std
+  `read` path), stormcos `tools/fs-scale` and fio-ext4 (`v4.1.0`),
+  stormblock (`v3.0.0`), stormblock-registry through fio-ext4 (#13). The
+  `-O` flag notes `sparse_super2` is not yet honoured (#23). A duplicated
+  line in the fsck section is gone. CLAUDE.md: consumers, the untagged
+  v4.1.1 (#20), the open issues, and two stale "in progress" marks (#8, #11).
+
 ## [v4.1.1] — 2026-10-07
 
 Two checker fixes; nothing in the API changes. `fsck`'s block map is held as

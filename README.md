@@ -61,7 +61,8 @@ so to have `mkfs -t ext4` / `fsck -t ext4` dispatch to them, install them as
   `ext4`), `-b` block size, `--sector-size`, `-I` inode size, `-N` inode
   count, `-i` bytes per inode, `-m` reserved percent (default 5), `-L` label,
   `-U` UUID, `-O` features in `mke2fs -O` syntax (`^feature` clears a
-  feature), `-g` blocks per group, `-G` flex_bg size, `-J` journal blocks (0
+  feature; `sparse_super2` is accepted but its layout is not yet honoured,
+  [#23](https://github.com/glennswest/mkfs.ext4.rs/issues/23)), `-g` blocks per group, `-G` flex_bg size, `-J` journal blocks (0
   means no journal), `--no-journal`, `--lazy-itable-init`, `--zeroed-medium`
   (the device already reads back as zeros, so the inode tables and journal
   body are not written), `--mkfs-time` for reproducible images,
@@ -94,7 +95,6 @@ so to have `mkfs -t ext4` / `fsck -t ext4` dispatch to them, install them as
   journal superblock this checker does not understand — is an error, and
   then nothing is written at all, since the kernel's replay at the next mount
   would undo any repair; mount and unmount it, or use `e2fsck`. A
-  repairing check records itself the way `e2fsck` does (`s_state`,
   repairing check records itself the way `e2fsck` does (`s_state`,
   `s_lastcheck`, `s_mnt_count`). `-t` prints the time taken. `-C fd` is
   accepted and ignored: this checker reports no progress.
@@ -299,12 +299,24 @@ See `CLAUDE.md` for the work plan and what is still outstanding.
 
 ## Consumers
 
+Each pins a release tag (as of 2026-10-10):
+
 - [`fio-ext4`](https://github.com/glennswest/fio.ext4.rs) — reads and writes
-  files inside the filesystems this crate creates, in userspace
+  files inside the filesystems this crate creates, in userspace. `v4.1.0`,
+  `features = ["std"]`.
 - [`stormblock`](https://github.com/glennswest/stormblock): filesystem
   templates ("mkfs once, clone forever"), formatted in place through the
-  `BlockDevice` seam. It depends on `v3.0.0` with `features = ["std"]`; moving to `v4.0.0`
-  brings the streaming formatter (#10, #14).
+  `BlockDevice` seam. `v3.0.0`, `features = ["std"]`; moving to `v4.1.1`
+  brings the streaming formatter (#10) and the run-length fsck map (#11).
+- [`stormuefi`](https://github.com/glennswest/stormuefi): the UEFI loader.
+  `v3.0.0` with `default-features = false` — the `no_std` core and the
+  synchronous `read` path (`BlockReader`, `Ext4`), which therefore has to stay
+  stable.
+- [`stormblock-registry`](https://github.com/glennswest/stormblock-registry):
+  image filesystems, through `fio-ext4`'s re-export rather than a direct
+  dependency.
+- stormcos `tools/fs-scale`: format and fsck measured at PB sizes on a sparse
+  in-memory device. `v4.1.0`, `features = ["std"]`.
 
 ## Licence
 
