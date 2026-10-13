@@ -276,6 +276,12 @@ to point at, not an open-ended guess about feature flags.
       69c45e4: tail found by the rec_len chain, dx_tail checked. Second boot
       (660773170b): `VERIFY PASS`, all twelve cases.
 
+- [ ] Issue #20 (P1): `v4.1.1` was never tagged. Plan, as #14 did for
+      v4.0.0: sc-build on the release commit 14d5af8 itself (a worktree at
+      that commit under `tmp/`) — build, tests, clippy `-D warnings` on both
+      feature sets, `formatscale 256 --check`; then tag `v4.1.1` on 14d5af8,
+      push the tag, check `cargo` resolves it, tell the pinned consumers.
+
 Open (2026-10-10): #20 (P1, tag v4.1.1), #22 and #23 (P2: zeroed_medium
 write volume per group; `sparse_super2` accepted but its layout ignored),
 #12, #13, #18, #21 (P3).
