@@ -3,6 +3,13 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-10-13
+- **chore:** tag `v4.1.1` pushed on the release commit 14d5af8 (#20); the
+  README's pin resolves. Verified there under sc-build first: build, every
+  suite, clippy `-D warnings` on both feature sets, `formatscale 256
+  --check`. Consumers pinned to older tags were told (stormblock#300,
+  fio.ext4.rs#15, stormcos#552).
+
 ### 2026-10-10
 - **docs:** refreshed from the code since 2026-10-02. README's consumer list
   names every consumer and the tag it pins — stormuefi (`v3.0.0`, no_std

@@ -6,9 +6,8 @@ output by a comparison tool, with the e2fsprogs source consulted at the
 specific points where the two differ.
 
 - **Crate:** `mkfs-ext4` (lib `mkfs_ext4`)
-- **Version:** 4.1.1 — see `Cargo.toml` (single version location). The
-  `chore(release): v4.1.1` commit (14d5af8) is on main but the `v4.1.1` tag
-  was never pushed (#20); the newest tag is `v4.1.0`.
+- **Version:** 4.1.1 — see `Cargo.toml` (single version location). Tag
+  `v4.1.1` is on the release commit 14d5af8 (pushed 2026-10-13, #20).
 - **License:** MIT OR Apache-2.0
 - **Repo:** https://github.com/glennswest/mkfs.ext4.rs
 - **Directory:** `~/src/mkfs.ext4.rs` (the stormcentral session checkout). The
@@ -276,13 +275,20 @@ to point at, not an open-ended guess about feature flags.
       69c45e4: tail found by the rec_len chain, dx_tail checked. Second boot
       (660773170b): `VERIFY PASS`, all twelve cases.
 
-- [ ] Issue #20 (P1): `v4.1.1` was never tagged. Plan, as #14 did for
+- [x] Issue #20 (P1): `v4.1.1` was never tagged. Plan, as #14 did for
       v4.0.0: sc-build on the release commit 14d5af8 itself (a worktree at
       that commit under `tmp/`) — build, tests, clippy `-D warnings` on both
       feature sets, `formatscale 256 --check`; then tag `v4.1.1` on 14d5af8,
       push the tag, check `cargo` resolves it, tell the pinned consumers.
+      **Done 2026-10-13.** sc-build on 14d5af8: build, 198 lib tests and
+      every suite, clippy `-D warnings` (default; and `--no-default-features`
+      on the lib — `--all-targets` there builds std-only tests, which filed
+      the false #26), `formatscale 256 --check` 0 problems, fsck +255.6 MiB.
+      Tag pushed; `ls-remote` resolves it to 14d5af8. Consumers told:
+      stormblock#300 / #289, fio.ext4.rs#15, stormcos#552. stormuefi pins
+      v3.0.0 for the no_std `read` path, which v4.1.1 does not touch.
 
-Open (2026-10-10): #20 (P1, tag v4.1.1), #22 and #23 (P2: zeroed_medium
+Open (2026-10-13): #22 and #23 (P2: zeroed_medium
 write volume per group; `sparse_super2` accepted but its layout ignored),
 #12, #13, #18, #21 (P3).
 
