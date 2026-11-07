@@ -487,7 +487,6 @@ impl<D: BlockDevice> Filesystem<D> {
     /// flush holds one block of them, not the table (512 MiB at 1 PiB).
     async fn write_group_descs(&self, primary_only: bool) -> Result<()> {
         let sb = &self.superblock;
-        let block_size = sb.block_size() as usize;
         let group_count = sb.group_count();
         let dpb = self.desc_per_block();
         let desc_blocks = group_count.div_ceil(dpb);

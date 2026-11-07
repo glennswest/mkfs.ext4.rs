@@ -18,6 +18,8 @@
   changes no byte (classic, meta_bg, `first_meta_bg` 1), a changed
   descriptor reaches all three copies, and `tests/meta_bg_e2fsprogs.rs`
   (16 and 64 GiB meta_bg, flushed, `e2fsck -fn` clean).
+- **fix:** an unused variable left by the #33 change (rustc warning,
+  clippy `-D warnings`).
 
 ## [v4.1.2] — 2026-11-07
 
