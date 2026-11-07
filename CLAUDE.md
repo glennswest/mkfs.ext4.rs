@@ -288,6 +288,19 @@ to point at, not an open-ended guess about feature flags.
       stormblock#300 / #289, fio.ext4.rs#15, stormcos#552. stormuefi pins
       v3.0.0 for the no_std `read` path, which v4.1.1 does not touch.
 
+- [ ] Issue #25 (P3): pass 1 does not count an inode's xattr block
+      (`i_file_acl`): false `i-blocks-wrong` per inode with spilled xattrs,
+      and the blocks reported free in pass 5 (e2fsck clean; stormblock#86,
+      stormblock#293). Plan, as `e2fsck`'s `check_ext_attr`: a non-zero
+      `file_acl` counts one block toward `i_blocks` for every inode that
+      points at it; the block is claimed once (shared blocks, `h_refcount`
+      > 1, as `mkfs.ext4 -d` writes them, are not `block-owned-twice`); on
+      the first reference check magic, `h_blocks == 1` and the metadata_csum
+      checksum; after pass 1, references seen vs `h_refcount`
+      (`PR_1_EXTATTR_REFCOUNT`). Tests: a shared block on two inodes checks
+      clean; bad magic, wrong refcount, missing count are found; and a
+      debugfs `ea_set` differential case (e2fsck -fn and ours both clean).
+
 Open (2026-10-13): #22 and #23 (P2: zeroed_medium
 write volume per group; `sparse_super2` accepted but its layout ignored),
 #12, #13, #18, #21 (P3).
