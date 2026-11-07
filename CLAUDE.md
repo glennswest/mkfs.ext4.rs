@@ -332,7 +332,7 @@ to point at, not an open-ended guess about feature flags.
 
 Open (2026-11-07): #32 and #29 and #23 (P2: fsck ignores the orphan file's
 blocks; a 4 KiB-block fs just past a 128 MiB group is refused; `sparse_super2`
-layout ignored), #35, #31, #30, #28, #27, #22, #21, #18, #12 (P3).
+layout ignored), #35, #30, #28, #27, #22, #21, #18, #12 (P3).
 
 ## Features
 
