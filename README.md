@@ -125,6 +125,15 @@ so to have `mkfs -t ext4` / `fsck -t ext4` dispatch to them, install them as
   spilled out of the inode (SELinux labels, ACLs) reported `i-blocks-wrong`
   and bitmap differences that `e2fsck` does not.
 
+  `Filesystem::flush_group_descs` (what fio-ext4's flush, orphan release and
+  repair write descriptors with) puts each descriptor block where
+  `ext2fs_flush2` does: the classic table after every superblock copy, and
+  under meta_bg each meta block group's block in that group's first, second
+  and last group. Before #33 (4.1.2 and earlier) it wrote the whole table
+  after every superblock copy under meta_bg too, over bitmaps and inode
+  tables: any meta_bg filesystem with more than one descriptor block — all
+  of them past ~192 TiB at 4 KiB blocks — was damaged by its first flush.
+
   The skip, preening and this command line arrived in 4.0.0 (a breaking
   change: `FsckReport` gains `scope` and `preen_halted`, `FsckOptions` gains
   `preen`). At tag `v3.0.0`, `-f` and `FsckOptions::force` are accepted but

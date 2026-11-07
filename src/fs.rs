@@ -280,28 +280,36 @@ impl<D: BlockDevice> Filesystem<D> {
             .feature_incompat
             .contains(IncompatFeatures::META_BG);
 
-        let mut raw = Vec::with_capacity(group_count as usize * desc_size);
-
-        if !meta_bg {
-            let gdt_block = if sb.block_size() == 1024 { 2 } else { 1 };
-            let blocks = (group_count as usize * desc_size)
-                .div_ceil(block_size) as u64;
-            raw.resize((blocks * block_size as u64) as usize, 0);
-            self.device
-                .read_at(self.block_offset(gdt_block), &mut raw)
-                .await?;
+        let desc_blocks = group_count.div_ceil(desc_per_block);
+        // `ext2fs_descriptor_block_loc2`: blocks below `first_meta_bg` (all of
+        // them without meta_bg) are the classic table after group 0's
+        // superblock; each later one lives in its own meta block group.
+        let old_desc_blocks = if meta_bg {
+            sb.first_meta_bg.min(desc_blocks)
         } else {
-            let meta_groups = group_count.div_ceil(desc_per_block);
-            for meta in 0..meta_groups {
-                // The block lives in the meta group's first group, after that
-                // group's superblock copy if it has one.
-                let leader = meta * desc_per_block;
-                let at = self.group_first_block_for(leader, sb)
-                    + self.group_has_super_for(leader, sb) as u64;
-                let mut block = vec![0u8; block_size];
-                self.device.read_at(self.block_offset(at), &mut block).await?;
-                raw.extend_from_slice(&block);
-            }
+            desc_blocks
+        };
+        let mut raw = vec![0u8; desc_blocks as usize * block_size];
+
+        if old_desc_blocks > 0 {
+            let gdt_block = sb.first_data_block as u64 + 1;
+            self.device
+                .read_at(
+                    self.block_offset(gdt_block),
+                    &mut raw[..old_desc_blocks as usize * block_size],
+                )
+                .await?;
+        }
+        for meta in old_desc_blocks..desc_blocks {
+            // The block lives in the meta group's first group, after that
+            // group's superblock copy if it has one.
+            let leader = meta * desc_per_block;
+            let at = self.group_first_block_for(leader, sb)
+                + self.group_has_super_for(leader, sb) as u64;
+            let start = meta as usize * block_size;
+            self.device
+                .read_at(self.block_offset(at), &mut raw[start..start + block_size])
+                .await?;
         }
 
         Ok((0..group_count as usize)
@@ -461,16 +469,78 @@ impl<D: BlockDevice> Filesystem<D> {
         self.write_group_descs(true).await
     }
 
+    /// Write the descriptor table where [`Self::read_group_descs`] reads it,
+    /// as `ext2fs_flush2` does (`ext2fs_super_and_bgd_loc2` for the places):
+    ///
+    /// - the classic table — every block without meta_bg, the blocks below
+    ///   `first_meta_bg` with it — after the superblock of each group that
+    ///   has one and whose meta block group is below `first_meta_bg`; with
+    ///   `primary_only`, group 0's alone;
+    /// - under meta_bg, each later block to the first, second and last group
+    ///   of its own meta block group, after that group's superblock copy.
+    ///   `ext2fs_flush2` writes these three under `EXT2_FLAG_MASTER_SB_ONLY`
+    ///   too, so `primary_only` does not narrow them.
+    ///
+    /// Writing the whole table after every backup superblock under meta_bg
+    /// put every block past the first over the group's bitmaps and inode
+    /// table (#33). Meta block groups' blocks are encoded one at a time, so a
+    /// flush holds one block of them, not the table (512 MiB at 1 PiB).
     async fn write_group_descs(&self, primary_only: bool) -> Result<()> {
         let sb = &self.superblock;
-        let desc_size = sb.desc_size() as usize;
         let block_size = sb.block_size() as usize;
-        let desc_blocks = sb.gdt_blocks() as usize;
+        let group_count = sb.group_count();
+        let dpb = self.desc_per_block();
+        let desc_blocks = group_count.div_ceil(dpb);
+        let meta_bg = self.meta_bg();
+        let old_desc_blocks = if meta_bg {
+            sb.first_meta_bg.min(desc_blocks)
+        } else {
+            desc_blocks
+        };
 
-        let mut raw = vec![0u8; desc_blocks * block_size];
-        for (g, desc) in self.group_descs.iter().enumerate() {
-            desc.encode_with_csum(
-                &mut raw[g * desc_size..],
+        if old_desc_blocks > 0 {
+            let raw = self.encode_desc_blocks(0, old_desc_blocks);
+            for group in 0..group_count {
+                if primary_only && group > 0 {
+                    break;
+                }
+                if meta_bg && group / dpb >= sb.first_meta_bg {
+                    break;
+                }
+                if !self.group_has_super(group) {
+                    continue;
+                }
+                let at = self.group_first_block(group) + 1;
+                self.device.write_at(self.block_offset(at), &raw).await?;
+            }
+        }
+
+        for meta in old_desc_blocks..desc_blocks {
+            let raw = self.encode_desc_blocks(meta, 1);
+            let base = meta * dpb;
+            for group in [base, base + 1, base + dpb - 1] {
+                if group >= group_count {
+                    continue;
+                }
+                let at = self.group_first_block(group) + self.group_has_super(group) as u64;
+                self.device.write_at(self.block_offset(at), &raw).await?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Descriptor blocks `first..first + count`, encoded with their
+    /// checksums, the tail of the last one zero.
+    fn encode_desc_blocks(&self, first: u32, count: u32) -> Vec<u8> {
+        let sb = &self.superblock;
+        let desc_size = sb.desc_size() as usize;
+        let dpb = self.desc_per_block() as usize;
+        let mut raw = vec![0u8; count as usize * sb.block_size() as usize];
+        let start = first as usize * dpb;
+        let end = ((first + count) as usize * dpb).min(self.group_descs.len());
+        for g in start..end {
+            self.group_descs[g].encode_with_csum(
+                &mut raw[(g - start) * desc_size..],
                 desc_size,
                 self.csum_scheme,
                 self.csum_seed,
@@ -478,17 +548,7 @@ impl<D: BlockDevice> Filesystem<D> {
                 g as u32,
             );
         }
-
-        for group in 0..sb.group_count() {
-            if !self.group_has_super(group) || (primary_only && group > 0) {
-                continue;
-            }
-            let first = sb.first_data_block as u64 + group as u64 * sb.blocks_per_group as u64;
-            self.device
-                .write_at(self.block_offset(first + 1), &raw)
-                .await?;
-        }
-        Ok(())
+        raw
     }
 
     /// Whether descriptors are distributed per meta block group.
@@ -1333,5 +1393,96 @@ mod tests {
         let fs = Filesystem::open_with_backup(dev, backup_block).await.unwrap();
         assert_eq!(fs.superblock().blocks_count, 65536);
         assert_eq!(fs.superblock().block_group_nr, 1);
+    }
+
+    /// The whole device, for before-and-after comparisons.
+    async fn image(dev: &MemDevice) -> Vec<u8> {
+        let mut all = vec![0u8; dev.size() as usize];
+        dev.read_at(0, &mut all).await.unwrap();
+        all
+    }
+
+    /// 1 KiB blocks, so a small device has many groups: 8 MiB per group and,
+    /// with 64-byte descriptors, 16 groups per descriptor block.
+    async fn small_groups(features: &str, first_meta_bg: Option<u32>, size: u64) -> MemDevice {
+        let dev = MemDevice::new(size);
+        let mut params = Params::new(Profile::Ext4)
+            .block_size(1024)
+            .no_journal()
+            .features(features)
+            .uuid(*b"0123456789abcdef")
+            .mkfs_time(1_700_000_000);
+        params.first_meta_bg = first_meta_bg;
+        format(&dev, &params).await.unwrap();
+        dev
+    }
+
+    /// #33: a descriptor flush straight after a format rewrites what the
+    /// format wrote and touches nothing else, under every layout. Before the
+    /// fix, under meta_bg every superblock group took the whole table at
+    /// `first + 1`, over its bitmaps and inode table.
+    #[tokio::test]
+    async fn a_descriptor_flush_after_a_format_changes_nothing() {
+        let cases: [(&str, &str, Option<u32>); 3] = [
+            ("classic", "^meta_bg", None),
+            ("meta_bg", "meta_bg", None),
+            ("meta_bg, first_meta_bg 1", "meta_bg", Some(1)),
+        ];
+        for (name, features, first_meta_bg) in cases {
+            let dev = small_groups(features, first_meta_bg, 256 * MIB).await;
+            let before = image(&dev).await;
+            let fs = Filesystem::open(&dev).await.unwrap();
+            assert_eq!(fs.meta_bg(), features == "meta_bg", "{name}");
+            assert!(fs.superblock().gdt_blocks() > 1, "{name}: needs several descriptor blocks");
+            fs.flush_group_descs().await.unwrap();
+            fs.flush_primary_group_descs().await.unwrap();
+            let after = image(&dev).await;
+            let differ: Vec<usize> = before
+                .chunks(1024)
+                .zip(after.chunks(1024))
+                .enumerate()
+                .filter(|(_, (a, b))| a != b)
+                .map(|(i, _)| i)
+                .take(8)
+                .collect();
+            assert!(differ.is_empty(), "{name}: the flush changed blocks {differ:?}");
+        }
+    }
+
+    /// A changed descriptor reaches every copy of its block, and the
+    /// filesystem still checks clean after the flush.
+    #[tokio::test]
+    async fn a_changed_descriptor_reaches_every_copy_under_meta_bg() {
+        let dev = small_groups("meta_bg", None, 512 * MIB).await;
+        let mut fs = Filesystem::open(&dev).await.unwrap();
+        let dpb = fs.desc_per_block();
+        let groups = fs.group_count();
+        assert!(groups >= 3 * dpb, "three meta block groups at least");
+
+        // An unused flag bit set in one descriptor of meta block group 2,
+        // undone again before the filesystem is checked.
+        let g = 2 * dpb + 3;
+        let real = fs.group_descs()[g as usize];
+        fs.group_descs_mut()[g as usize].flags ^= 0x8000;
+        fs.flush_group_descs().await.unwrap();
+
+        let base = 2 * dpb;
+        for holder in [base, base + 1, base + dpb - 1] {
+            let at = fs.group_first_block(holder) + fs.group_has_super(holder) as u64;
+            let block = fs.read_block(at).await.unwrap();
+            let size = fs.superblock().desc_size() as usize;
+            let desc = GroupDesc::decode(&block[3 * size..], size);
+            assert_eq!(desc.flags, real.flags ^ 0x8000, "copy in group {holder}");
+        }
+        let reopened = Filesystem::open(&dev).await.unwrap();
+        assert_eq!(reopened.group_descs()[g as usize].flags, real.flags ^ 0x8000);
+
+        fs.group_descs_mut()[g as usize] = real;
+        fs.flush_group_descs().await.unwrap();
+        drop(fs);
+        let report = crate::fsck::check(&dev, &crate::fsck::FsckOptions::check_only().force(true))
+            .await
+            .unwrap();
+        assert!(report.is_clean(), "{:?}", report.problems);
     }
 }

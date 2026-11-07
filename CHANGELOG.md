@@ -3,6 +3,22 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-07
+- **fix:** `Filesystem::flush_group_descs` / `flush_primary_group_descs`
+  write the descriptor table where meta_bg puts it (#33, stormblock#512).
+  They wrote the whole table after every backup superblock, so under
+  meta_bg (automatic past ~192 TiB at 4 KiB blocks, or `-O meta_bg` with
+  more than one descriptor block) the first flush overwrote bitmaps and
+  inode tables: fio-ext4's `Volume::flush`, orphan release and fsck repair
+  all went through it. Now as `ext2fs_flush2`: the classic blocks (below
+  `first_meta_bg`) after each superblock copy, each meta block group's
+  block to its first, second and last group. Reading honours
+  `first_meta_bg` the same way. Meta block groups' blocks are encoded one
+  at a time instead of a whole-table buffer. Tests: a flush after a format
+  changes no byte (classic, meta_bg, `first_meta_bg` 1), a changed
+  descriptor reaches all three copies, and `tests/meta_bg_e2fsprogs.rs`
+  (16 and 64 GiB meta_bg, flushed, `e2fsck -fn` clean).
+
 ## [v4.1.2] — 2026-11-07
 
 ### Fixed
