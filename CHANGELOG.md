@@ -3,7 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
-### 2026-11-07
+## [v4.1.2] — 2026-11-07
+
+### Fixed
 - **fix:** fsck pass 1 counts an inode's extended-attribute block
   (`i_file_acl`) toward its `i_blocks` and marks it in use, once per block
   however many inodes share it (#25; stormblock#86, stormblock#293). Inodes

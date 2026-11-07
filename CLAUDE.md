@@ -6,8 +6,8 @@ output by a comparison tool, with the e2fsprogs source consulted at the
 specific points where the two differ.
 
 - **Crate:** `mkfs-ext4` (lib `mkfs_ext4`)
-- **Version:** 4.1.1 — see `Cargo.toml` (single version location). Tag
-  `v4.1.1` is on the release commit 14d5af8 (pushed 2026-10-13, #20).
+- **Version:** 4.1.2 — see `Cargo.toml` (single version location). Tag
+  `v4.1.2` is the #25 fix (2026-11-07); `v4.1.1` is on 14d5af8 (#20).
 - **License:** MIT OR Apache-2.0
 - **Repo:** https://github.com/glennswest/mkfs.ext4.rs
 - **Directory:** `~/src/mkfs.ext4.rs` (the stormcentral session checkout). The
