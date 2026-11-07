@@ -424,6 +424,18 @@ pub fn stamp_block_csum(block: &mut [u8], seed: u32, block_number: u64) {
     put_u32(block, block_off::H_CHECKSUM, crc);
 }
 
+/// Whether an attribute block's checksum matches: the check
+/// `ext2fs_ext_attr_block_csum_verify` makes, over [`stamp_block_csum`]'s sum.
+pub fn verify_block_csum(block: &[u8], seed: u32, block_number: u64) -> bool {
+    if block.len() < BLOCK_HEADER_LEN {
+        return false;
+    }
+    let stored = get_u32(block, block_off::H_CHECKSUM);
+    let mut copy = block.to_vec();
+    stamp_block_csum(&mut copy, seed, block_number);
+    get_u32(&copy, block_off::H_CHECKSUM) == stored
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

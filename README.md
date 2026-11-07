@@ -115,6 +115,16 @@ so to have `mkfs -t ext4` / `fsck -t ext4` dispatch to them, install them as
   The replay and the orphans are in `FsckReport::notes()`; `recovery` and
   `orphan` are public modules for a caller that wants either on its own.
 
+  Pass 1 accounts for each inode's extended-attribute block (`i_file_acl`)
+  as `e2fsck`'s `check_ext_attr` does: it counts in the `i_blocks` of every
+  inode that points at it, is in use once however many inodes share it
+  (`h_refcount`, as `mkfs.ext4 -d` shares identical attribute sets), and is
+  checked for its magic, `h_blocks` and checksum; a reference count that
+  disagrees with the inodes found is reported. Before #25 (4.1.1 and
+  earlier) the block was not counted, so any filesystem with attributes
+  spilled out of the inode (SELinux labels, ACLs) reported `i-blocks-wrong`
+  and bitmap differences that `e2fsck` does not.
+
   The skip, preening and this command line arrived in 4.0.0 (a breaking
   change: `FsckReport` gains `scope` and `preen_halted`, `FsckOptions` gains
   `preen`). At tag `v3.0.0`, `-f` and `FsckOptions::force` are accepted but

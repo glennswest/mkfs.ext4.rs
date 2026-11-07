@@ -3,6 +3,19 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-07
+- **fix:** fsck pass 1 counts an inode's extended-attribute block
+  (`i_file_acl`) toward its `i_blocks` and marks it in use, once per block
+  however many inodes share it (#25; stormblock#86, stormblock#293). Inodes
+  with SELinux labels or ACLs spilled into a block no longer report
+  `i-blocks-wrong`, nor pass 5 the blocks as free; `e2fsck` found those
+  images clean. The block is checked as `e2fsck`'s `check_ext_attr` does
+  (new findings `xattr-block-bad`, `xattr-block-csum`,
+  `xattr-block-out-of-range`, `xattr-refcount-wrong`). Tests: a shared
+  block, an uncounted one, wrong refcounts, a bad block; and
+  `tests/xattr_e2fsprogs.rs`, attributes written by `debugfs ea_set` that
+  real `e2fsck -fn` and this checker both find clean.
+
 ### 2026-10-13
 - **chore:** tag `v4.1.1` pushed on the release commit 14d5af8 (#20); the
   README's pin resolves. Verified there under sc-build first: build, every

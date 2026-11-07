@@ -83,6 +83,7 @@ use alloc::{string::String, vec::Vec};
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+use crate::bytes::get_u32;
 use crate::csum::{self, GroupDescCsum};
 use crate::features::{CompatFeatures, IncompatFeatures, RoCompatFeatures};
 use crate::device::BlockDevice;
@@ -94,6 +95,7 @@ use crate::structs::dirent::{self, file_type};
 use crate::structs::htree;
 use crate::structs::inode::{mode, Inode};
 use crate::structs::superblock::{ino, state, Superblock, SUPERBLOCK_LEN};
+use crate::structs::xattr;
 
 /// How to run the check.
 #[derive(Debug, Clone, Default)]
@@ -859,6 +861,10 @@ struct ScanState {
     parents: BTreeMap<u32, u32>,
     /// Which directories contain which subdirectories.
     children: BTreeMap<u32, Vec<u32>>,
+    /// Extended-attribute blocks (`i_file_acl`) seen so far: one block may be
+    /// shared by many inodes, so each is claimed once and its references
+    /// counted against `h_refcount` after pass 1.
+    xattr_blocks: BTreeMap<u64, XattrRefs>,
     /// Blocks metadata owns, per group, so pass 5 can rebuild bitmaps.
     inodes_per_group: u32,
     first_ino: u32,
@@ -874,6 +880,7 @@ impl ScanState {
             observed_links: BTreeMap::new(),
             parents: BTreeMap::new(),
             children: BTreeMap::new(),
+            xattr_blocks: BTreeMap::new(),
             inodes_per_group: fs.superblock().inodes_per_group,
             first_ino: fs.superblock().first_ino,
         }
@@ -890,6 +897,85 @@ impl ScanState {
             self.duplicates.extend(s..e);
         }
     }
+}
+
+/// One extended-attribute block's references, as `e2fsck`'s `ea_refcount`.
+struct XattrRefs {
+    /// `h_refcount` on disk, or `None` when the block was not a valid one
+    /// (already reported, so its count is not argued with as well).
+    on_disk: Option<u32>,
+    /// Inodes found pointing at it.
+    seen: u32,
+}
+
+/// Account for an inode's extended-attribute block, `e2fsck`'s
+/// `check_ext_attr`: `Ok(true)` when the inode owns a block that counts toward
+/// its `i_blocks`.
+///
+/// The block is claimed once however many inodes share it (`h_refcount` > 1,
+/// which `mkfs.ext4 -d` writes for inodes with identical attributes), so a
+/// shared block is not a block owned twice; each sharer still counts it in
+/// its own `i_blocks`. The block itself is checked on its first reference:
+/// magic, `h_blocks == 1`, and the metadata_csum checksum.
+async fn pass1_xattr_block<D: BlockDevice>(
+    fs: &Filesystem<D>,
+    report: &mut FsckReport,
+    state: &mut ScanState,
+    inum: u32,
+    block: u64,
+) -> Result<bool> {
+    if block == 0 {
+        return Ok(false);
+    }
+    let sb = fs.superblock();
+    if block < sb.first_data_block as u64 || block >= sb.blocks_count {
+        report.push(
+            1,
+            "xattr-block-out-of-range",
+            Severity::Serious,
+            format!("inode {inum} extended attribute block {block} is outside the filesystem"),
+        );
+        return Ok(false);
+    }
+    if let Some(refs) = state.xattr_blocks.get_mut(&block) {
+        refs.seen += 1;
+        return Ok(true);
+    }
+
+    let buf = fs.read_block(block).await?;
+    let magic = get_u32(&buf, xattr::block_off::H_MAGIC);
+    let h_blocks = get_u32(&buf, xattr::block_off::H_BLOCKS);
+    let mut valid = true;
+    if magic != xattr::XATTR_MAGIC || h_blocks != 1 {
+        report.push(
+            1,
+            "xattr-block-bad",
+            Severity::Serious,
+            format!(
+                "inode {inum} extended attribute block {block} is not one \
+                 (magic {magic:#010x}, h_blocks {h_blocks})"
+            ),
+        );
+        valid = false;
+    } else if fs.has_metadata_csum()
+        && !xattr::verify_block_csum(&buf, fs.csum_seed(), block)
+    {
+        report.push(
+            1,
+            "xattr-block-csum",
+            Severity::Serious,
+            format!("inode {inum} extended attribute block {block} checksum does not match its contents"),
+        );
+    }
+    state.claim(block);
+    state.xattr_blocks.insert(
+        block,
+        XattrRefs {
+            on_disk: valid.then(|| get_u32(&buf, xattr::block_off::H_REFCOUNT)),
+            seen: 1,
+        },
+    );
+    Ok(true)
 }
 
 /// Pass 0 — the superblock and the group descriptors.
@@ -1150,6 +1236,16 @@ async fn pass1_inodes<D: BlockDevice>(
                 continue;
             }
 
+            // `ext2fs_file_acl_block`: the high half counts only under 64bit.
+            let file_acl = if sb.feature_incompat.contains(IncompatFeatures::SIXTY_FOUR_BIT) {
+                inode.file_acl
+            } else {
+                inode.file_acl & 0xffff_ffff
+            };
+            if pass1_xattr_block(fs, report, state, inum, file_acl).await? {
+                counted += 1;
+            }
+
             for block in bad.iter().take(4) {
                 report.push(
                     1,
@@ -1196,6 +1292,22 @@ async fn pass1_inodes<D: BlockDevice>(
                     );
                 }
             }
+        }
+    }
+
+    // Every reference to a shared attribute block found, against the count
+    // the block keeps (`PR_1_EXTATTR_REFCOUNT`).
+    for (block, refs) in &state.xattr_blocks {
+        if let Some(on_disk) = refs.on_disk.filter(|&r| r != refs.seen) {
+            report.push(
+                1,
+                "xattr-refcount-wrong",
+                Severity::Fixable,
+                format!(
+                    "extended attribute block {block} has reference count {on_disk}, should be {}",
+                    refs.seen
+                ),
+            );
         }
     }
 
@@ -1928,6 +2040,130 @@ mod tests {
 
         let report = check(&dev, &FsckOptions::check_only().force(true)).await.unwrap();
         assert!(report.is_clean(), "{}", describe(&report));
+    }
+
+    /// Give root and lost+found one extended-attribute block between them, as
+    /// `mkfs.ext4 -d` shares a block between inodes with identical
+    /// attributes: the block is marked in use once, and each inode counts it
+    /// in its own `i_blocks` (#25). `edit` may spoil the block or the inodes
+    /// before they are written. Returns the block.
+    async fn share_an_xattr_block(
+        dev: &MemDevice,
+        refcount: u32,
+        edit: impl FnOnce(&mut Vec<u8>, &mut Inode, &mut Inode),
+    ) -> u64 {
+        let mut fs = Filesystem::open(dev).await.unwrap();
+        let sectors = fs.block_size() as u64 / 512;
+
+        // The highest free block in group 0.
+        let mut bitmap = fs.read_block_bitmap(0).await.unwrap();
+        let first = fs.group_first_block(0);
+        let index = (0..fs.group_block_count(0) as u64)
+            .rev()
+            .find(|&i| !Filesystem::<&MemDevice>::test_bit(&bitmap, i))
+            .expect("a free block in group 0");
+        let block = first + index;
+
+        let mut buf = xattr::write_block_xattrs(
+            fs.block_size() as usize,
+            &[
+                xattr::Xattr::new("security.selinux", vec![b's'; 300]),
+                xattr::Xattr::new("system.posix_acl_access", vec![2u8; 200]),
+            ],
+        )
+        .unwrap();
+        crate::bytes::put_u32(&mut buf, xattr::block_off::H_REFCOUNT, refcount);
+        if fs.has_metadata_csum() {
+            xattr::stamp_block_csum(&mut buf, fs.csum_seed(), block);
+        }
+
+        let mut root = fs.read_inode(ino::ROOT).await.unwrap();
+        let mut lost = fs.read_inode(ino::ROOT + 9).await.unwrap();
+        for inode in [&mut root, &mut lost] {
+            inode.file_acl = block;
+            inode.blocks += sectors;
+        }
+        edit(&mut buf, &mut root, &mut lost);
+        fs.write_block(block, &buf).await.unwrap();
+        fs.write_inode(ino::ROOT, &root).await.unwrap();
+        fs.write_inode(ino::ROOT + 9, &lost).await.unwrap();
+
+        Filesystem::<&MemDevice>::set_bit(&mut bitmap, index, true);
+        let mut desc = fs.group_descs()[0];
+        fs.write_block(desc.block_bitmap, &bitmap).await.unwrap();
+        fs.stamp_bitmap_csum(&mut desc, &bitmap, true);
+        desc.free_blocks_count -= 1;
+        fs.group_descs_mut()[0] = desc;
+        fs.flush_group_descs().await.unwrap();
+        fs.superblock_mut().free_blocks_count -= 1;
+        fs.flush_superblock().await.unwrap();
+        block
+    }
+
+    fn codes(report: &FsckReport) -> Vec<&'static str> {
+        report.problems.iter().map(|p| p.code).collect()
+    }
+
+    /// #25: inodes whose attributes spill into a block of their own own that
+    /// block. Counted in each sharer's `i_blocks`, in use once in the bitmap.
+    #[tokio::test]
+    async fn a_shared_xattr_block_is_counted_and_in_use_once() {
+        for profile in [Profile::Ext2, Profile::Ext4] {
+            let dev = formatted(profile, 16 * MIB).await;
+            let before = check(&dev, &FsckOptions::check_only().force(true)).await.unwrap();
+            share_an_xattr_block(&dev, 2, |_, _, _| {}).await;
+            let report = check(&dev, &FsckOptions::check_only().force(true)).await.unwrap();
+            assert!(report.is_clean(), "{}:\n{}", profile.name(), describe(&report));
+            assert_eq!(report.blocks_used, before.blocks_used + 1);
+        }
+    }
+
+    /// An inode that does not count its attribute block is `i-blocks-wrong`.
+    #[tokio::test]
+    async fn an_uncounted_xattr_block_is_i_blocks_wrong() {
+        let dev = formatted(Profile::Ext4, 16 * MIB).await;
+        share_an_xattr_block(&dev, 2, |_, root, _| root.blocks -= 2).await;
+        let report = check(&dev, &FsckOptions::check_only().force(true)).await.unwrap();
+        assert_eq!(codes(&report), ["i-blocks-wrong"], "{}", describe(&report));
+    }
+
+    /// A reference count that disagrees with the inodes found pointing at the
+    /// block is `PR_1_EXTATTR_REFCOUNT`.
+    #[tokio::test]
+    async fn a_wrong_xattr_refcount_is_found() {
+        for refcount in [1, 3] {
+            let dev = formatted(Profile::Ext4, 16 * MIB).await;
+            let block = share_an_xattr_block(&dev, refcount, |_, _, _| {}).await;
+            let report = check(&dev, &FsckOptions::check_only().force(true)).await.unwrap();
+            assert_eq!(codes(&report), ["xattr-refcount-wrong"], "{}", describe(&report));
+            assert_eq!(
+                report.problems[0].message,
+                format!("extended attribute block {block} has reference count {refcount}, should be 2")
+            );
+        }
+    }
+
+    /// A block that is not an attribute block, or whose checksum is wrong.
+    #[tokio::test]
+    async fn a_bad_xattr_block_is_found() {
+        let dev = formatted(Profile::Ext4, 16 * MIB).await;
+        share_an_xattr_block(&dev, 2, |buf, _, _| buf[0] ^= 1).await;
+        let report = check(&dev, &FsckOptions::check_only().force(true)).await.unwrap();
+        assert_eq!(codes(&report), ["xattr-block-bad"], "{}", describe(&report));
+
+        let dev = formatted(Profile::Ext4, 16 * MIB).await;
+        share_an_xattr_block(&dev, 2, |buf, _, _| buf[100] ^= 1).await;
+        let report = check(&dev, &FsckOptions::check_only().force(true)).await.unwrap();
+        assert_eq!(codes(&report), ["xattr-block-csum"], "{}", describe(&report));
+
+        let dev = formatted(Profile::Ext4, 16 * MIB).await;
+        share_an_xattr_block(&dev, 2, |_, _, lost| lost.file_acl = 0xffff_fff0).await;
+        let report = check(&dev, &FsckOptions::check_only().force(true)).await.unwrap();
+        assert!(
+            codes(&report).contains(&"xattr-block-out-of-range"),
+            "{}",
+            describe(&report)
+        );
     }
 
     #[tokio::test]
