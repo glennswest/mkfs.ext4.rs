@@ -14,9 +14,10 @@ specific points where the two differ.
 - **Directory:** `~/src/mkfs.ext4.rs` (the stormcentral session checkout). The
   crate covers ext2/ext3/ext4 from one code path, exactly as `mke2fs` does.
 - **Ships as:** a git dependency pinned to a release tag. It is not on
-  crates.io and has no container or golden. Consumers (2026-10-10): stormblock
-  (tag `v3.0.0`, `features = ["std"]`), stormuefi (`v3.0.0`, no_std `read`
-  path), fio-ext4 and stormcos `tools/fs-scale` (`v4.1.0`, `std`), and
+  crates.io and has no container or golden. Consumers (2026-11-07): stormblock
+  and fio-ext4 (rev 14d5af8 = `v4.1.1`, `features = ["std"]`; not yet on
+  4.1.2/4.1.3), stormuefi (`v3.0.0`, no_std `read` path), stormcos
+  `tools/fs-scale` (`v4.1.0`, `std`), and
   stormblock-registry through fio-ext4's re-export. README lists them. The
   `cli` feature also builds the `mkfs-ext4` / `fsck-ext4` binaries.
 - **Build/test:** `sc-build` (`cargo build && cargo test`). The golden,
@@ -121,7 +122,7 @@ to point at, not an open-ended guess about feature flags.
       alone consults the sector size, before the block size is known.
       `MemDevice::strict` is the test device that refuses unaligned I/O.
 - [x] stormblock integration path: stormblock formats its templates through
-      the `BlockDevice` seam and depends on `v3.0.0`. stormblock#39 is closed.
+      the `BlockDevice` seam (then `v3.0.0`; now rev 14d5af8 = `v4.1.1`). stormblock#39 is closed.
 - [x] Issue #6 — **decided (owner, on #6): match `e2fsck`.** A clean
       filesystem is skipped unless `-f` / `FsckOptions::force`. Pass 0 runs first, then `e2fsck`'s `check_if_skip` reasons in its order
       (errors or pass-0 findings, not cleanly unmounted, backup superblock
@@ -329,9 +330,9 @@ to point at, not an open-ended guess about feature flags.
       feature sets; `meta_bg_e2fsprogs` (16/64 GiB meta_bg, 64 GiB classic)
       e2fsck -fn rc 0. Released as v4.1.3 for fio-ext4 / stormblock#512.
 
-Open (2026-10-13): #22 and #23 (P2: zeroed_medium
-write volume per group; `sparse_super2` accepted but its layout ignored),
-#12, #13, #18, #21 (P3).
+Open (2026-11-07): #32 and #29 and #23 (P2: fsck ignores the orphan file's
+blocks; a 4 KiB-block fs just past a 128 MiB group is refused; `sparse_super2`
+layout ignored), #35, #31, #30, #28, #27, #22, #21, #18, #12 (P3).
 
 ## Features
 

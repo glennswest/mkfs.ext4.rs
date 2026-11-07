@@ -318,15 +318,16 @@ See `CLAUDE.md` for the work plan and what is still outstanding.
 
 ## Consumers
 
-Each pins a release tag (as of 2026-10-10):
+Each pins a release tag or its commit (as of 2026-11-07; none is on 4.1.2/4.1.3 yet,
+so fio-ext4 and stormblock still carry the #25 and #33 bugs):
 
 - [`fio-ext4`](https://github.com/glennswest/fio.ext4.rs) — reads and writes
-  files inside the filesystems this crate creates, in userspace. `v4.1.0`,
+  files inside the filesystems this crate creates, in userspace. Commit 14d5af8 (= `v4.1.1`),
   `features = ["std"]`.
 - [`stormblock`](https://github.com/glennswest/stormblock): filesystem
   templates ("mkfs once, clone forever"), formatted in place through the
-  `BlockDevice` seam. `v3.0.0`, `features = ["std"]`; moving to `v4.1.1`
-  brings the streaming formatter (#10) and the run-length fsck map (#11).
+  `BlockDevice` seam. Commit 14d5af8 (= `v4.1.1`), `features = ["std"]`: the streaming
+  formatter (#10) and the run-length fsck map (#11).
 - [`stormuefi`](https://github.com/glennswest/stormuefi): the UEFI loader.
   `v3.0.0` with `default-features = false` — the `no_std` core and the
   synchronous `read` path (`BlockReader`, `Ext4`), which therefore has to stay
