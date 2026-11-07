@@ -288,7 +288,7 @@ to point at, not an open-ended guess about feature flags.
       stormblock#300 / #289, fio.ext4.rs#15, stormcos#552. stormuefi pins
       v3.0.0 for the no_std `read` path, which v4.1.1 does not touch.
 
-- [ ] Issue #25 (P3): pass 1 does not count an inode's xattr block
+- [x] Issue #25 (P3): pass 1 does not count an inode's xattr block
       (`i_file_acl`): false `i-blocks-wrong` per inode with spilled xattrs,
       and the blocks reported free in pass 5 (e2fsck clean; stormblock#86,
       stormblock#293). Plan, as `e2fsck`'s `check_ext_attr`: a non-zero
@@ -300,6 +300,11 @@ to point at, not an open-ended guess about feature flags.
       (`PR_1_EXTATTR_REFCOUNT`). Tests: a shared block on two inodes checks
       clean; bad magic, wrong refcount, missing count are found; and a
       debugfs `ea_set` differential case (e2fsck -fn and ours both clean).
+      **Done 2026-11-07** (2da8d4e). sc-build: 202 lib tests (the four new
+      `fsck::tests::*xattr*`), every suite, clippy `-D warnings` on both
+      feature sets; `tests/xattr_e2fsprogs.rs` ran against e2fsprogs 1.47.3
+      (ext4 1k/4k ± journal, ext2: e2fsck -fn rc 0, ours clean). Released
+      as v4.1.2 for fio-ext4 / stormblock#293 to pin.
 
 Open (2026-10-13): #22 and #23 (P2: zeroed_medium
 write volume per group; `sparse_super2` accepted but its layout ignored),
