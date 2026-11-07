@@ -6,8 +6,9 @@ output by a comparison tool, with the e2fsprogs source consulted at the
 specific points where the two differ.
 
 - **Crate:** `mkfs-ext4` (lib `mkfs_ext4`)
-- **Version:** 4.1.2 — see `Cargo.toml` (single version location). Tag
-  `v4.1.2` is the #25 fix (2026-11-07); `v4.1.1` is on 14d5af8 (#20).
+- **Version:** 4.1.3 — see `Cargo.toml` (single version location). Tag
+  `v4.1.3` is the #33 fix, `v4.1.2` the #25 fix (both 2026-11-07); `v4.1.1`
+  is on 14d5af8 (#20).
 - **License:** MIT OR Apache-2.0
 - **Repo:** https://github.com/glennswest/mkfs.ext4.rs
 - **Directory:** `~/src/mkfs.ext4.rs` (the stormcentral session checkout). The
@@ -306,7 +307,7 @@ to point at, not an open-ended guess about feature flags.
       (ext4 1k/4k ± journal, ext2: e2fsck -fn rc 0, ours clean). Released
       as v4.1.2 for fio-ext4 / stormblock#293 to pin.
 
-- [ ] Issue #33 (P1): `Filesystem::write_group_descs` ignores meta_bg —
+- [x] Issue #33 (P1): `Filesystem::write_group_descs` ignores meta_bg —
       it writes the whole table at `first + 1` of every superblock group, so
       under meta_bg (automatic past ~192 TiB at 4 KiB blocks, or `-O
       meta_bg` over one descriptor block) the first flush overwrites bitmaps
@@ -323,6 +324,10 @@ to point at, not an open-ended guess about feature flags.
       (classic, meta_bg, meta_bg with first_meta_bg 1, primary-only); a
       changed descriptor reaches all three copies; fsck clean; and an
       e2fsprogs case (meta_bg image flushed, `e2fsck -fn` rc 0).
+      **Done 2026-11-07** (9f2ac69, 3b185f6). sc-build on 3b185f6: 0
+      warnings, 204 lib tests, every suite, clippy `-D warnings` on both
+      feature sets; `meta_bg_e2fsprogs` (16/64 GiB meta_bg, 64 GiB classic)
+      e2fsck -fn rc 0. Released as v4.1.3 for fio-ext4 / stormblock#512.
 
 Open (2026-10-13): #22 and #23 (P2: zeroed_medium
 write volume per group; `sparse_super2` accepted but its layout ignored),

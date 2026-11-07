@@ -3,7 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
-### 2026-11-07
+## [v4.1.3] — 2026-11-07
+
+### Fixed
 - **fix:** `Filesystem::flush_group_descs` / `flush_primary_group_descs`
   write the descriptor table where meta_bg puts it (#33, stormblock#512).
   They wrote the whole table after every backup superblock, so under
