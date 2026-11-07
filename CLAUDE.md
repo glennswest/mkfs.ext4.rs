@@ -306,6 +306,24 @@ to point at, not an open-ended guess about feature flags.
       (ext4 1k/4k ± journal, ext2: e2fsck -fn rc 0, ours clean). Released
       as v4.1.2 for fio-ext4 / stormblock#293 to pin.
 
+- [ ] Issue #33 (P1): `Filesystem::write_group_descs` ignores meta_bg —
+      it writes the whole table at `first + 1` of every superblock group, so
+      under meta_bg (automatic past ~192 TiB at 4 KiB blocks, or `-O
+      meta_bg` over one descriptor block) the first flush overwrites bitmaps
+      and inode tables (stormblock#512). Plan, as `ext2fs_flush2` /
+      `ext2fs_super_and_bgd_loc2`: the classic part (all blocks without
+      meta_bg; the first `min(first_meta_bg, desc_blocks)` with it) to every
+      superblock group whose meta group is below `first_meta_bg` (group 0
+      only when `primary_only`); each meta group's block, encoded one at a
+      time rather than a whole-table buffer, to its first, second and last
+      group after that group's superblock copy (all three even when
+      `primary_only`, as ext2fs does). `read_group_descs` honours
+      `first_meta_bg` the same way (`ext2fs_descriptor_block_loc2`). Tests:
+      a flush straight after a format changes no byte of the device
+      (classic, meta_bg, meta_bg with first_meta_bg 1, primary-only); a
+      changed descriptor reaches all three copies; fsck clean; and an
+      e2fsprogs case (meta_bg image flushed, `e2fsck -fn` rc 0).
+
 Open (2026-10-13): #22 and #23 (P2: zeroed_medium
 write volume per group; `sparse_super2` accepted but its layout ignored),
 #12, #13, #18, #21 (P3).
