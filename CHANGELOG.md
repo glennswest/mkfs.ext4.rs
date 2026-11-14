@@ -3,6 +3,12 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-14
+- **docs:** consumer pins checked against the consumers' manifests (#36):
+  stormblock and fio-ext4 are on `v4.1.3`; stormblock-registry's lock is
+  still on `v4.1.1`. CLAUDE.md open-issue list adds #36, #37. No code has
+  changed since v4.1.3.
+
 ### 2026-11-07
 - **docs:** consumer pins refreshed (fio-ext4 and stormblock are on the
   `v4.1.1` commit, #31); CLAUDE.md open-issue list brought up to date.
