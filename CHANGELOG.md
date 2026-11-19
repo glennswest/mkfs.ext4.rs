@@ -9,6 +9,9 @@
   answered 512 — what happened, and no longer a stub-sweep marker (#38). The
   v1.0.0 entry's note on journal replay reworded for the same reason. No code
   change. The slide PDF keeps the old wording until the deck is re-rendered.
+- **docs:** #39 (the stub sweep's finding in `narration/slide28.txt`, read
+  at 3cf3a03) was the same sentence; 8569c72 already reworded it. No marker
+  remains in the repo (`git grep`), sc-build on 8569c72 passed.
 
 ### 2026-11-14
 - **docs:** consumer pins checked against the consumers' manifests (#36):
