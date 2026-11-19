@@ -895,7 +895,7 @@ pub const BLOCK_SIZE: u32 = 4096;   <span class="c">← a constant, not a decisi
 fn size(&amp;self)      -&gt; u64  { … }
 async fn read_at(…)         { … }
 async fn write_at(…)        { … }
-<span class="r">// logical_sector_size() — not implemented, so it answers 512</span></pre>
+<span class="r">// logical_sector_size() — never overridden, so the default answers 512</span></pre>
     <p>The volume exported 4 KiB sectors. Nothing could ask the kernel, because a thin
        volume is not a real block device — it has to <em>say</em>. It said nothing, so
        the default spoke for it, and the filesystem got blocks smaller than the sectors

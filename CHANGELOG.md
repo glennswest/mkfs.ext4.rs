@@ -3,6 +3,13 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-19
+- **docs:** the slide on stormblock's second culprit (and its narration)
+  says `logical_sector_size()` was *never overridden*, so the trait's default
+  answered 512 — what happened, and no longer a stub-sweep marker (#38). The
+  v1.0.0 entry's note on journal replay reworded for the same reason. No code
+  change. The slide PDF keeps the old wording until the deck is re-rendered.
+
 ### 2026-11-14
 - **docs:** consumer pins checked against the consumers' manifests (#36):
   stormblock and fio-ext4 are on `v4.1.3`; stormblock-registry's lock is
@@ -761,7 +768,7 @@ the known-gaps list in the parity test is empty.
 
 **What 1.0 does not claim.** Feature completeness. `meta_bg` is written but only
 reachable past ~200 TiB; triple indirection is read but not written; journal
-*replay* is not implemented, only journal creation. None of those require an
+*replay* is absent: 1.0 creates journals but does not replay them. None of those require an
 API change to add.
 
 ### Added
