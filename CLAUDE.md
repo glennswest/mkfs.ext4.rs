@@ -331,6 +331,23 @@ to point at, not an open-ended guess about feature flags.
       feature sets; `meta_bg_e2fsprogs` (16/64 GiB meta_bg, 64 GiB classic)
       e2fsck -fn rc 0. Released as v4.1.3 for fio-ext4 / stormblock#512.
 
+- [ ] Issue #40 (P0): two critical review findings (crossreview of 1e0dadd).
+      `7546ce404b6c` (src/mmp.rs): `MmpLease::heartbeat` / `release` wrote
+      without reading, so a host that paused past another's takeover would
+      overwrite the new holder's claim or mark its live filesystem clean; and
+      heartbeats reused the claim's sequence, which `acquire` reads as a dead
+      holder. Plan, as the kernel's `kmmpd` and `ext2fs_mmp_update2` /
+      `ext2fs_mmp_stop`: the lease keeps the block it last wrote; heartbeat
+      and release read first and, if the block is not that, write nothing
+      and answer `MmpRefusal::Lost` (stop writing); heartbeat advances the
+      sequence (wrapping past `SEQ_MAX` to 1), a checker's stays `SEQ_FSCK`.
+      `heartbeat` takes `&mut self` and both return the refusal: breaking,
+      5.0.0 (no consumer calls the MMP API; checked in their checkouts).
+      `e714fcdaac12` (src/fs.rs:482): already fixed by #33 (9f2ac69, v4.1.3)
+      after the reviewed commit; the finding's requested test (an fsck repair
+      on a meta_bg image over several descriptor blocks keeps the adjacent
+      metadata and restores every primary) is added.
+
 Open (2026-11-14): #37 (P3: `first_meta_bg > 0` reserves the whole table in
 each classic copy), #36 (this pin refresh), #32 and #29 and #23 (P2: fsck ignores the orphan file's
 blocks; a 4 KiB-block fs just past a 128 MiB group is refused; `sparse_super2`
