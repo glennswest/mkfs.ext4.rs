@@ -352,6 +352,30 @@ to point at, not an open-ended guess about feature flags.
       the public lease, and `fs::tests::a_repair_under_meta_bg_*`), every
       suite, clippy `-D warnings` on both feature sets. Released as v5.0.0.
 
+- [ ] Issue #41 (P1): four review findings in `src/fs.rs` (crossreview of
+      1e0dadd). Plan:
+      `24146537d73e` unwritten extents: new `Filesystem::map_block` returns
+      the physical block and whether its extent is unwritten;
+      `resolve_block` keeps answering the physical allocation (writers and
+      fsck need it); `read_file` and `read_dir` read an unwritten block as
+      zeroes / no entries, as the sync `read` path already does. Additive:
+      5.1.0. fio-ext4's `stream_file` has the same bug: filed there.
+      `2fc889627985` `resolve_extent`: entries checked against `eh_max` and
+      the node's capacity, root depth at most 5 (`EXT4_MAX_EXTENT_DEPTH`),
+      each child exactly one level below its parent (so a self-pointing
+      index is refused, not looped on). Corruption error, never a panic.
+      `365c10e717d1` `lookup` of `.` / `..` in an indexed directory reads
+      them from block 0 (the htree root holds them), linear fallback.
+      `4af102b848bc` `Superblock::check_geometry` (no_std), as
+      `ext2fs_open2`: block-size shift ≤ 6, cluster shift ≤ 19,
+      `first_data_block < blocks_count`, 8 ≤ blocks per group ≤ 8 × block
+      size, 1 ≤ inodes per group ≤ 8 × block size, inode size a power of
+      two in 128..=block size, 64bit descriptor size a power of two in
+      64..=1024, group count fits 32 bits; the descriptor table must fit
+      the device. Called by `open`, `open_with_backup`, `reload` and
+      `read::Ext4::open`; fsck stops after pass 0 on `zero-geometry` /
+      `bad-inode-size`. Tests for each.
+
 Open (2026-11-14): #37 (P3: `first_meta_bg > 0` reserves the whole table in
 each classic copy), #36 (this pin refresh), #32 and #29 and #23 (P2: fsck ignores the orphan file's
 blocks; a 4 KiB-block fs just past a 128 MiB group is refused; `sparse_super2`
