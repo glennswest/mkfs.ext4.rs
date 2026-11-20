@@ -3,7 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
-### 2026-11-20
+## [v5.0.0] — 2026-11-20
+
+### Fixed
 - **fix(mmp):** a stale MMP lease can no longer overwrite its replacement
   (#40, review finding `7546ce404b6c`). `MmpLease::heartbeat` and `release`
   read the block first and write only if it is still what the lease last
@@ -11,15 +13,19 @@
   heartbeat advances the sequence (wrapping past `SEQ_MAX` to 1; a checker's
   stays `SEQ_FSCK`) instead of rewriting the claim's, which another host's
   `acquire` reads as a dead holder.
-- **BREAKING:** `MmpLease::heartbeat` takes `&mut self`; `heartbeat` and
-  `release` return `Result<Result<(), MmpRefusal>>`; `MmpRefusal` gains
-  `Lost` and is `#[non_exhaustive]`.
+
+### Breaking
+- `MmpLease::heartbeat` takes `&mut self`; `heartbeat` and `release` return
+  `Result<Result<(), MmpRefusal>>`; `MmpRefusal` gains `Lost` and is
+  `#[non_exhaustive]`. No consumer calls the MMP API (checked 2026-11-20).
+
+### Added
 - **test:** an fsck repair on a meta_bg filesystem over several descriptor
   blocks restores descriptors in three meta block groups and changes no
   other block (#40, review finding `e714fcdaac12`, which #33 had fixed in
   v4.1.3 after the reviewed commit 1e0dadd).
 
-### 2026-11-19
+### Documentation
 - **docs:** the slide on stormblock's second culprit (and its narration)
   says `logical_sector_size()` was *never overridden*, so the trait's default
   answered 512 — what happened, and no longer a stub-sweep marker (#38). The
@@ -29,13 +35,10 @@
   at 3cf3a03) was the same sentence; 8569c72 already reworded it. No marker
   remains in the repo (`git grep`), sc-build on 8569c72 passed.
 
-### 2026-11-14
 - **docs:** consumer pins checked against the consumers' manifests (#36):
   stormblock and fio-ext4 are on `v4.1.3`; stormblock-registry's lock is
   still on `v4.1.1`. CLAUDE.md open-issue list adds #36, #37. No code has
   changed since v4.1.3.
-
-### 2026-11-07
 - **docs:** consumer pins refreshed (fio-ext4 and stormblock are on the
   `v4.1.1` commit, #31); CLAUDE.md open-issue list brought up to date.
 

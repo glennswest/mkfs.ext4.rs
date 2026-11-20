@@ -6,8 +6,8 @@ output by a comparison tool, with the e2fsprogs source consulted at the
 specific points where the two differ.
 
 - **Crate:** `mkfs-ext4` (lib `mkfs_ext4`)
-- **Version:** 4.1.3 — see `Cargo.toml` (single version location). Tag
-  `v4.1.3` is the #33 fix, `v4.1.2` the #25 fix (both 2026-11-07); `v4.1.1`
+- **Version:** 5.0.0 — see `Cargo.toml` (single version location). Tag
+  `v5.0.0` is the #40 MMP lease fix (2026-11-20), `v4.1.3` the #33 fix, `v4.1.2` the #25 fix (both 2026-11-07); `v4.1.1`
   is on 14d5af8 (#20).
 - **License:** MIT OR Apache-2.0
 - **Repo:** https://github.com/glennswest/mkfs.ext4.rs
@@ -331,7 +331,7 @@ to point at, not an open-ended guess about feature flags.
       feature sets; `meta_bg_e2fsprogs` (16/64 GiB meta_bg, 64 GiB classic)
       e2fsck -fn rc 0. Released as v4.1.3 for fio-ext4 / stormblock#512.
 
-- [ ] Issue #40 (P0): two critical review findings (crossreview of 1e0dadd).
+- [x] Issue #40 (P0): two critical review findings (crossreview of 1e0dadd).
       `7546ce404b6c` (src/mmp.rs): `MmpLease::heartbeat` / `release` wrote
       without reading, so a host that paused past another's takeover would
       overwrite the new holder's claim or mark its live filesystem clean; and
@@ -347,6 +347,10 @@ to point at, not an open-ended guess about feature flags.
       after the reviewed commit; the finding's requested test (an fsck repair
       on a meta_bg image over several descriptor blocks keeps the adjacent
       metadata and restores every primary) is added.
+      **Done 2026-11-20** (c01d8ab). sc-build on c01d8ab: 0 warnings, 210
+      lib tests (the new `mmp::tests::*` incl. pause/takeover/resume through
+      the public lease, and `fs::tests::a_repair_under_meta_bg_*`), every
+      suite, clippy `-D warnings` on both feature sets. Released as v5.0.0.
 
 Open (2026-11-14): #37 (P3: `first_meta_bg > 0` reserves the whole table in
 each classic copy), #36 (this pin refresh), #32 and #29 and #23 (P2: fsck ignores the orphan file's
