@@ -26,6 +26,9 @@ pub const TAIL_LEN: usize = 4;
 /// `EXT_INIT_MAX_LEN` — the longest initialised extent.
 pub const INIT_MAX_LEN: u32 = 1 << 15;
 
+/// `EXT4_MAX_EXTENT_DEPTH` — the deepest an extent tree can be.
+pub const MAX_DEPTH: u16 = 5;
+
 /// The 60 bytes of `i_block` available for an inline extent tree.
 pub const INLINE_LEN: usize = 60;
 

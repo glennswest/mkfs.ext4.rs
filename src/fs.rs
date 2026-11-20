@@ -43,6 +43,25 @@ pub struct BlockRef {
     pub kind: BlockKind,
 }
 
+/// Where a file's logical block lives, from [`Filesystem::map_block`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Mapping {
+    /// Physical block on the device.
+    pub physical: u64,
+    /// Whether the extent mapping it is unwritten (preallocated, never
+    /// written): its contents read as zeroes, not as the device block.
+    pub unwritten: bool,
+}
+
+impl Mapping {
+    fn written(physical: u64) -> Self {
+        Self {
+            physical,
+            unwritten: false,
+        }
+    }
+}
+
 /// An opened ext2/ext3/ext4 filesystem.
 pub struct Filesystem<D: BlockDevice> {
     device: D,
@@ -65,7 +84,13 @@ impl<D: BlockDevice> Filesystem<D> {
         let mut head = vec![0u8; span as usize];
         device.read_at(0, &mut head).await?;
         let superblock = Superblock::decode(&head[SUPERBLOCK_OFFSET as usize..][..SUPERBLOCK_LEN])?;
+        Self::with_superblock(device, superblock).await
+    }
 
+    /// Finish opening from a decoded superblock: refuse geometry nothing can
+    /// walk (#41), then derive the checksum scheme and read the descriptors.
+    async fn with_superblock(device: D, superblock: Superblock) -> Result<Self> {
+        superblock.check_geometry(Some(device.size()))?;
         let mut fs = Self {
             device,
             superblock,
@@ -73,36 +98,13 @@ impl<D: BlockDevice> Filesystem<D> {
             csum_scheme: GroupDescCsum::None,
             csum_seed: 0,
         };
-        fs.csum_scheme = if fs
-            .superblock
-            .feature_ro_compat
-            .contains(RoCompatFeatures::METADATA_CSUM)
-        {
-            GroupDescCsum::Crc32c
-        } else if fs
-            .superblock
-            .feature_ro_compat
-            .contains(RoCompatFeatures::GDT_CSUM)
-        {
-            GroupDescCsum::Crc16
-        } else {
-            GroupDescCsum::None
-        };
-        fs.csum_seed = fs.superblock.csum_seed();
+        fs.adopt_superblock();
         fs.group_descs = fs.read_group_descs().await?;
         Ok(fs)
     }
 
-    /// Read the primary superblock and the group descriptors again, from the
-    /// device.
-    ///
-    /// For after something has rewritten them underneath this handle — a
-    /// journal replay does, since the superblock and descriptor blocks are
-    /// journalled metadata like any other. `e2fsck` closes and reopens the
-    /// filesystem at the same point.
-    pub async fn reload(&mut self) -> Result<()> {
-        let raw = self.read_superblock_raw().await?;
-        self.superblock = Superblock::decode(&raw)?;
+    /// The checksum scheme and seed, from the superblock now held.
+    fn adopt_superblock(&mut self) {
         self.csum_scheme = if self
             .superblock
             .feature_ro_compat
@@ -119,6 +121,21 @@ impl<D: BlockDevice> Filesystem<D> {
             GroupDescCsum::None
         };
         self.csum_seed = self.superblock.csum_seed();
+    }
+
+    /// Read the primary superblock and the group descriptors again, from the
+    /// device.
+    ///
+    /// For after something has rewritten them underneath this handle — a
+    /// journal replay does, since the superblock and descriptor blocks are
+    /// journalled metadata like any other. `e2fsck` closes and reopens the
+    /// filesystem at the same point.
+    pub async fn reload(&mut self) -> Result<()> {
+        let raw = self.read_superblock_raw().await?;
+        let superblock = Superblock::decode(&raw)?;
+        superblock.check_geometry(Some(self.device.size()))?;
+        self.superblock = superblock;
+        self.adopt_superblock();
         self.group_descs = self.read_group_descs().await?;
         Ok(())
     }
@@ -144,34 +161,13 @@ impl<D: BlockDevice> Filesystem<D> {
             if device.read_at(at, &mut buf).await.is_err() {
                 continue;
             }
-            if let Ok(sb) = Superblock::decode(&buf[..SUPERBLOCK_LEN]) {
-                if sb.block_size() == block_size {
-                    let mut fs = Self {
-                        device,
-                        superblock: sb,
-                        group_descs: Vec::new(),
-                        csum_scheme: GroupDescCsum::None,
-                        csum_seed: 0,
-                    };
-                    fs.csum_scheme = if fs
-                        .superblock
-                        .feature_ro_compat
-                        .contains(RoCompatFeatures::METADATA_CSUM)
-                    {
-                        GroupDescCsum::Crc32c
-                    } else if fs
-                        .superblock
-                        .feature_ro_compat
-                        .contains(RoCompatFeatures::GDT_CSUM)
-                    {
-                        GroupDescCsum::Crc16
-                    } else {
-                        GroupDescCsum::None
-                    };
-                    fs.csum_seed = fs.superblock.csum_seed();
-                    fs.group_descs = fs.read_group_descs().await?;
-                    return Ok(fs);
-                }
+            let Ok(sb) = Superblock::decode(&buf[..SUPERBLOCK_LEN]) else {
+                continue;
+            };
+            // Geometry first: the block size of a corrupt copy is not even
+            // computable (#41).
+            if sb.check_geometry(None).is_ok() && sb.block_size() == block_size {
+                return Self::with_superblock(device, sb).await;
             }
         }
         Err(Error::corrupt(
@@ -863,8 +859,25 @@ impl<D: BlockDevice> Filesystem<D> {
         Ok(logical)
     }
 
-    /// Resolve a file's logical block to its physical block, if mapped.
+    /// Resolve a file's logical block to the physical block allocated to it,
+    /// if any.
+    ///
+    /// This is the allocation, written or not: an unwritten (preallocated)
+    /// extent's block is answered like any other, because a writer filling it
+    /// and a checker claiming it both need that block. Whoever reads the
+    /// *contents* wants [`Self::map_block`], since an unwritten block reads
+    /// as zeroes whatever the device holds there.
     pub async fn resolve_block(&self, inode: &Inode, logical: u64) -> Result<Option<u64>> {
+        Ok(self.map_block(inode, logical).await?.map(|m| m.physical))
+    }
+
+    /// Resolve a file's logical block to its physical block and whether the
+    /// extent mapping it is unwritten.
+    ///
+    /// An unwritten block reads as zeroes: its device block may still hold a
+    /// deleted file's data (#41, finding 24146537d73e). A block map
+    /// (indirect) inode has no unwritten blocks.
+    pub async fn map_block(&self, inode: &Inode, logical: u64) -> Result<Option<Mapping>> {
         if !inode.has_block_map() {
             return Ok(None);
         }
@@ -877,7 +890,7 @@ impl<D: BlockDevice> Filesystem<D> {
 
         if logical < NDIR_BLOCKS as u64 {
             let p = pointers[logical as usize];
-            return Ok((p != 0).then_some(p as u64));
+            return Ok((p != 0).then_some(Mapping::written(p as u64)));
         }
         let mut remaining = logical - NDIR_BLOCKS as u64;
         for (slot, depth) in [(NDIR_BLOCKS, 1u32), (NDIR_BLOCKS + 1, 2), (NDIR_BLOCKS + 2, 3)] {
@@ -897,25 +910,67 @@ impl<D: BlockDevice> Filesystem<D> {
                         return Ok(None);
                     }
                 }
-                return Ok(Some(block));
+                return Ok(Some(Mapping::written(block)));
             }
             remaining -= span;
         }
         Ok(None)
     }
 
-    async fn resolve_extent(&self, inode: &Inode, logical: u64) -> Result<Option<u64>> {
+    async fn resolve_extent(&self, inode: &Inode, logical: u64) -> Result<Option<Mapping>> {
         let mut node = inode.block.to_vec();
+        let mut space = extent::INLINE_LEN;
+        // The depth the next node must have: the root says, each child is
+        // exactly one below its parent. That bounds the descent to
+        // `EXT4_MAX_EXTENT_DEPTH` + 1 reads, so an index pointing back at its
+        // own node (or any cycle) is refused rather than followed for ever
+        // (#41, finding 2fc889627985).
+        let mut want_depth: Option<u16> = None;
 
         loop {
             let header = ExtentHeader::decode(&node)?;
+            match want_depth {
+                None if header.depth > extent::MAX_DEPTH => {
+                    return Err(Error::corrupt(
+                        "extent header",
+                        format!(
+                            "tree depth {} is past the most there can be ({})",
+                            header.depth,
+                            extent::MAX_DEPTH
+                        ),
+                    ));
+                }
+                Some(want) if header.depth != want => {
+                    return Err(Error::corrupt(
+                        "extent header",
+                        format!("node at depth {}, expected {want}", header.depth),
+                    ));
+                }
+                _ => {}
+            }
+            // `ext2fs_extent_header_verify`: the entries in use fit `eh_max`,
+            // and `eh_max` fits the node.
+            let fits = ExtentHeader::max_entries(space, false);
+            if header.max > fits || header.entries > header.max {
+                return Err(Error::corrupt(
+                    "extent header",
+                    format!(
+                        "{} entries of {} claimed in a node that holds {fits}",
+                        header.entries, header.max
+                    ),
+                ));
+            }
+
             if header.depth == 0 {
                 for i in 0..header.entries as usize {
                     let at = extent::HEADER_LEN + i * extent::ENTRY_LEN;
                     let ext = Extent::decode(&node[at..at + extent::ENTRY_LEN]);
                     let len = ext.effective_len() as u64;
                     if logical >= ext.block as u64 && logical < ext.block as u64 + len {
-                        return Ok(Some(ext.start + (logical - ext.block as u64)));
+                        return Ok(Some(Mapping {
+                            physical: ext.start + (logical - ext.block as u64),
+                            unwritten: ext.is_uninit(),
+                        }));
                     }
                 }
                 return Ok(None);
@@ -937,6 +992,8 @@ impl<D: BlockDevice> Filesystem<D> {
                 return Ok(None);
             };
             node = self.read_block(child).await?;
+            space = node.len();
+            want_depth = Some(header.depth - 1);
         }
     }
 
@@ -950,7 +1007,12 @@ impl<D: BlockDevice> Filesystem<D> {
 
         let mut out = Vec::new();
         for logical in 0..blocks {
-            let Some(physical) = self.resolve_block(inode, logical).await? else {
+            // A hole, or an unwritten block (zeroes), holds no entries.
+            let Some(Mapping {
+                physical,
+                unwritten: false,
+            }) = self.map_block(inode, logical).await?
+            else {
                 continue;
             };
             let buf = self.read_block(physical).await?;
@@ -970,7 +1032,25 @@ impl<D: BlockDevice> Filesystem<D> {
         // of the whole thing, which is the difference between filling a
         // directory in linear time and in quadratic time.
         if dir.flags & iflags::INDEX != 0 {
-            if let Some(answer) = self.lookup_indexed(dir, name).await? {
+            // `.` and `..` are not in any leaf the hash selects: the htree
+            // root (block 0) holds them, ahead of its index (#41, finding
+            // 365c10e717d1). Read them from there.
+            if name == b"." || name == b".." {
+                if let Some(Mapping {
+                    physical,
+                    unwritten: false,
+                }) = self.map_block(dir, 0).await?
+                {
+                    let root = self.read_block(physical).await?;
+                    if let Some(entry) = dirent::parse_block(&root)?
+                        .into_iter()
+                        .find(|e| e.inode != 0 && e.name == name)
+                    {
+                        return Ok(Some(entry.inode));
+                    }
+                }
+                // Not where the root keeps them: the slow way below decides.
+            } else if let Some(answer) = self.lookup_indexed(dir, name).await? {
                 return Ok(answer);
             }
         }
@@ -1069,10 +1149,18 @@ impl<D: BlockDevice> Filesystem<D> {
         let blocks = inode.size.div_ceil(block_size);
 
         for logical in 0..blocks {
-            match self.resolve_block(inode, logical).await? {
-                // A hole reads as zeroes, which is what a sparse file means.
-                None => out.resize(out.len() + block_size as usize, 0),
-                Some(physical) => out.extend_from_slice(&self.read_block(physical).await?),
+            match self.map_block(inode, logical).await? {
+                // A hole reads as zeroes, which is what a sparse file means;
+                // so does an unwritten extent, whatever its block still holds
+                // (#41, finding 24146537d73e).
+                None
+                | Some(Mapping {
+                    unwritten: true, ..
+                }) => out.resize(out.len() + block_size as usize, 0),
+                Some(Mapping {
+                    physical,
+                    unwritten: false,
+                }) => out.extend_from_slice(&self.read_block(physical).await?),
             }
         }
         out.truncate(inode.size as usize);
@@ -1531,5 +1619,354 @@ mod tests {
             .take(8)
             .collect();
         assert!(differ.is_empty(), "the repair changed blocks {differ:?}");
+    }
+
+    // --- #41 -------------------------------------------------------------
+
+    /// A regular file whose `i_block` is the given inline extent root.
+    fn extent_file(root: [u8; extent::INLINE_LEN], size: u64) -> Inode {
+        let mut inode = Inode::new(256, 32);
+        inode.mode = 0o100644;
+        inode.flags = iflags::EXTENTS;
+        inode.size = size;
+        inode.block[..extent::INLINE_LEN].copy_from_slice(&root);
+        inode
+    }
+
+    /// Finding 24146537d73e: an unwritten extent reads as zeroes, not as
+    /// whatever its block still holds, through every logical reader — while
+    /// its block stays visible to a writer or a checker as the allocation.
+    #[tokio::test]
+    async fn an_unwritten_extent_reads_as_zeroes_not_as_its_stale_block() {
+        let fs = formatted(Profile::Ext4, 64 * MIB).await;
+        let bs = fs.block_size() as usize;
+        let written = fs.superblock().blocks_count - 20;
+        let stale = written + 1;
+        fs.write_block(written, &vec![0xcd; bs]).await.unwrap();
+        // A deleted file's data, still on the device.
+        fs.write_block(stale, &vec![0xab; bs]).await.unwrap();
+
+        let root = extent::build_inline(&[
+            Extent {
+                block: 0,
+                len: 1,
+                start: written,
+            },
+            Extent {
+                block: 1,
+                len: (extent::INIT_MAX_LEN + 1) as u16,
+                start: stale,
+            },
+        ])
+        .unwrap();
+        let file = extent_file(root, 2 * bs as u64);
+
+        let data = fs.read_file(&file).await.unwrap();
+        assert_eq!(data.len(), 2 * bs);
+        assert!(data[..bs].iter().all(|&b| b == 0xcd), "the written block reads back");
+        assert!(data[bs..].iter().all(|&b| b == 0), "the unwritten block leaked its old data");
+
+        assert_eq!(
+            fs.map_block(&file, 1).await.unwrap(),
+            Some(Mapping {
+                physical: stale,
+                unwritten: true
+            })
+        );
+        assert_eq!(
+            fs.map_block(&file, 0).await.unwrap(),
+            Some(Mapping {
+                physical: written,
+                unwritten: false
+            })
+        );
+        // The allocation is still answered, for whoever writes or checks.
+        assert_eq!(fs.resolve_block(&file, 1).await.unwrap(), Some(stale));
+
+        // The synchronous reader has always read it this way; the two agree.
+        let ext4 = crate::read::Ext4::open(&SyncOver(fs.device())).unwrap();
+        assert_eq!(ext4.read_inode_data(&SyncOver(fs.device()), &file).unwrap(), data);
+    }
+
+    /// An unwritten block in a directory holds no entries, rather than
+    /// whatever names a stale block would parse to.
+    #[tokio::test]
+    async fn an_unwritten_directory_block_holds_no_entries() {
+        let fs = formatted(Profile::Ext4, 64 * MIB).await;
+        let lpf_ino = fs.resolve_path("/lost+found").await.unwrap().unwrap();
+        let mut lpf = fs.read_inode(lpf_ino).await.unwrap();
+        let first = fs.resolve_block(&lpf, 0).await.unwrap().unwrap();
+        let stale = fs.superblock().blocks_count - 20;
+        // A stale block that parses as a directory naming inode 12.
+        let bs = fs.block_size() as usize;
+        let ghost = dirent::build_block(
+            &[DirEntry::new(12, b"ghost", dirent::file_type::REG_FILE).unwrap()],
+            bs,
+            false,
+        )
+        .unwrap();
+        fs.write_block(stale, &ghost).await.unwrap();
+        lpf.block[..extent::INLINE_LEN].copy_from_slice(
+            &extent::build_inline(&[
+                Extent {
+                    block: 0,
+                    len: 1,
+                    start: first,
+                },
+                Extent {
+                    block: 1,
+                    len: (extent::INIT_MAX_LEN + 1) as u16,
+                    start: stale,
+                },
+            ])
+            .unwrap(),
+        );
+        lpf.size = 2 * bs as u64;
+        let names: Vec<Vec<u8>> = fs
+            .read_dir(&lpf)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|e| e.name)
+            .collect();
+        assert_eq!(names, vec![b".".to_vec(), b"..".to_vec()]);
+        assert_eq!(fs.lookup(&lpf, b"ghost").await.unwrap(), None);
+    }
+
+    struct SyncOver<'a>(&'a MemDevice);
+
+    impl crate::read::BlockReader for SyncOver<'_> {
+        fn read_at(
+            &self,
+            offset: u64,
+            buf: &mut [u8],
+        ) -> core::result::Result<(), crate::read::ReadError> {
+            futures::executor::block_on(self.0.read_at(offset, buf))
+                .map_err(|_| crate::read::ReadError::default())
+        }
+    }
+
+    /// Finding 2fc889627985: a header claiming more entries than `i_block`
+    /// holds is a corruption error, not an index past the 60-byte buffer.
+    #[tokio::test]
+    async fn an_extent_root_claiming_too_many_entries_is_refused() {
+        let fs = formatted(Profile::Ext4, 16 * MIB).await;
+        for (entries, max) in [(5u16, 4u16), (5, 5), (200, 200), (3, 2)] {
+            let mut root = [0u8; extent::INLINE_LEN];
+            ExtentHeader {
+                entries,
+                max,
+                depth: 0,
+                generation: 0,
+            }
+            .encode_into(&mut root);
+            let file = extent_file(root, 1 << 20);
+            for logical in [0, 100, 1000] {
+                let err = fs.map_block(&file, logical).await.unwrap_err();
+                assert!(matches!(err, Error::Corrupt { .. }), "{entries}/{max}: {err:?}");
+            }
+            assert!(fs.read_file(&file).await.is_err());
+        }
+    }
+
+    /// An index node pointing at itself, a child at the wrong depth, and a
+    /// root deeper than any tree can be are all refused; none loops.
+    #[tokio::test]
+    async fn a_cyclic_or_misdepthed_extent_tree_is_refused() {
+        let fs = formatted(Profile::Ext4, 16 * MIB).await;
+        let bs = fs.block_size() as usize;
+        let node_block = fs.superblock().blocks_count - 10;
+
+        let index_root = |depth: u16, leaf: u64| {
+            let mut root = [0u8; extent::INLINE_LEN];
+            ExtentHeader {
+                entries: 1,
+                max: 4,
+                depth,
+                generation: 0,
+            }
+            .encode_into(&mut root);
+            ExtentIdx { block: 0, leaf }
+                .encode_into(&mut root[extent::HEADER_LEN..][..extent::ENTRY_LEN]);
+            root
+        };
+        let index_node = |depth: u16, leaf: u64| {
+            let mut node = vec![0u8; bs];
+            ExtentHeader {
+                entries: 1,
+                max: ExtentHeader::max_entries(bs, false),
+                depth,
+                generation: 0,
+            }
+            .encode_into(&mut node);
+            ExtentIdx { block: 0, leaf }
+                .encode_into(&mut node[extent::HEADER_LEN..][..extent::ENTRY_LEN]);
+            node
+        };
+
+        // The node points back at itself, claiming the root's depth.
+        fs.write_block(node_block, &index_node(1, node_block)).await.unwrap();
+        let cyclic = extent_file(index_root(1, node_block), bs as u64);
+        assert!(matches!(
+            fs.map_block(&cyclic, 0).await.unwrap_err(),
+            Error::Corrupt { .. }
+        ));
+        assert!(fs.read_file(&cyclic).await.is_err());
+
+        // A self-pointing node one level down: depth 2 root → depth 1 node
+        // → itself, which would now be read as depth 0 and is not.
+        let deeper = extent_file(index_root(2, node_block), bs as u64);
+        assert!(matches!(
+            fs.map_block(&deeper, 0).await.unwrap_err(),
+            Error::Corrupt { .. }
+        ));
+
+        // Deeper than EXT4_MAX_EXTENT_DEPTH.
+        let too_deep = extent_file(index_root(extent::MAX_DEPTH + 1, node_block), bs as u64);
+        assert!(matches!(
+            fs.map_block(&too_deep, 0).await.unwrap_err(),
+            Error::Corrupt { .. }
+        ));
+
+        // The same shape done right — root at 1, a leaf at 0 — still reads.
+        let mut leaf = vec![0u8; bs];
+        ExtentHeader {
+            entries: 1,
+            max: ExtentHeader::max_entries(bs, false),
+            depth: 0,
+            generation: 0,
+        }
+        .encode_into(&mut leaf);
+        Extent {
+            block: 0,
+            len: 1,
+            start: node_block + 1,
+        }
+        .encode_into(&mut leaf[extent::HEADER_LEN..][..extent::ENTRY_LEN]);
+        fs.write_block(node_block, &leaf).await.unwrap();
+        let good = extent_file(index_root(1, node_block), bs as u64);
+        assert_eq!(fs.resolve_block(&good, 0).await.unwrap(), Some(node_block + 1));
+    }
+
+    /// Finding 365c10e717d1: `.` and `..` resolve in an indexed directory,
+    /// and so does a path through its `..`.
+    #[tokio::test]
+    async fn dot_and_dotdot_resolve_in_an_indexed_directory() {
+        let fs = formatted(Profile::Ext4, 64 * MIB).await;
+        let bs = fs.block_size() as usize;
+        let lpf_ino = fs.resolve_path("/lost+found").await.unwrap().unwrap();
+        let mut lpf = fs.read_inode(lpf_ino).await.unwrap();
+        let csum = fs.has_metadata_csum();
+
+        // Block 0 becomes an htree root whose one leaf is block 1, holding
+        // a single name.
+        let mut root = htree::build_root(bs, lpf_ino, ino::ROOT, fs.superblock().def_hash_version, 0, true, csum);
+        htree::set_count(&mut root, htree::ROOT_COUNT_OFFSET, 1);
+        htree::set_entry(&mut root, htree::ROOT_COUNT_OFFSET, 0, 0, 1);
+        let mut leaf = dirent::build_block(
+            &[DirEntry::new(12, b"file", dirent::file_type::REG_FILE).unwrap()],
+            bs,
+            csum,
+        )
+        .unwrap();
+        if csum {
+            let tail = leaf.len() - dirent::TAIL_LEN;
+            dirent::write_tail_header(&mut leaf[tail..]);
+            fs.stamp_dir_block(&mut leaf, lpf_ino, lpf.generation);
+        }
+        let b0 = fs.resolve_block(&lpf, 0).await.unwrap().unwrap();
+        let b1 = fs.resolve_block(&lpf, 1).await.unwrap().unwrap();
+        fs.write_block(b0, &root).await.unwrap();
+        fs.write_block(b1, &leaf).await.unwrap();
+        lpf.flags |= iflags::INDEX;
+        fs.write_inode(lpf_ino, &lpf).await.unwrap();
+        let lpf = fs.read_inode(lpf_ino).await.unwrap();
+
+        // The index itself answers ordinary names.
+        assert_eq!(fs.lookup(&lpf, b"file").await.unwrap(), Some(12));
+        assert_eq!(fs.lookup(&lpf, b"absent").await.unwrap(), None);
+        // And the two names the root holds.
+        assert_eq!(fs.lookup(&lpf, b".").await.unwrap(), Some(lpf_ino));
+        assert_eq!(fs.lookup(&lpf, b"..").await.unwrap(), Some(ino::ROOT));
+        assert_eq!(fs.resolve_path("/lost+found/..").await.unwrap(), Some(ino::ROOT));
+        assert_eq!(
+            fs.resolve_path("/lost+found/../lost+found/file").await.unwrap(),
+            Some(12)
+        );
+    }
+
+    /// Write `value` over the superblock field at `at`, `width` bytes wide.
+    async fn corrupt_superblock(dev: &MemDevice, at: usize, width: usize, value: u64) {
+        let mut sb = vec![0u8; SUPERBLOCK_LEN];
+        dev.read_at(SUPERBLOCK_OFFSET, &mut sb).await.unwrap();
+        sb[at..at + width].copy_from_slice(&value.to_le_bytes()[..width]);
+        dev.write_at(SUPERBLOCK_OFFSET, &sb).await.unwrap();
+    }
+
+    /// Finding 4af102b848bc: geometry nothing can walk is a corruption error
+    /// from every open path and from fsck — never a division by zero, a shift
+    /// overflow or a descriptor buffer the size of the claimed table.
+    #[tokio::test]
+    async fn impossible_superblock_geometry_is_refused_not_panicked_on() {
+        use crate::structs::superblock::off;
+        let cases: &[(&str, usize, usize, u64)] = &[
+            ("block size shift 22", off::S_LOG_BLOCK_SIZE, 4, 22),
+            ("block size shift 40", off::S_LOG_BLOCK_SIZE, 4, 40),
+            ("block size shift 7", off::S_LOG_BLOCK_SIZE, 4, 7),
+            ("inode size 0", off::S_INODE_SIZE, 2, 0),
+            ("inode size 100", off::S_INODE_SIZE, 2, 100),
+            ("inode size 384", off::S_INODE_SIZE, 2, 384),
+            ("inode size past the block", off::S_INODE_SIZE, 2, 2048),
+            ("no blocks per group", off::S_BLOCKS_PER_GROUP, 4, 0),
+            ("blocks per group past a bitmap", off::S_BLOCKS_PER_GROUP, 4, 8 * 1024 + 8),
+            ("no inodes per group", off::S_INODES_PER_GROUP, 4, 0),
+            ("inodes per group past a bitmap", off::S_INODES_PER_GROUP, 4, 8 * 1024 + 1),
+            ("first data block past the end", off::S_FIRST_DATA_BLOCK, 4, u32::MAX as u64),
+            // 2^32 − 1 blocks at 1 KiB, 8 Ki blocks per group: a descriptor
+            // table of 16 MiB or more, after block 1, on a 16 MiB device.
+            ("descriptor table past the device", off::S_BLOCKS_COUNT, 4, u32::MAX as u64),
+        ];
+        for &(what, at, width, value) in cases {
+            let dev = MemDevice::new(16 * MIB);
+            let params = Params::new(Profile::Ext4)
+                .block_size(1024)
+                .uuid(*b"0123456789abcdef");
+            format(&dev, &params).await.unwrap();
+            corrupt_superblock(&dev, at, width, value).await;
+
+            let err = Filesystem::open(&dev).await.err().unwrap_or_else(|| panic!("{what}: opened"));
+            assert!(matches!(err, Error::Corrupt { .. }), "{what}: {err:?}");
+            let err = crate::fsck::check(&dev, &crate::fsck::FsckOptions::default())
+                .await
+                .err()
+                .unwrap_or_else(|| panic!("{what}: checked"));
+            assert!(matches!(err, Error::Corrupt { .. }), "{what}: {err:?}");
+            // The synchronous reader shares the check.
+            assert!(crate::read::Ext4::open(&SyncOver(&dev)).is_err(), "{what}: sync open");
+        }
+    }
+
+    /// A backup superblock with impossible geometry is passed over rather
+    /// than computed with, and `reload` refuses it like `open` does.
+    #[tokio::test]
+    async fn backup_open_and_reload_check_the_geometry_too() {
+        use crate::structs::superblock::off;
+        let dev = MemDevice::new(16 * MIB);
+        let params = Params::new(Profile::Ext4)
+            .block_size(1024)
+            .uuid(*b"0123456789abcdef");
+        format(&dev, &params).await.unwrap();
+        let mut fs = Filesystem::open(&dev).await.unwrap();
+        let backup = fs.superblock().blocks_per_group as u64 + 1;
+        assert!(Filesystem::open_with_backup(&dev, backup).await.is_ok());
+
+        let mut sb = vec![0u8; 1024];
+        dev.read_at(backup * 1024, &mut sb).await.unwrap();
+        sb[off::S_LOG_BLOCK_SIZE..][..4].copy_from_slice(&40u32.to_le_bytes());
+        dev.write_at(backup * 1024, &sb).await.unwrap();
+        assert!(Filesystem::open_with_backup(&dev, backup).await.is_err());
+
+        corrupt_superblock(&dev, off::S_INODE_SIZE, 2, 0).await;
+        assert!(matches!(fs.reload().await.unwrap_err(), Error::Corrupt { .. }));
     }
 }

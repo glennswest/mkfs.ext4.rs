@@ -3,6 +3,29 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-20
+- **fix(fs):** an unwritten (preallocated) extent reads as zeroes through
+  `Filesystem::read_file`, not as whatever its block still holds, and holds
+  no entries for `read_dir` (#41, finding `24146537d73e`). New
+  `Filesystem::map_block` answers the physical block and whether it is
+  unwritten (`fs::Mapping`); `resolve_block` still answers the allocation,
+  for writers and the checker. The sync `read` path already did this.
+- **fix(fs):** extent lookup checks each node's entries against `eh_max` and
+  the node's size, the root's depth against `EXT4_MAX_EXTENT_DEPTH`, and
+  each child's depth against its parent's: an oversized header or a cyclic
+  index is a corruption error, not a panic or an endless loop (#41, finding
+  `2fc889627985`).
+- **fix(fs):** `lookup` of `.` and `..` in a hash-indexed directory reads
+  them from the htree root, so `/dir/../x` works once `dir` is indexed (#41,
+  finding `365c10e717d1`).
+- **fix(fs):** `Superblock::check_geometry` refuses a superblock whose block
+  or cluster shift, blocks or inodes per group, inode or descriptor size,
+  group count or descriptor table cannot be walked, as `ext2fs_open2` does.
+  `Filesystem::open`, `open_with_backup`, `reload` and `read::Ext4::open`
+  call it, so a corrupt image is an error instead of a division by zero or a
+  shift overflow; fsck stops after pass 0 on `zero-geometry` /
+  `bad-inode-size` (#41, finding `4af102b848bc`).
+
 ## [v5.0.0] — 2026-11-20
 
 ### Fixed

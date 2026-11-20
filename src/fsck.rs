@@ -423,6 +423,16 @@ pub async fn check_opened<D: BlockDevice>(
     let mut state = ScanState::new(fs);
 
     pass0_superblock(fs, &mut report, &mut state).await?;
+    // Geometry no pass can walk — every later one sizes inode tables and
+    // bitmaps from it, and a zero divides (#41). `open` refuses it already;
+    // this is for a handle whose superblock was changed after it opened.
+    if report
+        .problems
+        .iter()
+        .any(|p| p.code == "zero-geometry" || p.code == "bad-inode-size")
+    {
+        return Ok(report);
+    }
     // release_orphan_inodes, which e2fsck runs at the end of its superblock
     // checks — never on a read-only check, and not on geometry pass 0 could
     // not trust.
@@ -1014,6 +1024,8 @@ async fn pass0_superblock<D: BlockDevice>(
                 sb.block_size()
             ),
         );
+        // The rest of this pass sizes inode tables from it (#41).
+        return Ok(());
     }
 
     // A journal the superblock advertises but does not have.

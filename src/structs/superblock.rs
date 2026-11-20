@@ -553,6 +553,96 @@ impl Default for Superblock {
 }
 
 impl Superblock {
+    /// Refuse geometry no reader can walk, before anything is sized from it.
+    ///
+    /// [`Self::decode`] checks only the length and the magic, and every other
+    /// accessor here trusts the fields: a block-size shift of 22 makes the
+    /// block size zero (a division by zero in the descriptor reader), an inode
+    /// size of zero divides by zero in the inode-table sizing, and a group
+    /// count in the billions sizes a descriptor buffer no machine has
+    /// (mkfs.ext4.rs#41, finding 4af102b848bc). These are the checks
+    /// `ext2fs_open2` makes before it reads a descriptor, and a superblock
+    /// that fails one is `EXT2_ET_CORRUPT_SUPERBLOCK` there too.
+    ///
+    /// `device_bytes`, when known, also bounds the descriptor table: it must
+    /// fit on the device it is about to be read from.
+    pub fn check_geometry(&self, device_bytes: Option<u64>) -> Result<()> {
+        let bad = |detail: String| Err(Error::corrupt("superblock", detail));
+
+        // EXT2_MAX_BLOCK_LOG_SIZE (16) − EXT2_MIN_BLOCK_LOG_SIZE (10).
+        if self.log_block_size > 6 {
+            return bad(format!(
+                "block size shift {} is past 64 KiB (at most 6)",
+                self.log_block_size
+            ));
+        }
+        // EXT2_MAX_CLUSTER_LOG_SIZE (29) − EXT2_MIN_CLUSTER_LOG_SIZE (10).
+        if self.log_cluster_size > 19 {
+            return bad(format!(
+                "cluster size shift {} is past 512 MiB (at most 19)",
+                self.log_cluster_size
+            ));
+        }
+        let block_size = self.block_size();
+        if self.first_data_block as u64 >= self.blocks_count {
+            return bad(format!(
+                "first data block {} is not below the block count {}",
+                self.first_data_block, self.blocks_count
+            ));
+        }
+        // A group's block bitmap is one block, a bit per cluster.
+        let cluster_ratio = 1u64 << self.log_cluster_size.saturating_sub(self.log_block_size);
+        let max_bpg = 8 * block_size as u64 * cluster_ratio;
+        if self.blocks_per_group < 8 || self.blocks_per_group as u64 > max_bpg {
+            return bad(format!(
+                "{} blocks per group, outside 8..={max_bpg} for {block_size}-byte blocks",
+                self.blocks_per_group
+            ));
+        }
+        // And its inode bitmap is one block, a bit per inode.
+        let max_ipg = 8 * block_size;
+        if self.inodes_per_group == 0 || self.inodes_per_group > max_ipg {
+            return bad(format!(
+                "{} inodes per group, outside 1..={max_ipg} for {block_size}-byte blocks",
+                self.inodes_per_group
+            ));
+        }
+        let inode_size = self.inode_size as u32;
+        if inode_size < GOOD_OLD_INODE_SIZE as u32
+            || inode_size > block_size
+            || !inode_size.is_power_of_two()
+        {
+            return bad(format!(
+                "inode size {inode_size} is not a power of two in 128..={block_size}"
+            ));
+        }
+        if self.feature_incompat.contains(IncompatFeatures::SIXTY_FOUR_BIT) {
+            // EXT2_MAX_DESC_SIZE is EXT2_MIN_BLOCK_SIZE.
+            let desc = self.desc_size() as u32;
+            if desc > 1024 || !desc.is_power_of_two() {
+                return bad(format!(
+                    "descriptor size {desc} is not a power of two in 64..=1024"
+                ));
+            }
+        }
+        let groups = (self.blocks_count - self.first_data_block as u64)
+            .div_ceil(self.blocks_per_group as u64);
+        if groups > u32::MAX as u64 {
+            return bad(format!("{groups} block groups do not fit 32 bits"));
+        }
+        if let Some(device) = device_bytes {
+            // The classic table starts in the block after the superblock's.
+            let table = groups.div_ceil(self.desc_per_block() as u64) * block_size as u64;
+            if (self.first_data_block as u64 + 1) * block_size as u64 + table > device {
+                return bad(format!(
+                    "a descriptor table of {table} bytes ({groups} groups) cannot fit a \
+                     {device}-byte device"
+                ));
+            }
+        }
+        Ok(())
+    }
+
     /// Block size in bytes.
     pub fn block_size(&self) -> u32 {
         1024u32 << self.log_block_size

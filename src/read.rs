@@ -118,6 +118,9 @@ impl Ext4 {
         let mut buf = [0u8; 1024];
         read_exact(dev, SUPERBLOCK_OFFSET, &mut buf)?;
         let sb = Superblock::decode(&buf)?;
+        // The geometry `Filesystem::open` checks too (#41): nothing below is
+        // computable from a corrupt shift or size.
+        sb.check_geometry(None)?;
 
         let block_size = 1024u64 << sb.log_block_size;
         let inode_size = sb.inode_size as u64;
