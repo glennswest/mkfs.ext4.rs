@@ -145,6 +145,13 @@ impl Mmp {
         buf
     }
 
+    /// What reading this back after writing it gives: names longer than
+    /// their fields are cut to fit, as [`Mmp::encode`] cuts them.
+    fn on_disk(&self) -> Self {
+        Self::decode(&self.encode(off::MMP_CHECKSUM + 4, false, 0))
+            .expect("an encoded block carries the magic")
+    }
+
     /// Verify the checksum of a block this was decoded from.
     pub fn verify_checksum(buf: &[u8], metadata_csum: bool, seed: u32) -> bool {
         if !metadata_csum {
@@ -167,8 +174,9 @@ pub fn new_seq() -> u32 {
     (raw % (SEQ_MAX - 1)) + 1
 }
 
-/// Why a filesystem could not be held.
+/// Why a filesystem could not be held, or is no longer held.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum MmpRefusal {
     /// Another host holds it, and here is which.
     HeldBy {
@@ -190,6 +198,18 @@ pub enum MmpRefusal {
         /// The sequence number seen.
         seq: u32,
     },
+    /// The block no longer holds what this lease last wrote: another host
+    /// took the filesystem over (this one went quiet past its waits), or
+    /// released or rewrote it. This host no longer holds the filesystem and
+    /// must stop writing to it. Nothing was written.
+    Lost {
+        /// Whoever the block names now.
+        holder: String,
+        /// The sequence number seen.
+        seq: u32,
+        /// When the block was last updated.
+        time: u64,
+    },
 }
 
 impl std::fmt::Display for MmpRefusal {
@@ -206,6 +226,11 @@ impl std::fmt::Display for MmpRefusal {
                 f,
                 "the mmp sequence {seq:#010x} is not one this implementation knows; \
                  something newer is using the filesystem"
+            ),
+            MmpRefusal::Lost { holder, seq, .. } => write!(
+                f,
+                "this host's hold on the filesystem was lost: the mmp block now names \
+                 {holder} (sequence {seq:#010x}); stop writing to it"
             ),
         }
     }
@@ -261,17 +286,26 @@ impl MmpOptions {
 ///
 /// While this exists, the filesystem is marked as held by this host. Call
 /// [`MmpLease::heartbeat`] within the check interval, or another host will
-/// eventually conclude the holder is gone.
+/// eventually conclude the holder is gone and take the filesystem over.
+///
+/// The lease keeps the block it last wrote. A heartbeat or a release reads the
+/// block first and writes only if it is still exactly that, as the kernel's
+/// `kmmpd` and `ext2fs_mmp_update2` / `ext2fs_mmp_stop` do; anything else
+/// means another host has the filesystem now, and the answer is
+/// [`MmpRefusal::Lost`]: this host must stop writing. A stale holder that
+/// wrote regardless would overwrite its replacement's claim, or mark the
+/// replacement's live filesystem clean, and leave two writers.
 #[derive(Debug, Clone)]
 pub struct MmpLease {
-    /// The sequence number this host claimed.
+    /// The sequence number on disk as this host last wrote it. A heartbeat
+    /// advances it; a checker's stays [`SEQ_FSCK`].
     pub seq: u32,
     /// The block the MMP structure lives in.
     pub block: u64,
     /// How often this host promised to heartbeat.
     pub check_interval: u16,
-    nodename: String,
-    bdevname: String,
+    /// The block's contents as this host last wrote them.
+    written: Mmp,
 }
 
 impl MmpLease {
@@ -281,28 +315,82 @@ impl MmpLease {
         Duration::from_secs(self.check_interval.max(MIN_CHECK_INTERVAL) as u64)
     }
 
-    /// Refresh the hold.
-    pub async fn heartbeat<D: BlockDevice>(&self, fs: &Filesystem<D>) -> Result<()> {
-        let mmp = Mmp {
-            seq: self.seq,
+    /// Refresh the hold: check the block is still ours, then write the next
+    /// sequence number and the time.
+    ///
+    /// The sequence must move, because moving is how [`acquire`] on another
+    /// host tells a live holder from a dead one. `Ok(Err(Lost))` means the
+    /// filesystem is no longer this host's; an `Err` means the block could not
+    /// be read or written, and the hold cannot be vouched for either. In both
+    /// cases the holder must stop writing.
+    pub async fn heartbeat<D: BlockDevice>(
+        &mut self,
+        fs: &Filesystem<D>,
+    ) -> Result<std::result::Result<(), MmpRefusal>> {
+        if let Err(lost) = self.still_ours(fs).await? {
+            return Ok(Err(lost));
+        }
+        let next = Mmp {
+            seq: next_seq(self.written.seq),
             time: now_secs(),
-            nodename: self.nodename.clone(),
-            bdevname: self.bdevname.clone(),
-            check_interval: self.check_interval,
+            ..self.written.clone()
         };
-        write_mmp(fs, self.block, &mmp).await
+        write_mmp(fs, self.block, &next).await?;
+        self.seq = next.seq;
+        self.written = next.on_disk();
+        Ok(Ok(()))
     }
 
-    /// Give the filesystem back.
-    pub async fn release<D: BlockDevice>(&self, fs: &Filesystem<D>) -> Result<()> {
+    /// Give the filesystem back, if it is still ours.
+    ///
+    /// `Ok(Err(Lost))` means another host holds it now, and the block was left
+    /// as that host wrote it.
+    pub async fn release<D: BlockDevice>(
+        &self,
+        fs: &Filesystem<D>,
+    ) -> Result<std::result::Result<(), MmpRefusal>> {
+        if let Err(lost) = self.still_ours(fs).await? {
+            return Ok(Err(lost));
+        }
         let mmp = Mmp {
             seq: SEQ_CLEAN,
             time: now_secs(),
-            nodename: self.nodename.clone(),
-            bdevname: self.bdevname.clone(),
-            check_interval: self.check_interval,
+            ..self.written.clone()
         };
-        write_mmp(fs, self.block, &mmp).await
+        write_mmp(fs, self.block, &mmp).await?;
+        Ok(Ok(()))
+    }
+
+    /// Whether the block is still exactly what this lease last wrote.
+    async fn still_ours<D: BlockDevice>(
+        &self,
+        fs: &Filesystem<D>,
+    ) -> Result<std::result::Result<(), MmpRefusal>> {
+        let now = read_mmp(fs, self.block).await?;
+        if now == self.written {
+            Ok(Ok(()))
+        } else {
+            Ok(Err(MmpRefusal::Lost {
+                holder: now.holder(),
+                seq: now.seq,
+                time: now.time,
+            }))
+        }
+    }
+}
+
+/// The sequence a heartbeat writes after `seq`: one more, back to 1 past
+/// [`SEQ_MAX`] (the kernel's `kmmpd`). A checker's [`SEQ_FSCK`] stays as it is:
+/// `ext2fs_mmp_update2` refreshes only the time.
+fn next_seq(seq: u32) -> u32 {
+    if seq == SEQ_FSCK {
+        return SEQ_FSCK;
+    }
+    let next = seq.wrapping_add(1);
+    if next == 0 || next > SEQ_MAX {
+        1
+    } else {
+        next
     }
 }
 
@@ -420,8 +508,7 @@ pub async fn acquire<D: BlockDevice>(
             seq: SEQ_FSCK,
             block,
             check_interval,
-            nodename: options.nodename.clone(),
-            bdevname: options.bdevname.clone(),
+            written: fsck_claim.on_disk(),
         }));
     }
 
@@ -429,8 +516,7 @@ pub async fn acquire<D: BlockDevice>(
         seq,
         block,
         check_interval,
-        nodename: options.nodename.clone(),
-        bdevname: options.bdevname.clone(),
+        written: claim.on_disk(),
     }))
 }
 
@@ -601,22 +687,20 @@ mod tests {
         };
         let lease = acquire(&fs, &first).await.unwrap().expect("first host wins");
 
-        // rose1 keeps heartbeating, as a live holder does.
+        // rose1 keeps heartbeating through the public lease, as a live
+        // holder does: every beat must still find its own block (#40).
         let beating = {
             let dev = Arc::clone(&dev);
-            let lease = lease.clone();
+            let mut lease = lease.clone();
             tokio::spawn(async move {
                 let fs = Filesystem::open(dev).await.unwrap();
                 for _ in 0..20 {
                     tokio::time::sleep(Duration::from_secs(2)).await;
-                    let bumped = Mmp {
-                        seq: new_seq(),
-                        time: now_secs(),
-                        nodename: "rose1".into(),
-                        bdevname: "/dev/nvme-tcp0".into(),
-                        check_interval: lease.check_interval,
-                    };
-                    let _ = write_mmp(&fs, lease.block, &bumped).await;
+                    lease
+                        .heartbeat(&fs)
+                        .await
+                        .unwrap()
+                        .expect("rose1 is the holder throughout");
                 }
             })
         };
@@ -716,13 +800,138 @@ mod tests {
         let fs = Filesystem::open(&dev).await.unwrap();
 
         let lease = acquire(&fs, &fast()).await.unwrap().expect("free");
-        lease.release(&fs).await.unwrap();
+        lease.release(&fs).await.unwrap().expect("still ours");
 
         let mmp = read_mmp(&fs, lease.block).await.unwrap();
         assert_eq!(mmp.seq, SEQ_CLEAN);
 
         let second = acquire(&fs, &fast()).await.unwrap();
         assert!(second.is_ok(), "a released filesystem should be free");
+    }
+
+    #[test]
+    fn a_heartbeat_sequence_wraps_clear_of_the_reserved_values() {
+        assert_eq!(next_seq(1), 2);
+        assert_eq!(next_seq(SEQ_MAX - 1), SEQ_MAX);
+        assert_eq!(next_seq(SEQ_MAX), 1);
+        assert_eq!(next_seq(SEQ_FSCK), SEQ_FSCK);
+    }
+
+    /// #40 (finding 7546ce404b6c): a heartbeat moves the sequence. A beat that
+    /// rewrote the same number looks, from another host's `acquire`, exactly
+    /// like a dead holder.
+    #[tokio::test]
+    async fn a_heartbeat_moves_the_sequence() {
+        let dev = with_mmp().await;
+        let fs = Filesystem::open(&dev).await.unwrap();
+
+        let mut lease = acquire(&fs, &fast()).await.unwrap().expect("free");
+        let first = lease.seq;
+        let mut expect = first;
+        for _ in 0..3 {
+            lease.heartbeat(&fs).await.unwrap().expect("still ours");
+            expect = next_seq(expect);
+            assert_eq!(lease.seq, expect);
+            let on_disk = read_mmp(&fs, lease.block).await.unwrap();
+            assert_eq!(on_disk.seq, lease.seq);
+            assert_eq!(on_disk.nodename, "test-host");
+        }
+        assert_ne!(lease.seq, first);
+        lease.release(&fs).await.unwrap().expect("still ours");
+        assert_eq!(read_mmp(&fs, lease.block).await.unwrap().seq, SEQ_CLEAN);
+    }
+
+    /// A checker's hold stays visible as one: its heartbeat refreshes the
+    /// time and keeps [`SEQ_FSCK`].
+    #[tokio::test]
+    async fn a_checkers_heartbeat_keeps_the_fsck_sequence() {
+        let dev = with_mmp().await;
+        let fs = Filesystem::open(&dev).await.unwrap();
+
+        let mut lease = acquire(&fs, &fast().as_fsck()).await.unwrap().expect("free");
+        assert_eq!(lease.seq, SEQ_FSCK);
+        lease.heartbeat(&fs).await.unwrap().expect("still ours");
+        assert_eq!(read_mmp(&fs, lease.block).await.unwrap().seq, SEQ_FSCK);
+        lease.release(&fs).await.unwrap().expect("still ours");
+    }
+
+    /// Names longer than their on-disk fields are cut on the way out; the
+    /// lease compares against what is on disk, not what it was given, so its
+    /// own block still reads as its own.
+    #[tokio::test]
+    async fn a_long_name_does_not_lose_the_lease() {
+        let dev = with_mmp().await;
+        let fs = Filesystem::open(&dev).await.unwrap();
+
+        let options = MmpOptions {
+            nodename: "n".repeat(100),
+            bdevname: "/dev/".to_string() + &"d".repeat(60),
+            ..fast()
+        };
+        let mut lease = acquire(&fs, &options).await.unwrap().expect("free");
+        lease.heartbeat(&fs).await.unwrap().expect("its own block");
+        lease.release(&fs).await.unwrap().expect("its own block");
+    }
+
+    /// #40 (finding 7546ce404b6c): the holder pauses past the waits, a second
+    /// host takes the filesystem over through the protocol, and the first
+    /// resumes. Its heartbeat and its release must find the block is no longer
+    /// its own, write nothing, and say so; the new holder keeps its hold.
+    /// Before the fix both wrote blindly: the beat put the stale claim back
+    /// over the new one, and the release marked the live filesystem clean.
+    ///
+    /// Real protocol waits under a paused clock, all through the public lease.
+    #[tokio::test(start_paused = true)]
+    async fn a_stale_holder_that_resumes_does_not_overwrite_its_replacement() {
+        let dev = with_mmp().await;
+        let fs = Filesystem::open(&dev).await.unwrap();
+
+        let real = |node: &str| MmpOptions {
+            nodename: node.into(),
+            bdevname: "/dev/shared".into(),
+            as_fsck: false,
+            wait_override: None,
+        };
+        let mut stale = acquire(&fs, &real("rose1")).await.unwrap().expect("free");
+        stale.heartbeat(&fs).await.unwrap().expect("rose1 holds it");
+
+        // rose1 stops beating (a long pause, a partition). rose2 waits out the
+        // protocol, sees no movement, and takes over.
+        let mut fresh = acquire(&fs, &real("rose2"))
+            .await
+            .unwrap()
+            .expect("a silent holder is taken over");
+        let theirs = read_mmp(&fs, fresh.block).await.unwrap();
+        assert_eq!(theirs.seq, fresh.seq);
+        assert_eq!(theirs.nodename, "rose2");
+
+        // rose1 resumes.
+        let lost = stale
+            .heartbeat(&fs)
+            .await
+            .unwrap()
+            .expect_err("rose1's hold is gone");
+        match &lost {
+            MmpRefusal::Lost { holder, seq, .. } => {
+                assert!(holder.contains("rose2"), "{holder}");
+                assert_eq!(*seq, fresh.seq);
+            }
+            other => panic!("expected Lost, got {other:?}"),
+        }
+        assert!(lost.to_string().contains("stop writing"));
+        assert_eq!(read_mmp(&fs, fresh.block).await.unwrap(), theirs, "beat wrote");
+
+        stale
+            .release(&fs)
+            .await
+            .unwrap()
+            .expect_err("rose1 cannot release rose2's hold");
+        assert_eq!(read_mmp(&fs, fresh.block).await.unwrap(), theirs, "release wrote");
+
+        // rose2 is still the holder and beats on.
+        fresh.heartbeat(&fs).await.unwrap().expect("rose2 holds it");
+        fresh.release(&fs).await.unwrap().expect("rose2 holds it");
+        assert_eq!(read_mmp(&fs, fresh.block).await.unwrap().seq, SEQ_CLEAN);
     }
 
     #[tokio::test]

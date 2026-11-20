@@ -3,6 +3,22 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-20
+- **fix(mmp):** a stale MMP lease can no longer overwrite its replacement
+  (#40, review finding `7546ce404b6c`). `MmpLease::heartbeat` and `release`
+  read the block first and write only if it is still what the lease last
+  wrote; otherwise they write nothing and answer `MmpRefusal::Lost`. A
+  heartbeat advances the sequence (wrapping past `SEQ_MAX` to 1; a checker's
+  stays `SEQ_FSCK`) instead of rewriting the claim's, which another host's
+  `acquire` reads as a dead holder.
+- **BREAKING:** `MmpLease::heartbeat` takes `&mut self`; `heartbeat` and
+  `release` return `Result<Result<(), MmpRefusal>>`; `MmpRefusal` gains
+  `Lost` and is `#[non_exhaustive]`.
+- **test:** an fsck repair on a meta_bg filesystem over several descriptor
+  blocks restores descriptors in three meta block groups and changes no
+  other block (#40, review finding `e714fcdaac12`, which #33 had fixed in
+  v4.1.3 after the reviewed commit 1e0dadd).
+
 ### 2026-11-19
 - **docs:** the slide on stormblock's second culprit (and its narration)
   says `logical_sector_size()` was *never overridden*, so the trait's default

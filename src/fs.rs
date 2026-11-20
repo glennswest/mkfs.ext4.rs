@@ -1484,4 +1484,52 @@ mod tests {
             .unwrap();
         assert!(report.is_clean(), "{:?}", report.problems);
     }
+    /// #40 (finding e714fcdaac12, fixed by #33): an fsck repair on a meta_bg
+    /// filesystem over several descriptor blocks puts right a descriptor in
+    /// each of three meta block groups and changes no other block. Every
+    /// block but the superblock copies (which a repair stamps) comes back as
+    /// the format wrote it: the restored descriptors in all their copies, and
+    /// the bitmaps and inode tables beside them untouched.
+    #[tokio::test]
+    async fn a_repair_under_meta_bg_restores_every_descriptor_and_nothing_else() {
+        let dev = small_groups("meta_bg", None, 512 * MIB).await;
+        let before = image(&dev).await;
+        let mut fs = Filesystem::open(&dev).await.unwrap();
+        let dpb = fs.desc_per_block();
+        let groups = fs.group_count();
+        assert!(groups >= 3 * dpb, "three meta block groups at least");
+        assert!(fs.superblock().gdt_blocks() > 1);
+
+        for g in [1, dpb + 2, 2 * dpb + 3] {
+            let desc = &mut fs.group_descs_mut()[g as usize];
+            assert!(desc.free_blocks_count > 0, "group {g}");
+            desc.free_blocks_count -= 1;
+        }
+        fs.flush_group_descs().await.unwrap();
+        let supers: Vec<usize> = (0..groups)
+            .filter(|&g| fs.group_has_super(g))
+            .map(|g| fs.group_first_block(g) as usize)
+            .collect();
+        drop(fs);
+
+        let repaired = crate::fsck::check(&dev, &crate::fsck::FsckOptions::repair().force(true))
+            .await
+            .unwrap();
+        assert!(repaired.repaired_anything(), "{:?}", repaired.problems);
+        let checked = crate::fsck::check(&dev, &crate::fsck::FsckOptions::check_only().force(true))
+            .await
+            .unwrap();
+        assert!(checked.is_clean(), "{:?}", checked.problems);
+
+        let after = image(&dev).await;
+        let differ: Vec<usize> = before
+            .chunks(1024)
+            .zip(after.chunks(1024))
+            .enumerate()
+            .filter(|(i, (a, b))| a != b && !supers.contains(i))
+            .map(|(i, _)| i)
+            .take(8)
+            .collect();
+        assert!(differ.is_empty(), "the repair changed blocks {differ:?}");
+    }
 }

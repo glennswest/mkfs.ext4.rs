@@ -134,6 +134,20 @@ so to have `mkfs -t ext4` / `fsck -t ext4` dispatch to them, install them as
   tables: any meta_bg filesystem with more than one descriptor block — all
   of them past ~192 TiB at 4 KiB blocks — was damaged by its first flush.
 
+  `mmp::acquire` takes a filesystem formatted with `-O mmp` by the protocol
+  of `ext2fs_mmp_start` (wait, stamp a random sequence, wait, confirm) and
+  returns an `MmpLease`, or a refusal naming the holder. The holder calls
+  `MmpLease::heartbeat` within the check interval and `release` when done.
+  Both read the MMP block first, as the kernel's `kmmpd` and
+  `ext2fs_mmp_update2` / `ext2fs_mmp_stop` do, and write only if it still
+  holds exactly what the lease last wrote; otherwise another host has taken
+  the filesystem over, nothing is written, and the answer is
+  `MmpRefusal::Lost`: stop writing. A heartbeat advances the sequence (a
+  checker's stays `SEQ_FSCK`). Before #40 (4.1.3 and earlier) both wrote
+  blindly and a heartbeat rewrote the same sequence, so a holder that paused
+  past another host's takeover overwrote the new claim, or marked the new
+  holder's live filesystem clean, on resuming.
+
   The skip, preening and this command line arrived in 4.0.0 (a breaking
   change: `FsckReport` gains `scope` and `preen_halted`, `FsckOptions` gains
   `preen`). At tag `v3.0.0`, `-f` and `FsckOptions::force` are accepted but
