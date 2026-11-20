@@ -375,6 +375,12 @@ to point at, not an open-ended guess about feature flags.
       the device. Called by `open`, `open_with_backup`, `reload` and
       `read::Ext4::open`; fsck stops after pass 0 on `zero-geometry` /
       `bad-inode-size`. Tests for each.
+      **State 2026-11-20 17:25:** code 38ed3ef pushed (tests in
+      `fs::tests::*` under "#41"; fio.ext4.rs#27 filed for its
+      `stream_file`). Not yet built: the first sc-build got no slot in an
+      hour (exit 75), the second has waited 4 h behind ~88 builds. Next:
+      sc-build (build, tests, clippy `-D warnings` both feature sets), fix
+      what it finds, `chore(release): v5.1.0`, close #41.
 
 Open (2026-11-14): #37 (P3: `first_meta_bg > 0` reserves the whole table in
 each classic copy), #36 (this pin refresh), #32 and #29 and #23 (P2: fsck ignores the orphan file's
