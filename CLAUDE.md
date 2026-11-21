@@ -436,6 +436,17 @@ to point at, not an open-ended guess about feature flags.
       lib tests (both new `read::tests`), every suite, clippy `-D warnings`
       on both feature sets. Unreleased (CHANGELOG).
 
+- [ ] Issue #45 (major): lazy itable init skipped every table but group 0's
+      even with no descriptor checksum to vouch for `itable_unused`
+      (`98c0cd3f8e21`): stale inodes on reused storage looked live. Fix, as
+      `mke2fs` `write_inode_tables`: under lazy, zero
+      `ceil((ipg − itable_unused) × inode_size / block_size)` blocks — the
+      whole table without csum (itable_unused is 0 there), only the used
+      prefix with it. Test `format::tests::lazy_itable_init_zeroes_tables_
+      no_checksum_vouches_for` on a 0xa5-filled device: ext2, ext3, ext4
+      ^metadata_csum,^uninit_bg zeroed; ext4 and ext4 uninit_bg left alone;
+      all fsck clean.
+
 Open (2026-11-14): #37 (P3: `first_meta_bg > 0` reserves the whole table in
 each classic copy), #36 (this pin refresh), #32 and #29 and #23 (P2: fsck ignores the orphan file's
 blocks; a 4 KiB-block fs just past a 128 MiB group is refused; `sparse_super2`

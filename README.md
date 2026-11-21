@@ -63,7 +63,9 @@ so to have `mkfs -t ext4` / `fsck -t ext4` dispatch to them, install them as
   `-U` UUID, `-O` features in `mke2fs -O` syntax (`^feature` clears a
   feature; `sparse_super2` is accepted but its layout is not yet honoured,
   [#23](https://github.com/glennswest/mkfs.ext4.rs/issues/23)), `-g` blocks per group, `-G` flex_bg size, `-J` journal blocks (0
-  means no journal), `--no-journal`, `--lazy-itable-init`, `--zeroed-medium`
+  means no journal), `--no-journal`, `--lazy-itable-init` (only the part of
+  each inode table in use is written, as `mke2fs -E lazy_itable_init=1`;
+  without `metadata_csum` or `uninit_bg` that is the whole table), `--zeroed-medium`
   (the device already reads back as zeros, so the inode tables and journal
   body are not written), `--mkfs-time` for reproducible images,
   `--mmp-update-interval` (implies `-O mmp`), `-n` dry run and `-q` quiet.

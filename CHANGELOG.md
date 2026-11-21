@@ -22,6 +22,13 @@
   findings `6224225bbf29`, `efc124177580`). It also takes the descriptor
   size from `Superblock::desc_size` (32 bytes without `64bit`), as
   `Filesystem` does.
+- **fix(format):** lazy inode-table initialisation zeroes the part of each
+  table in use (the inodes before `bg_itable_unused`), as `mke2fs`'s
+  `write_inode_tables` does, instead of skipping every table but group 0's.
+  Without descriptor checksums (ext2, ext3, ext4 with neither
+  `metadata_csum` nor `uninit_bg`) nothing vouches for an unwritten tail, so
+  that is the whole table: on reused storage the old inode records used to
+  survive in a table that looked live (#45, finding `98c0cd3f8e21`).
 
 ### Added
 - `Superblock::descriptor_block_loc`, `desc_block_is_distributed`,

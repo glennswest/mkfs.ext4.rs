@@ -198,10 +198,14 @@ pub struct Params {
     /// Creation timestamp. Fixed rather than "now" makes output reproducible,
     /// the same role `SOURCE_DATE_EPOCH` plays for `mke2fs`.
     pub mkfs_time: Option<u64>,
-    /// Leave inode tables unwritten, marking the groups uninitialised.
+    /// Write only the part of each inode table in use, leaving the rest for
+    /// the kernel to zero.
     ///
-    /// `mke2fs -E lazy_itable_init`. Enormously faster on a large device, and
-    /// safe only when the filesystem carries group descriptor checksums.
+    /// `mke2fs -E lazy_itable_init`. Enormously faster on a large device.
+    /// The unwritten tail is described by `bg_itable_unused` and INODE_UNINIT,
+    /// which only a group descriptor checksum (`metadata_csum` or
+    /// `uninit_bg`) makes trustworthy; without one, as in `mke2fs`, the part
+    /// in use is the whole table and every table is still zeroed (#45).
     pub lazy_itable_init: bool,
     /// The device already reads back as zeros everywhere.
     ///

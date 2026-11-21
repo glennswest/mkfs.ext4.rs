@@ -1337,9 +1337,18 @@ async fn write_group<D: BlockDevice + ?Sized>(
             .await?;
     }
 
-    // Inode tables are zeroed unless the caller asked for lazy initialisation,
-    // which leaves them untouched and marks the group uninitialised instead.
-    // Group 0 always gets a table: the reserved inodes live in it.
+    // Inode tables are zeroed unless the caller asked for lazy initialisation.
+    // Group 0 always gets its whole table: the reserved inodes live in it.
+    //
+    // Lazy initialisation zeroes only the part of the table in use — the
+    // inodes before `itable_unused` — as `mke2fs`'s `write_inode_tables`
+    // does. That tail is safe to leave as it is only because a descriptor
+    // checksum vouches for `itable_unused` (and INODE_UNINIT). Without one
+    // (ext2, ext3, ext4 with neither `metadata_csum` nor `uninit_bg`),
+    // `itable_unused` is 0, the part in use is the whole table, and lazy
+    // initialisation zeroes all of it: a reader has nothing else that says
+    // stale inode records on reused storage are not inodes (#45, finding
+    // `98c0cd3f8e21`).
     //
     // On a medium that already reads as zeros there is nothing to do either —
     // and unlike lazy initialisation this changes no flag, because the table
@@ -1347,13 +1356,17 @@ async fn write_group<D: BlockDevice + ?Sized>(
     // this later" and "this is already what it needs to be". `mke2fs` takes
     // the same view, which is why it marks every group ITABLE_ZEROED and
     // writes no inode table at all.
-    let skip = plan.zeroed_medium || (plan.lazy_itable && group != 0);
-    if !skip {
-        dev.write_zeroes(
-            layout.inode_table * block_size,
-            g.itable_blocks_per_group as u64 * block_size,
-        )
-        .await?;
+    let zero_blocks = if plan.zeroed_medium {
+        0
+    } else if plan.lazy_itable && group != 0 {
+        let in_use = (g.inodes_per_group - state.desc.itable_unused) as u64;
+        (in_use * g.inode_size as u64).div_ceil(block_size)
+    } else {
+        g.itable_blocks_per_group as u64
+    };
+    if zero_blocks > 0 {
+        dev.write_zeroes(layout.inode_table * block_size, zero_blocks * block_size)
+            .await?;
     }
 
     Ok((group, state.desc))
@@ -2109,6 +2122,66 @@ mod tests {
             let journalled = profile != Profile::Ext2;
             assert_eq!(report.journal_blocks > 0, journalled, "{}", profile.name());
             assert_eq!(sb.journal_inum != 0, journalled, "{}", profile.name());
+        }
+    }
+
+    /// #45 (finding `98c0cd3f8e21`): lazy inode-table initialisation leaves a
+    /// table unwritten only where a descriptor checksum vouches for
+    /// `itable_unused`. On a medium full of old bytes, ext2, ext3 and ext4
+    /// without `metadata_csum` / `uninit_bg` get every table zeroed (as
+    /// `mke2fs -E lazy_itable_init=1` does) and check clean; ext4 with either
+    /// checksum leaves the unused tables alone and still checks clean.
+    #[tokio::test]
+    async fn lazy_itable_init_zeroes_tables_no_checksum_vouches_for() {
+        let cases: [(&str, Params, bool); 5] = [
+            ("ext2", fixed_params(Profile::Ext2), true),
+            ("ext3", fixed_params(Profile::Ext3), true),
+            (
+                "ext4 ^metadata_csum",
+                fixed_params(Profile::Ext4).no_journal().features("^metadata_csum,^uninit_bg"),
+                true,
+            ),
+            ("ext4", fixed_params(Profile::Ext4).no_journal(), false),
+            (
+                "ext4 uninit_bg",
+                fixed_params(Profile::Ext4).no_journal().features("^metadata_csum,uninit_bg"),
+                false,
+            ),
+        ];
+        for (name, params, zeroed) in cases {
+            let dev = MemDevice::new(64 * MIB);
+            // Reused storage: every byte stale, nothing reads as zero.
+            dev.write_at(0, &vec![0xa5u8; (64 * MIB) as usize]).await.unwrap();
+            format(&dev, &params.lazy_itable_init(true))
+                .await
+                .unwrap_or_else(|e| panic!("{name}: {e}"));
+
+            let fs = crate::fs::Filesystem::open(&dev).await.unwrap();
+            let sb = fs.superblock().clone();
+            let has_csum = sb.feature_ro_compat.intersects(
+                RoCompatFeatures::METADATA_CSUM | RoCompatFeatures::GDT_CSUM,
+            );
+            assert_eq!(has_csum, !zeroed, "{name}: the case is what it says");
+            let table_bytes = sb.itable_blocks_per_group() as usize * sb.block_size() as usize;
+            for g in 1..sb.group_count() {
+                let desc = fs.group_descs()[g as usize];
+                let mut table = vec![0u8; table_bytes];
+                dev.read_at(desc.inode_table * sb.block_size() as u64, &mut table)
+                    .await
+                    .unwrap();
+                if zeroed {
+                    assert!(table.iter().all(|&b| b == 0), "{name}: group {g}'s table kept stale bytes");
+                    assert_eq!(desc.itable_unused, 0, "{name}: nothing vouches for a tail");
+                } else {
+                    assert_eq!(desc.itable_unused, sb.inodes_per_group, "{name}: group {g}");
+                    assert!(table.iter().all(|&b| b == 0xa5), "{name}: group {g}'s table was written");
+                }
+            }
+            drop(fs);
+            let report = crate::fsck::check(&dev, &crate::fsck::FsckOptions::check_only().force(true))
+                .await
+                .unwrap();
+            assert!(report.is_clean(), "{name}: {:?}", report.problems);
         }
     }
 

@@ -78,7 +78,10 @@ struct Args {
     #[arg(long)]
     no_journal: bool,
 
-    /// Do not write inode tables; mark the groups uninitialised instead.
+    /// Write only the part of each inode table in use, as `mke2fs -E
+    /// lazy_itable_init=1`. Needs descriptor checksums (`metadata_csum` or
+    /// `uninit_bg`) to vouch for the rest; without them every table is
+    /// still zeroed.
     #[arg(long)]
     lazy_itable_init: bool,
 
