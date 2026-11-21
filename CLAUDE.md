@@ -450,7 +450,7 @@ to point at, not an open-ended guess about feature flags.
       lib tests (the new one among them), every suite incl. the goldens,
       clippy `-D warnings` on both feature sets. Unreleased (CHANGELOG).
 
-- [ ] Issue #46 (major): `mkfs-ext4 DEVICE BLOCKS` ignored `BLOCKS` outside
+- [x] Issue #46 (major): `mkfs-ext4 DEVICE BLOCKS` ignored `BLOCKS` outside
       `-n` (`9bfee0c81803`): `format()` plans from `dev.size()` and was given
       the whole `FileDevice`. Fix: one byte size for preview and format, read
       as `mke2fs`'s `parse_num_blocks2` (blocks of `-b`, 1 KiB without it, or
@@ -461,6 +461,10 @@ to point at, not an open-ended guess about feature flags.
       superblock, every byte after it untouched, `fsck-ext4 -fn` clean,
       preview equals format, oversize/zero/garbage refused with nothing
       written).
+      **Done 2026-11-21** (7a2b962; test fixes aabbacd, 5e4c17b, 6275e05 for
+      the build failures sc-build filed as #51–#53). sc-build on 6275e05: 0
+      warnings, 231 lib tests, every suite incl. the 3 `mkfs_cli` tests,
+      clippy `-D warnings` on both feature sets. Unreleased (CHANGELOG).
 
 Open (2026-11-14): #37 (P3: `first_meta_bg > 0` reserves the whole table in
 each classic copy), #36 (this pin refresh), #32 and #29 and #23 (P2: fsck ignores the orphan file's
