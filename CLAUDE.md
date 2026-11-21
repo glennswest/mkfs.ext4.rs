@@ -466,13 +466,19 @@ to point at, not an open-ended guess about feature flags.
       warnings, 231 lib tests, every suite incl. the 3 `mkfs_cli` tests,
       clippy `-D warnings` on both feature sets. Unreleased (CHANGELOG).
 
-- [ ] Issue #47 (major): explicit `-g` not bounded by the bitmap, `-g 0` /
+- [x] Issue #47 (major): explicit `-g` not bounded by the bitmap, `-g 0` /
       `-i 0` divide by zero (finding `b149e6d4977b`). Fix, as `mke2fs`
       1.47.3 (each bound run with `mke2fs -n`): `-g` a multiple of 8 in
       256..=8 × block size, then capped at 65528; `-g 0` is the default
       (`mke2fs`, `ext2fs_initialize` `set_field`); `-i` in 1024..=64 Mi.
       Checked in `Geometry::compute`, before the first write. Tests
       `layout::tests::blocks_per_group_*`, `inode_ratio_is_bounded_*`.
+      **Done 2026-11-21** (c4bea46, test fix 00c6398). sc-build on 00c6398:
+      234 lib tests (the three new ones), every suite, clippy `-D warnings`
+      on both feature sets. Found on the way, not changed: at 64 MiB `mke2fs
+      -i 64Mi` makes 8 inodes per group (e2fsck clean, lost+found in group
+      1), which `Geometry::compute` refuses by its #9 group-0 rule. The tree
+      is not `cargo fmt` clean (not a gate; #54). Unreleased (CHANGELOG).
 
 Open (2026-11-14): #37 (P3: `first_meta_bg > 0` reserves the whole table in
 each classic copy), #36 (this pin refresh), #32 and #29 and #23 (P2: fsck ignores the orphan file's
