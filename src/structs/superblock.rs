@@ -584,6 +584,14 @@ impl Superblock {
             ));
         }
         let block_size = self.block_size();
+        // A bare superblock — magic and block size, claiming no blocks at all
+        // — describes no group, inode table or descriptor, so nothing below
+        // can divide by or size anything from it. stormblock's image builder
+        // opens one to stamp it (tests/strict_sector.rs); it opened before
+        // #41 and still does, with no groups (#49).
+        if self.blocks_count == 0 && self.first_data_block == 0 {
+            return Ok(());
+        }
         if self.first_data_block as u64 >= self.blocks_count {
             return bad(format!(
                 "first data block {} is not below the block count {}",
