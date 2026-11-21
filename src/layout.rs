@@ -142,9 +142,10 @@ impl Geometry {
         let requested_inodes = match params.inodes_count {
             Some(n) => n.max(superblock::GOOD_OLD_FIRST_INO + 1),
             None => {
-                let ratio = params
-                    .inode_ratio
-                    .unwrap_or_else(|| class.inode_ratio()) as u64;
+                let ratio = match params.inode_ratio {
+                    Some(r) => validate_inode_ratio(r)?,
+                    None => class.inode_ratio(),
+                } as u64;
                 let n = ((blocks_count * block_size as u64) / ratio).max(16);
                 match u32::try_from(n) {
                     Ok(n) => n,
@@ -160,10 +161,17 @@ impl Geometry {
             }
         };
 
-        let mut blocks_per_group = params
-            .blocks_per_group
-            .unwrap_or(block_size * 8)
-            .min(max_blocks_per_group());
+        // `mke2fs -g`: a multiple of 8 (the bitmap is spliced a byte at a
+        // time), and between 256 and the bits in the one-block block bitmap
+        // (finding `b149e6d4977b`: `-b 1024 -g 16384` used to be accepted and
+        // overran the bitmap). 0 is no request at all, as `mke2fs -g 0` and
+        // `ext2fs_initialize`'s `set_field` both read it. Then the cap at
+        // `EXT2_MAX_BLOCKS_PER_GROUP`, which only 64 KiB blocks reach.
+        let blocks_per_group = match params.blocks_per_group {
+            None | Some(0) => block_size * 8,
+            Some(n) => validate_blocks_per_group(n, block_size)?,
+        };
+        let mut blocks_per_group = blocks_per_group.min(max_blocks_per_group());
 
         let desc_size = if features.incompat.contains(IncompatFeatures::SIXTY_FOUR_BIT) {
             MIN_DESC_SIZE_64BIT
@@ -729,6 +737,38 @@ fn validate_block_size(block_size: u32) -> Result<()> {
     Ok(())
 }
 
+/// `mke2fs -g`'s two checks: `blocks per group must be multiple of 8`
+/// at option parsing, and `blocks per group count out of range` once the
+/// block size is known (256 to `8 × blocksize`, one bitmap block's bits).
+fn validate_blocks_per_group(n: u32, block_size: u32) -> Result<u32> {
+    if n % 8 != 0 {
+        return Err(Error::invalid(format!(
+            "blocks per group must be multiple of 8 (got {n})"
+        )));
+    }
+    let max = block_size * 8;
+    if !(256..=max).contains(&n) {
+        return Err(Error::invalid(format!(
+            "blocks per group count {n} out of range (256 to {max} with \
+             {block_size}-byte blocks)"
+        )));
+    }
+    Ok(n)
+}
+
+/// `mke2fs -i`: `invalid inode ratio (min 1024/max 67108864)`, i.e.
+/// `EXT2_MIN_BLOCK_SIZE` to `EXT2_MAX_BLOCK_SIZE × 1024`.
+fn validate_inode_ratio(ratio: u32) -> Result<u32> {
+    const MIN: u32 = 1024;
+    const MAX: u32 = 65536 * 1024;
+    if !(MIN..=MAX).contains(&ratio) {
+        return Err(Error::invalid(format!(
+            "invalid inode ratio {ratio} (min {MIN}/max {MAX})"
+        )));
+    }
+    Ok(ratio)
+}
+
 fn validate_inode_size(inode_size: u16, block_size: u32) -> Result<()> {
     if inode_size < 128 || !inode_size.is_power_of_two() {
         return Err(Error::invalid(format!(
@@ -1201,6 +1241,60 @@ mod tests {
             .block_size(1024)
             .inode_size(2048);
         assert!(Geometry::compute(64 * MIB, &params).is_err());
+    }
+
+    fn with_bpg(p: Params, n: u32) -> Params {
+        Params { blocks_per_group: Some(n), ..p }
+    }
+
+    /// Finding `b149e6d4977b` (#47): `-g` and `-i` are bounded as real
+    /// `mke2fs` 1.47.3 bounds them (each case checked with `mke2fs -n` on a
+    /// 64 MiB image: the refusals are its refusals, the accepted values its
+    /// accepted ones).
+    #[test]
+    fn blocks_per_group_is_bounded_by_the_bitmap() {
+        let base = Params::new(Profile::Ext4).no_journal();
+        for (bs, g) in [(1024, 16384), (1024, 8200), (4096, 32776), (1024, 248), (1024, 100), (1024, 260)] {
+            let p = with_bpg(base.clone().block_size(bs), g);
+            assert!(
+                matches!(Geometry::compute(64 * MIB, &p), Err(Error::InvalidParams(_))),
+                "-b {bs} -g {g} accepted"
+            );
+        }
+        for (bs, g) in [(1024, 8192), (1024, 256), (4096, 32768), (4096, 1024)] {
+            let p = with_bpg(base.clone().block_size(bs), g);
+            let geom = Geometry::compute(64 * MIB, &p).unwrap();
+            assert_eq!(geom.blocks_per_group, g, "-b {bs} -g {g}");
+        }
+        // 64 KiB blocks: 8 × blocksize is past EXT2_MAX_BLOCKS_PER_GROUP,
+        // accepted and capped.
+        let p = with_bpg(base.clone().block_size(65536), 65536 * 8);
+        assert_eq!(Geometry::compute(1024 * MIB, &p).unwrap().blocks_per_group, 65528);
+    }
+
+    #[test]
+    fn blocks_per_group_zero_is_the_default() {
+        let base = Params::new(Profile::Ext4).no_journal();
+        let default = Geometry::compute(64 * MIB, &base).unwrap();
+        let zero = Geometry::compute(64 * MIB, &with_bpg(base.clone(), 0)).unwrap();
+        assert_eq!(zero, default);
+    }
+
+    #[test]
+    fn inode_ratio_is_bounded_as_mke2fs_bounds_it() {
+        let base = Params::new(Profile::Ext4).no_journal();
+        for r in [0, 512, 1023, 65536 * 1024 + 1] {
+            let p = base.clone().inode_ratio(r);
+            assert!(
+                matches!(Geometry::compute(64 * MIB, &p), Err(Error::InvalidParams(_))),
+                "-i {r} accepted"
+            );
+        }
+        // mke2fs -n -i 1024 on 64 MiB (1 KiB blocks): 65536 inodes; -i 64 Mi: 64.
+        let g = Geometry::compute(64 * MIB, &base.clone().inode_ratio(1024)).unwrap();
+        assert_eq!(g.inodes_count, 65536);
+        let g = Geometry::compute(64 * MIB, &base.clone().inode_ratio(65536 * 1024)).unwrap();
+        assert_eq!(g.inodes_count, 64);
     }
 
     #[test]

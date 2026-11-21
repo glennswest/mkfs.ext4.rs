@@ -11,6 +11,15 @@
   its device and touches nothing past it (#46).
 
 ### Fixed
+- **fix(layout):** `-g` / `Params::blocks_per_group` and `-i` /
+  `Params::inode_ratio` are bounded as `mke2fs` bounds them, in planning,
+  before any device write. Blocks per group must be a multiple of 8 and
+  between 256 and `8 × block size` (one block bitmap's bits): `-b 1024 -g
+  16384` used to be accepted and the group overran its bitmap. The inode
+  ratio must be 1024 to 67108864: `-i 0` used to divide by zero. `-g 0` is
+  the default, as it is to `mke2fs` and `ext2fs_initialize` (it used to
+  divide by zero too). Each bound checked against `mke2fs -n` 1.47.3 (#47,
+  finding `b149e6d4977b`).
 - **fix(cli):** `mkfs-ext4 DEVICE BLOCKS` formats `BLOCKS`. The count used
   to reach only the `-n` preview; the real format planned from the whole
   device, so `mkfs-ext4 -b 4096 image 16384` formatted all of a larger image

@@ -466,6 +466,14 @@ to point at, not an open-ended guess about feature flags.
       warnings, 231 lib tests, every suite incl. the 3 `mkfs_cli` tests,
       clippy `-D warnings` on both feature sets. Unreleased (CHANGELOG).
 
+- [ ] Issue #47 (major): explicit `-g` not bounded by the bitmap, `-g 0` /
+      `-i 0` divide by zero (finding `b149e6d4977b`). Fix, as `mke2fs`
+      1.47.3 (each bound run with `mke2fs -n`): `-g` a multiple of 8 in
+      256..=8 × block size, then capped at 65528; `-g 0` is the default
+      (`mke2fs`, `ext2fs_initialize` `set_field`); `-i` in 1024..=64 Mi.
+      Checked in `Geometry::compute`, before the first write. Tests
+      `layout::tests::blocks_per_group_*`, `inode_ratio_is_bounded_*`.
+
 Open (2026-11-14): #37 (P3: `first_meta_bg > 0` reserves the whole table in
 each classic copy), #36 (this pin refresh), #32 and #29 and #23 (P2: fsck ignores the orphan file's
 blocks; a 4 KiB-block fs just past a 128 MiB group is refused; `sparse_super2`
