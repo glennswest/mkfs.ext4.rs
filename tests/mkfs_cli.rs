@@ -115,13 +115,13 @@ fn the_preview_and_the_format_agree() {
             .parse()
             .unwrap();
         // -n wrote nothing.
-        assert!(std::fs::read(&path).unwrap().iter().all(|&b| b == FILL));
+        assert!(std::fs::read(path).unwrap().iter().all(|&b| b == FILL));
 
         let mut real = vec!["-q"];
         real.extend_from_slice(args);
         let out = mkfs(&real);
         assert!(out.status.success(), "{}", text(&out));
-        let img = std::fs::read(&path).unwrap();
+        let img = std::fs::read(path).unwrap();
         assert_eq!(superblock_size(&img), blocks * bsize, "{args:?}");
         std::fs::write(path, vec![FILL; DEVICE as usize]).unwrap();
     }
@@ -145,7 +145,7 @@ fn a_count_past_the_device_is_refused_and_writes_nothing() {
         let out = mkfs(args);
         assert!(!out.status.success(), "{args:?} was accepted\n{}", text(&out));
         assert!(
-            std::fs::read(&path).unwrap().iter().all(|&b| b == FILL),
+            std::fs::read(path).unwrap().iter().all(|&b| b == FILL),
             "{args:?} wrote to the device"
         );
     }
