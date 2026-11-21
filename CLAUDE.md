@@ -6,8 +6,8 @@ output by a comparison tool, with the e2fsprogs source consulted at the
 specific points where the two differ.
 
 - **Crate:** `mkfs-ext4` (lib `mkfs_ext4`)
-- **Version:** 5.0.0 — see `Cargo.toml` (single version location). Tag
-  `v5.0.0` is the #40 MMP lease fix (2026-11-20), `v4.1.3` the #33 fix, `v4.1.2` the #25 fix (both 2026-11-07); `v4.1.1`
+- **Version:** 5.1.0 — see `Cargo.toml` (single version location). Tag
+  `v5.1.0` is the #41 / #42 review fixes (2026-11-21), `v5.0.0` the #40 MMP lease fix (2026-11-20), `v4.1.3` the #33 fix, `v4.1.2` the #25 fix (both 2026-11-07); `v4.1.1`
   is on 14d5af8 (#20).
 - **License:** MIT OR Apache-2.0
 - **Repo:** https://github.com/glennswest/mkfs.ext4.rs
@@ -352,7 +352,7 @@ to point at, not an open-ended guess about feature flags.
       the public lease, and `fs::tests::a_repair_under_meta_bg_*`), every
       suite, clippy `-D warnings` on both feature sets. Released as v5.0.0.
 
-- [ ] Issue #41 (P1): four review findings in `src/fs.rs` (crossreview of
+- [x] Issue #41 (P1): four review findings in `src/fs.rs` (crossreview of
       1e0dadd). Plan:
       `24146537d73e` unwritten extents: new `Filesystem::map_block` returns
       the physical block and whether its extent is unwritten;
@@ -381,8 +381,16 @@ to point at, not an open-ended guess about feature flags.
       hour (exit 75), the second has waited 4 h behind ~88 builds. Next:
       sc-build (build, tests, clippy `-D warnings` both feature sets), fix
       what it finds, `chore(release): v5.1.0`, close #41.
+      **Done 2026-11-21.** The first build to run (16ed4d6, with #42) found
+      two #41 gaps, filed by sc-build as #49 and #50: the sync
+      `read::Ext4::open` did not refuse a descriptor table past the device
+      (f87e6a9: it reads the table's last block), and the geometry check
+      refused the bare superblock stormblock stamps (4225120: no blocks
+      claimed, first data block 0, opens with no groups as before). sc-build
+      on 4225120: 0 warnings, 222 lib tests, every suite, clippy `-D
+      warnings` on both feature sets. Released as v5.1.0.
 
-- [ ] Issue #42 (P1): three review findings in `src/fsck.rs`.
+- [x] Issue #42 (P1): three review findings in `src/fsck.rs`.
       `2f81571e62c4` pass 3: `children` from ordinary entries naming a
       directory (never `.`/`..`), `..` kept as a claim and compared against
       them; disconnected directories' link counts not touched.
@@ -392,8 +400,14 @@ to point at, not an open-ended guess about feature flags.
       repairs; `names_complete` (pass 2 read every dir block) gates link
       fixes. `5319d3d2a7d9` repair sets `h_refcount` to the references seen
       and restamps the checksum (only on a block whose checksum verified).
-      Tests `fsck::tests::*` under "#42". Next: sc-build, release 5.1.0
-      together with #41 if both pass.
+      Tests `fsck::tests::*` under "#42" (16ed4d6).
+      **Done 2026-11-21.** sc-build on 4225120: the five #42 tests
+      (`a_directory_with_no_name_is_disconnected_and_its_links_kept`,
+      `a_dotdot_naming_the_wrong_parent_is_found`,
+      `a_failed_map_walk_frees_nothing_in_repair`,
+      `an_untrusted_descriptor_leaves_the_bitmaps_alone`,
+      `a_wrong_xattr_refcount_is_repaired`) and every other suite pass,
+      clippy `-D warnings` on both feature sets. Released as v5.1.0.
 
 Open (2026-11-14): #37 (P3: `first_meta_bg > 0` reserves the whole table in
 each classic copy), #36 (this pin refresh), #32 and #29 and #23 (P2: fsck ignores the orphan file's
