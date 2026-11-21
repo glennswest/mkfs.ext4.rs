@@ -1290,11 +1290,14 @@ mod tests {
                 "-i {r} accepted"
             );
         }
-        // mke2fs -n -i 1024 on 64 MiB (1 KiB blocks): 65536 inodes; -i 64 Mi: 64.
+        // mke2fs -n -i 1024 on 64 MiB (1 KiB blocks): 65536 inodes; -i 64 Mi
+        // on 1 GiB (4 KiB blocks): 128. (At 64 MiB, -i 64 Mi gives mke2fs 8
+        // inodes per group, which this formatter refuses on its own ground:
+        // group 0 must hold the reserved inodes, #9.)
         let g = Geometry::compute(64 * MIB, &base.clone().inode_ratio(1024)).unwrap();
         assert_eq!(g.inodes_count, 65536);
-        let g = Geometry::compute(64 * MIB, &base.clone().inode_ratio(65536 * 1024)).unwrap();
-        assert_eq!(g.inodes_count, 64);
+        let g = Geometry::compute(1024 * MIB, &base.clone().inode_ratio(65536 * 1024)).unwrap();
+        assert_eq!(g.inodes_count, 128);
     }
 
     #[test]
