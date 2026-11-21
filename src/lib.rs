@@ -109,7 +109,7 @@ pub use cache::{CacheStats, CachedDevice};
 #[cfg(feature = "std")]
 pub use compare::{compare, CompareOptions, ComparisonReport};
 #[cfg(feature = "std")]
-pub use device::{BlockDevice, FileDevice, MemDevice};
+pub use device::{BlockDevice, FileDevice, MemDevice, Prefix};
 #[cfg(feature = "std")]
 pub use format::{format, Report};
 #[cfg(feature = "std")]

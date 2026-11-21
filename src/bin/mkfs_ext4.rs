@@ -5,7 +5,7 @@
 
 use clap::Parser;
 
-use mkfs_ext4::device::{BlockDevice, FileDevice};
+use mkfs_ext4::device::{BlockDevice, FileDevice, Prefix};
 use mkfs_ext4::format::format;
 use mkfs_ext4::params::{JournalSize, Params, Profile};
 
@@ -19,8 +19,11 @@ struct Args {
     /// Device or image file to format.
     device: String,
 
-    /// Size in blocks. Defaults to the whole device.
-    blocks_count: Option<u64>,
+    /// Size of the filesystem, as `mke2fs` reads it: a plain number counts
+    /// blocks of the `-b` size (1 KiB without `-b`); a `s`, `K`, `M`, `G` or
+    /// `T` suffix gives 512-byte sectors, KiB, MiB, GiB or TiB. Defaults to
+    /// the whole device, and may not exceed it.
+    blocks_count: Option<String>,
 
     /// Filesystem type: ext2, ext3 or ext4.
     #[arg(short = 't', long = "type", default_value = "ext4")]
@@ -115,6 +118,39 @@ fn parse_uuid(s: &str) -> anyhow::Result<[u8; 16]> {
         .as_bytes())
 }
 
+/// The filesystem's size in bytes for `mke2fs`'s `BLOCKS` argument, as its
+/// `parse_num_blocks2` reads it: a plain number in units of the `-b` block
+/// size, or of 1 KiB when the block size is still to be chosen (`mke2fs`
+/// divides that count by `blocksize / 1024` once it has chosen); a suffix
+/// names its own unit. Rounded down to that unit, and never zero.
+fn requested_bytes(arg: &str, block_size: Option<u32>) -> anyhow::Result<u64> {
+    let unit = u64::from(block_size.unwrap_or(1024));
+    let (digits, scale) = match arg.char_indices().last() {
+        Some((i, c)) if !c.is_ascii_digit() => {
+            let scale: u64 = match c {
+                's' => 512,
+                'k' | 'K' => 1 << 10,
+                'm' | 'M' => 1 << 20,
+                'g' | 'G' => 1 << 30,
+                't' | 'T' => 1 << 40,
+                _ => anyhow::bail!("invalid blocks '{arg}'"),
+            };
+            (&arg[..i], scale)
+        }
+        _ => (arg, unit),
+    };
+    let bytes = digits
+        .parse::<u64>()
+        .ok()
+        .and_then(|n| n.checked_mul(scale))
+        .ok_or_else(|| anyhow::anyhow!("invalid blocks '{arg}'"))?;
+    let bytes = bytes / unit * unit;
+    if bytes == 0 {
+        anyhow::bail!("invalid blocks '{arg}': the filesystem would be empty");
+    }
+    Ok(bytes)
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
@@ -160,14 +196,32 @@ async fn main() -> anyhow::Result<()> {
         anyhow::anyhow!("cannot open {}: {e}", args.device)
     })?;
 
+    // One size for the preview and the format, and the format sees only that
+    // much of the device (#46): it plans from the device's size, so the bound
+    // is what keeps every byte past the filesystem untouched.
+    let size = match args.blocks_count.as_deref() {
+        Some(arg) => requested_bytes(arg, params.block_size)?,
+        None => device.size(),
+    };
+    if size > device.size() {
+        anyhow::bail!(
+            "Filesystem larger than apparent device size: {size} bytes asked for, \
+             {} holds {}",
+            args.device,
+            device.size()
+        );
+    }
+    let device = Prefix::new(device, size)?;
+
     if args.dry_run {
-        let size = args.blocks_count.map_or(device.size(), |b| {
-            b * params.block_size.unwrap_or(4096) as u64
-        });
+        // The device's sector is a floor, as `format` takes it.
         let mut params = params.clone();
-        if params.sector_size.is_none() {
-            params.sector_size = Some(device.logical_sector_size());
-        }
+        params.sector_size = Some(
+            params
+                .sector_size
+                .unwrap_or(0)
+                .max(device.logical_sector_size()),
+        );
         let geom = mkfs_ext4::layout::Geometry::compute(size, &params)?;
         println!("Filesystem type:      {}", profile.name());
         println!("Block size:           {}", geom.block_size);

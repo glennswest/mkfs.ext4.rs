@@ -450,6 +450,18 @@ to point at, not an open-ended guess about feature flags.
       lib tests (the new one among them), every suite incl. the goldens,
       clippy `-D warnings` on both feature sets. Unreleased (CHANGELOG).
 
+- [ ] Issue #46 (major): `mkfs-ext4 DEVICE BLOCKS` ignored `BLOCKS` outside
+      `-n` (`9bfee0c81803`): `format()` plans from `dev.size()` and was given
+      the whole `FileDevice`. Fix: one byte size for preview and format, read
+      as `mke2fs`'s `parse_num_blocks2` (blocks of `-b`, 1 KiB without it, or
+      a `s/K/M/G/T` suffix), refused past the device; the format runs over
+      the new `device::Prefix` view, which bounds every I/O to that size.
+      Tests: `device::tests::a_prefix_formats_only_its_own_bytes` and
+      `tests/mkfs_cli.rs` (0xa5-filled image: filesystem size from the
+      superblock, every byte after it untouched, `fsck-ext4 -fn` clean,
+      preview equals format, oversize/zero/garbage refused with nothing
+      written).
+
 Open (2026-11-14): #37 (P3: `first_meta_bg > 0` reserves the whole table in
 each classic copy), #36 (this pin refresh), #32 and #29 and #23 (P2: fsck ignores the orphan file's
 blocks; a 4 KiB-block fs just past a 128 MiB group is refused; `sparse_super2`

@@ -3,7 +3,27 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### Added
+- **feat(device):** `device::Prefix<D>` (re-exported at the crate root): the
+  first `size` bytes of a device as a device of its own, refused when the
+  device is smaller, every read, write and `write_zeroes` past `size`
+  `OutOfBounds`. Formatting through it lays down a filesystem smaller than
+  its device and touches nothing past it (#46).
+
 ### Fixed
+- **fix(cli):** `mkfs-ext4 DEVICE BLOCKS` formats `BLOCKS`. The count used
+  to reach only the `-n` preview; the real format planned from the whole
+  device, so `mkfs-ext4 -b 4096 image 16384` formatted all of a larger image
+  and wrote metadata past the range asked for. Now one size serves the
+  preview and the format, and the format runs over a `Prefix` of that size,
+  so every byte after the filesystem is left as it was. The count is read as
+  `mke2fs`'s `parse_num_blocks2` reads it: blocks of the `-b` size, 1 KiB
+  without `-b` (the preview used to assume 4 KiB), or a `s`/`K`/`M`/`G`/`T`
+  suffix. A size past the device is refused ("Filesystem larger than
+  apparent device size") and nothing is written; `mke2fs` asks instead, or
+  grows a regular file. The preview takes the device's sector size as a
+  floor under `--sector-size`, as the format does (#46, finding
+  `9bfee0c81803`).
 - **fix(cache):** `CachedDevice` keeps a write-back run's blocks resident
   and dirty until the device has accepted the write that carries them. A
   failed or cancelled device write during `flush` or eviction used to drop

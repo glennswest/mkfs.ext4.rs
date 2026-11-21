@@ -370,6 +370,66 @@ impl BlockDevice for MemDevice {
     }
 }
 
+/// The first `size` bytes of another device, as a device of its own.
+///
+/// What `mke2fs DEVICE BLOCKS` formats: a filesystem smaller than the device
+/// it lies on. The formatter plans from [`BlockDevice::size`], so handing it
+/// this view is what keeps every block it writes inside the range asked for;
+/// a read or write past `size` is [`Error::OutOfBounds`] even where the
+/// device beneath would accept it (#46).
+pub struct Prefix<D> {
+    inner: D,
+    size: u64,
+}
+
+impl<D: BlockDevice> Prefix<D> {
+    /// The first `size` bytes of `inner`. Refused when `inner` is smaller.
+    pub fn new(inner: D, size: u64) -> Result<Self> {
+        if size > inner.size() {
+            return Err(Error::invalid(format!(
+                "{size} bytes asked for, but the device holds {}",
+                inner.size()
+            )));
+        }
+        Ok(Self { inner, size })
+    }
+
+    /// The device beneath.
+    pub fn into_inner(self) -> D {
+        self.inner
+    }
+}
+
+#[async_trait::async_trait]
+impl<D: BlockDevice> BlockDevice for Prefix<D> {
+    fn size(&self) -> u64 {
+        self.size
+    }
+
+    fn logical_sector_size(&self) -> u32 {
+        self.inner.logical_sector_size()
+    }
+
+    async fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<()> {
+        check_bounds(offset, buf.len() as u64, self.size)?;
+        self.inner.read_at(offset, buf).await
+    }
+
+    async fn write_at(&self, offset: u64, buf: &[u8]) -> Result<()> {
+        check_bounds(offset, buf.len() as u64, self.size)?;
+        self.inner.write_at(offset, buf).await
+    }
+
+    async fn flush(&self) -> Result<()> {
+        self.inner.flush().await
+    }
+
+    async fn write_zeroes(&self, offset: u64, len: u64) -> Result<()> {
+        check_bounds(offset, len, self.size)?;
+        self.inner.write_zeroes(offset, len).await
+    }
+}
+
 /// Blanket implementation so `&D` is itself a device.
 ///
 /// Lets a caller check or format a device it only borrowed, and run several
@@ -441,6 +501,40 @@ mod tests {
         let mut buf = [0u8; 5];
         dev.read_at(100, &mut buf).await.unwrap();
         assert_eq!(&buf, b"hello");
+    }
+
+    #[tokio::test]
+    async fn a_prefix_formats_only_its_own_bytes() {
+        // #46 (9bfee0c81803): a filesystem asked to be smaller than its device
+        // is planned from the view's size and writes nothing past it.
+        const MIB: u64 = 1024 * 1024;
+        let dev = MemDevice::new(32 * MIB);
+        dev.write_at(0, &vec![0xa5u8; (32 * MIB) as usize]).await.unwrap();
+        let view = Prefix::new(&dev, 16 * MIB).unwrap();
+        let params = crate::params::Params::new(crate::params::Profile::Ext4);
+        let report = crate::format::format(&view, &params).await.unwrap();
+        assert_eq!(report.blocks_count * u64::from(report.block_size), 16 * MIB);
+        let image = dev.to_vec();
+        assert!(image[(16 * MIB) as usize..].iter().all(|&b| b == 0xa5));
+
+        // The view's edge is the device's edge, for every kind of I/O.
+        assert!(matches!(
+            view.write_at(16 * MIB - 512, &[0u8; 1024]).await,
+            Err(Error::OutOfBounds { .. })
+        ));
+        assert!(matches!(
+            view.read_at(16 * MIB, &mut [0u8; 512]).await,
+            Err(Error::OutOfBounds { .. })
+        ));
+        assert!(matches!(
+            view.write_zeroes(16 * MIB - 512, 1024).await,
+            Err(Error::OutOfBounds { .. })
+        ));
+        assert!(dev.to_vec()[(16 * MIB) as usize..].iter().all(|&b| b == 0xa5));
+
+        // A view larger than its device is refused outright.
+        assert!(Prefix::new(&dev, 32 * MIB + 1).is_err());
+        assert_eq!(Prefix::new(&dev, 32 * MIB).unwrap().size(), 32 * MIB);
     }
 
     #[tokio::test]

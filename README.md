@@ -57,7 +57,10 @@ builds `mkfs-ext4` and `fsck-ext4`. Rust does not allow a `.` in a binary name,
 so to have `mkfs -t ext4` / `fsck -t ext4` dispatch to them, install them as
 `mkfs.ext4` and `fsck.ext4`.
 
-- `mkfs-ext4 [options] DEVICE [BLOCKS]`: `-t ext2|ext3|ext4` (default
+- `mkfs-ext4 [options] DEVICE [BLOCKS]`: `BLOCKS` is the filesystem's size
+  as `mke2fs` reads it — blocks of the `-b` size (1 KiB without `-b`), or
+  with a `s`/`K`/`M`/`G`/`T` suffix — no larger than the device; the bytes
+  past it are not touched. Defaults to the whole device. `-t ext2|ext3|ext4` (default
   `ext4`), `-b` block size, `--sector-size`, `-I` inode size, `-N` inode
   count, `-i` bytes per inode, `-m` reserved percent (default 5), `-L` label,
   `-U` UUID, `-O` features in `mke2fs -O` syntax (`^feature` clears a
