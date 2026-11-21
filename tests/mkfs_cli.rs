@@ -19,7 +19,7 @@ const FILL: u8 = 0xa5;
 /// A 64 MiB image that is all `FILL`, so anything written shows.
 fn image(dir: &Path) -> String {
     let path = dir.join("fs.img");
-    std::fs::write(&path, vec![FILL; DEVICE as usize]).unwrap();
+    std::fs::write(path, vec![FILL; DEVICE as usize]).unwrap();
     path.to_str().unwrap().to_string()
 }
 
@@ -57,7 +57,7 @@ fn formats_exactly(args: &[&str], expect: u64) {
     let mut full = args.to_vec();
     full.insert(0, "-q");
     let at = full.iter().position(|a| *a == "IMG").unwrap();
-    full[at] = &path;
+    full[at] = path.as_str();
     let out = mkfs(&full);
     assert!(out.status.success(), "{args:?}\n{}", text(&out));
 
@@ -67,7 +67,7 @@ fn formats_exactly(args: &[&str], expect: u64) {
     let past = img[expect as usize..].iter().position(|&b| b != FILL);
     assert_eq!(past, None, "{args:?}: wrote past the filesystem");
 
-    let out = run(env!("CARGO_BIN_EXE_fsck-ext4"), &["-fn", &path]);
+    let out = run(env!("CARGO_BIN_EXE_fsck-ext4"), &["-fn", path.as_str()]);
     assert_eq!(out.status.code(), Some(0), "{args:?}\n{}", text(&out));
 }
 
@@ -89,10 +89,11 @@ fn a_block_count_bounds_the_format() {
 fn the_preview_and_the_format_agree() {
     let dir = tempfile::tempdir().unwrap();
     let path = image(dir.path());
+    let path = path.as_str();
     for args in [
-        &["-b", "4096", &path, "4096"][..],
-        &[&path, "16384"][..],
-        &[&path][..],
+        &["-b", "4096", path, "4096"][..],
+        &[path, "16384"][..],
+        &[path][..],
     ] {
         let mut preview = vec!["-n"];
         preview.extend_from_slice(args);
@@ -122,7 +123,7 @@ fn the_preview_and_the_format_agree() {
         assert!(out.status.success(), "{}", text(&out));
         let img = std::fs::read(&path).unwrap();
         assert_eq!(superblock_size(&img), blocks * bsize, "{args:?}");
-        std::fs::write(&path, vec![FILL; DEVICE as usize]).unwrap();
+        std::fs::write(path, vec![FILL; DEVICE as usize]).unwrap();
     }
 }
 
@@ -130,15 +131,16 @@ fn the_preview_and_the_format_agree() {
 fn a_count_past_the_device_is_refused_and_writes_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let path = image(dir.path());
+    let path = path.as_str();
     for args in [
-        &["-b", "4096", &path, "16385"][..],
-        &[&path, "65537"][..],
-        &[&path, "1G"][..],
-        &["-n", &path, "1G"][..],
-        &[&path, "0"][..],
-        &[&path, "12x"][..],
-        &[&path, "M"][..],
-        &[&path, "99999999999999999999"][..],
+        &["-b", "4096", path, "16385"][..],
+        &[path, "65537"][..],
+        &[path, "1G"][..],
+        &["-n", path, "1G"][..],
+        &[path, "0"][..],
+        &[path, "12x"][..],
+        &[path, "M"][..],
+        &[path, "99999999999999999999"][..],
     ] {
         let out = mkfs(args);
         assert!(!out.status.success(), "{args:?} was accepted\n{}", text(&out));
