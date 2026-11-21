@@ -3,7 +3,13 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
-### 2026-11-20
+## [v5.1.0] — 2026-11-21
+
+Review findings #41 (`src/fs.rs`) and #42 (`src/fsck.rs`), with the two gaps
+the first build of them found (#49, #50). Additive: `Filesystem::map_block`
+and `fs::Mapping` are new; nothing is removed or changes signature.
+
+### Fixed
 - **fix(fsck):** pass 3 builds the directory tree from ordinary names, not
   from each directory's own `..`: a directory whose name was removed is
   `disconnected-directory` (it was "reachable" through itself), its link
