@@ -422,7 +422,7 @@ to point at, not an open-ended guess about feature flags.
       (the five new cache tests among the 13 `cache::`), every suite, clippy
       `-D warnings` on both feature sets. Unreleased (CHANGELOG).
 
-- [ ] Issue #44 (major): the sync `read::Ext4::read_group_desc` assumed a
+- [x] Issue #44 (major): the sync `read::Ext4::read_group_desc` assumed a
       contiguous table (`6224225bbf29`, `efc124177580`), wrong under meta_bg
       past the first meta block group. Fix, as `ext2fs_descriptor_block_loc2`:
       `Superblock::descriptor_block_loc` (no_std), used by `read.rs` and by
@@ -432,6 +432,9 @@ to point at, not an open-ended guess about feature flags.
       first_meta_group_*` (classic, meta_bg, first_meta_bg 1: every
       descriptor equals `Filesystem`'s, an inode in group 2·dpb+3 reads back)
       and `a_truncated_meta_bg_table_is_refused_at_open`.
+      **Done 2026-11-21** (dc619d8). sc-build on dc619d8: 0 warnings, 229
+      lib tests (both new `read::tests`), every suite, clippy `-D warnings`
+      on both feature sets. Unreleased (CHANGELOG).
 
 Open (2026-11-14): #37 (P3: `first_meta_bg > 0` reserves the whole table in
 each classic copy), #36 (this pin refresh), #32 and #29 and #23 (P2: fsck ignores the orphan file's
