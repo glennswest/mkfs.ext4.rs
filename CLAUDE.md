@@ -409,6 +409,16 @@ to point at, not an open-ended guess about feature flags.
       `a_wrong_xattr_refcount_is_repaired`) and every other suite pass,
       clippy `-D warnings` on both feature sets. Released as v5.1.0.
 
+- [ ] Issue #43 (major): `CachedDevice::write_back` cleared or removed a
+      run's dirty blocks before awaiting the device write (finding
+      `4023fa887fa7`), so a failed or cancelled flush/eviction lost
+      acknowledged writes. Fix: assemble the run without touching the cache,
+      clear or remove its blocks only after `write_at` returns Ok; eviction
+      counts what actually left. `write_zeroes` calls the device before it
+      drops cached copies. Tests `cache::tests::a_failed_*` /
+      `a_cancelled_*` over a fault-injecting device (fail N after M writes,
+      hang one write cut off by a timeout).
+
 Open (2026-11-14): #37 (P3: `first_meta_bg > 0` reserves the whole table in
 each classic copy), #36 (this pin refresh), #32 and #29 and #23 (P2: fsck ignores the orphan file's
 blocks; a 4 KiB-block fs just past a 128 MiB group is refused; `sparse_super2`

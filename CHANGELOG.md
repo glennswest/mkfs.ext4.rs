@@ -3,6 +3,17 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### Fixed
+- **fix(cache):** `CachedDevice` keeps a write-back run's blocks resident
+  and dirty until the device has accepted the write that carries them. A
+  failed or cancelled device write during `flush` or eviction used to drop
+  the dirty state first, so a later `flush` could succeed with the device
+  still holding old bytes, and eviction discarded the only copy. Now the
+  error surfaces, every acknowledged block stays readable and scheduled, and
+  the retry writes exactly the runs left. `write_zeroes` passes to the device
+  before it drops or zeroes cached copies, for the same reason (#43, finding
+  `4023fa887fa7`).
+
 ## [v5.1.0] — 2026-11-21
 
 Review findings #41 (`src/fs.rs`) and #42 (`src/fsck.rs`), with the two gaps

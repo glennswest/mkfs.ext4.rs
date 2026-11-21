@@ -227,48 +227,62 @@ impl<D: BlockDevice> CachedDevice<D> {
     /// ones into single writes. Blocks must be sorted. Clean blocks are
     /// skipped. `remove` controls whether visited blocks leave the cache or
     /// stay resident marked clean.
+    ///
+    /// A run's blocks stay resident and dirty until the device has accepted
+    /// the write that carries them (#43, finding `4023fa887fa7`). Nothing in
+    /// the cache changes across the await, so a failed write leaves every
+    /// block it carried scheduled for the next write-back, and a cancelled one
+    /// (this future dropped mid-write) leaves the cache as it found that run.
+    /// Runs that completed before a failure are on the device and are cleared
+    /// or removed; clean blocks are removed as they are visited, since the
+    /// device already has them.
     async fn write_back(&self, cache: &mut Cache, blocks: &[u64], remove: bool) -> Result<()> {
         let mut run_start = 0u64;
         let mut run = Vec::new();
+        let mut members: Vec<u64> = Vec::new();
         for &blk in blocks {
             let Some(entry) = cache.map.get(&blk) else {
                 continue;
             };
-            if entry.is_dirty() {
-                let (d0, d1) = entry.dirty;
-                let blen = entry.data.len();
-                if run.is_empty() {
-                    run_start = blk * self.block_size + d0 as u64;
-                }
+            if !entry.is_dirty() {
                 if remove {
-                    let entry = cache.map.remove(&blk).expect("checked above");
-                    run.extend_from_slice(&entry.data[d0..d1]);
-                } else {
-                    let entry = cache.map.get_mut(&blk).expect("checked above");
-                    entry.dirty = (0, 0);
-                    run.extend_from_slice(&entry.data[d0..d1]);
+                    cache.map.remove(&blk);
                 }
-                // The next block's dirty bytes continue this device range only
-                // if ours reach our block's end and theirs start at their
-                // block's start. A short block is the device's last, so a run
-                // never has to bridge one.
-                let next_joins = d1 == blen
-                    && blocks.contains(&(blk + 1))
-                    && cache
-                        .map
-                        .get(&(blk + 1))
-                        .map(|e| e.is_dirty() && e.dirty.0 == 0)
-                        .unwrap_or(false);
-                if !next_joins {
-                    self.inner.write_at(run_start, &run).await?;
-                    self.stats.inner_writes.fetch_add(1, Ordering::Relaxed);
-                    run.clear();
+                continue;
+            }
+            let (d0, d1) = entry.dirty;
+            let blen = entry.data.len();
+            if run.is_empty() {
+                run_start = blk * self.block_size + d0 as u64;
+            }
+            run.extend_from_slice(&entry.data[d0..d1]);
+            members.push(blk);
+            // The next block's dirty bytes continue this device range only
+            // if ours reach our block's end and theirs start at their
+            // block's start. A short block is the device's last, so a run
+            // never has to bridge one.
+            let next_joins = d1 == blen
+                && blocks.contains(&(blk + 1))
+                && cache
+                    .map
+                    .get(&(blk + 1))
+                    .map(|e| e.is_dirty() && e.dirty.0 == 0)
+                    .unwrap_or(false);
+            if !next_joins {
+                self.inner.write_at(run_start, &run).await?;
+                self.stats.inner_writes.fetch_add(1, Ordering::Relaxed);
+                run.clear();
+                // Only now is the device the holder of these bytes.
+                for b in members.drain(..) {
+                    if remove {
+                        cache.map.remove(&b);
+                    } else if let Some(e) = cache.map.get_mut(&b) {
+                        e.dirty = (0, 0);
+                    }
                 }
-            } else if remove {
-                cache.map.remove(&blk);
             }
         }
-        debug_assert!(run.is_empty());
+        debug_assert!(run.is_empty() && members.is_empty());
         Ok(())
     }
 
@@ -287,11 +301,13 @@ impl<D: BlockDevice> CachedDevice<D> {
         by_age.sort_unstable();
         let mut victims: Vec<u64> = by_age[..batch].iter().map(|&(_, blk)| blk).collect();
         victims.sort_unstable();
-        self.write_back(cache, &victims, true).await?;
+        let before = cache.map.len();
+        let written = self.write_back(cache, &victims, true).await;
+        // Count what actually left: a failed write-back keeps its run.
         self.stats
             .evictions
-            .fetch_add(victims.len() as u64, Ordering::Relaxed);
-        Ok(())
+            .fetch_add((before - cache.map.len()) as u64, Ordering::Relaxed);
+        written
     }
 }
 
@@ -447,6 +463,12 @@ impl<D: BlockDevice> BlockDevice for CachedDevice<D> {
             return Ok(());
         }
         let mut cache = self.state.lock().await;
+        // Pass the primitive through — on a thin device this is deallocation,
+        // which buffering as dirty data blocks would forfeit. It goes first,
+        // under the lock: the cache drops or zeroes its copies only once the
+        // device has the zeroes, so a failed or cancelled call leaves earlier
+        // acknowledged writes still dirty and scheduled (#43).
+        self.inner.write_zeroes(offset, len).await?;
         let end = offset + len;
         let last = (end - 1) / self.block_size;
         for blk in offset / self.block_size..=last {
@@ -472,9 +494,7 @@ impl<D: BlockDevice> BlockDevice for CachedDevice<D> {
                 }
             }
         }
-        // Pass the primitive through — on a thin device this is deallocation,
-        // which buffering as dirty data blocks would forfeit.
-        self.inner.write_zeroes(offset, len).await
+        Ok(())
     }
 }
 
@@ -698,5 +718,244 @@ mod tests {
         let mut buf = [0u8; 8];
         returned.read_at(5000, &mut buf).await.unwrap();
         assert_eq!(&buf, b"survives");
+    }
+
+    // ---- #43 (finding 4023fa887fa7): write-back keeps dirty data until the
+    // device has it — through failed and cancelled writes alike.
+
+    /// A device that fails or hangs its next writes on request.
+    struct Faulty {
+        inner: Arc<MemDevice>,
+        /// Let this many coming writes through before failing any.
+        pass: std::sync::atomic::AtomicU32,
+        /// Then fail this many `write_at` / `write_zeroes` calls.
+        fail: std::sync::atomic::AtomicU32,
+        /// Hang the next `write_at` for ever (a future to be cancelled).
+        hang: std::sync::atomic::AtomicBool,
+    }
+
+    impl Faulty {
+        fn new(inner: Arc<MemDevice>) -> Arc<Self> {
+            Arc::new(Self {
+                inner,
+                pass: 0.into(),
+                fail: 0.into(),
+                hang: false.into(),
+            })
+        }
+
+        fn fail_next(&self, n: u32) {
+            self.fail_after(0, n);
+        }
+
+        fn fail_after(&self, pass: u32, n: u32) {
+            self.pass.store(pass, Ordering::SeqCst);
+            self.fail.store(n, Ordering::SeqCst);
+        }
+
+        fn take_failure(&self, offset: u64) -> Result<()> {
+            let passing = self
+                .pass
+                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+                .is_ok();
+            if passing {
+                return Ok(());
+            }
+            let failing = self
+                .fail
+                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+                .is_ok();
+            if failing {
+                return Err(crate::error::Error::Io {
+                    offset,
+                    source: std::io::Error::other("injected write failure"),
+                });
+            }
+            Ok(())
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl BlockDevice for Faulty {
+        fn size(&self) -> u64 {
+            self.inner.size()
+        }
+
+        async fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<()> {
+            self.inner.read_at(offset, buf).await
+        }
+
+        async fn write_at(&self, offset: u64, buf: &[u8]) -> Result<()> {
+            if self.hang.swap(false, Ordering::SeqCst) {
+                std::future::pending::<()>().await;
+            }
+            self.take_failure(offset)?;
+            self.inner.write_at(offset, buf).await
+        }
+
+        async fn flush(&self) -> Result<()> {
+            self.inner.flush().await
+        }
+
+        async fn write_zeroes(&self, offset: u64, len: u64) -> Result<()> {
+            self.take_failure(offset)?;
+            self.inner.write_zeroes(offset, len).await
+        }
+    }
+
+    fn block_is(image: &[u8], blk: usize, byte: u8) -> bool {
+        image[blk * 4096..(blk + 1) * 4096].iter().all(|&b| b == byte)
+    }
+
+    /// A flush whose device write fails returns the error and keeps every
+    /// dirty block; the retry writes them all.
+    #[tokio::test]
+    async fn a_failed_flush_keeps_the_dirty_blocks_for_the_retry() {
+        let mem = Arc::new(MemDevice::new(1 << 20));
+        let faulty = Faulty::new(mem.clone());
+        let dev = CachedDevice::new(faulty.clone());
+        // Two runs: blocks 0-1 coalesce, block 5 stands alone.
+        for blk in [0u64, 1, 5] {
+            dev.write_at(blk * 4096, &vec![0xa0 + blk as u8; 4096]).await.unwrap();
+        }
+        // Fail the first run's write.
+        faulty.fail_next(1);
+        assert!(dev.flush().await.is_err(), "the injected failure must surface");
+        assert!(block_is(&mem.to_vec(), 0, 0), "nothing reached the device");
+
+        dev.flush().await.unwrap();
+        let image = mem.to_vec();
+        for blk in [0usize, 1, 5] {
+            assert!(block_is(&image, blk, 0xa0 + blk as u8), "block {blk} lost by the failed flush");
+        }
+
+        // A failure on the second run: the first run is on the device and
+        // clean, the second is kept.
+        for blk in [0u64, 1, 5] {
+            dev.write_at(blk * 4096, &vec![0xb0 + blk as u8; 4096]).await.unwrap();
+        }
+        dev.write_at(9 * 4096, &[1u8; 4096]).await.unwrap(); // a third run
+        faulty.fail_after(1, 1);
+        assert!(dev.flush().await.is_err());
+        let image = mem.to_vec();
+        assert!(block_is(&image, 0, 0xb0) && block_is(&image, 1, 0xb1), "the first run was written");
+        assert!(block_is(&image, 5, 0xa5), "the failed run did not reach the device");
+        let writes = dev.stats().inner_writes;
+        dev.flush().await.unwrap();
+        assert_eq!(
+            dev.stats().inner_writes - writes,
+            2,
+            "the retry writes the two runs left, not the one already written"
+        );
+        let image = mem.to_vec();
+        for blk in [0usize, 1, 5] {
+            assert!(block_is(&image, blk, 0xb0 + blk as u8), "block {blk} lost");
+        }
+        assert!(block_is(&image, 9, 1));
+    }
+
+    /// Eviction whose write-back fails: the write that needed the room fails,
+    /// every acknowledged block is still readable through the cache, and a
+    /// later flush puts them all on the device.
+    #[tokio::test]
+    async fn a_failed_eviction_keeps_the_victims() {
+        let mem = Arc::new(MemDevice::new(1 << 20));
+        let faulty = Faulty::new(mem.clone());
+        // 8-block floor; eviction takes one block at a time.
+        let dev = CachedDevice::new(faulty.clone()).with_capacity(1);
+        for blk in 0u64..8 {
+            dev.write_at(blk * 4096, &vec![blk as u8 + 1; 4096]).await.unwrap();
+        }
+        faulty.fail_next(1);
+        assert!(
+            dev.write_at(8 * 4096, &[9u8; 4096]).await.is_err(),
+            "the eviction failure must fail the write that needed room"
+        );
+        assert_eq!(dev.stats().evictions, 0, "nothing left the cache");
+        assert!(block_is(&mem.to_vec(), 0, 0), "the victim never reached the device");
+
+        // Every acknowledged block is still there — from the cache, since the
+        // device has none of them.
+        for blk in 0u64..8 {
+            let mut buf = vec![0u8; 4096];
+            dev.read_at(blk * 4096, &mut buf).await.unwrap();
+            assert!(buf.iter().all(|&b| b == blk as u8 + 1), "block {blk} lost by the failed eviction");
+        }
+        // The retried write succeeds, evicting for real this time.
+        dev.write_at(8 * 4096, &[9u8; 4096]).await.unwrap();
+        dev.flush().await.unwrap();
+        let image = mem.to_vec();
+        for blk in 0usize..9 {
+            assert!(block_is(&image, blk, blk as u8 + 1), "block {blk} not on device after flush");
+        }
+    }
+
+    /// A flush cancelled while its device write is in flight leaves the cache
+    /// as it was: the next flush writes everything.
+    #[tokio::test]
+    async fn a_cancelled_flush_keeps_the_dirty_blocks() {
+        let mem = Arc::new(MemDevice::new(1 << 20));
+        let faulty = Faulty::new(mem.clone());
+        let dev = CachedDevice::new(faulty.clone());
+        for blk in [0u64, 1, 5] {
+            dev.write_at(blk * 4096, &vec![0xc0 + blk as u8; 4096]).await.unwrap();
+        }
+        faulty.hang.store(true, Ordering::SeqCst);
+        let cancelled =
+            tokio::time::timeout(std::time::Duration::from_millis(20), dev.flush()).await;
+        assert!(cancelled.is_err(), "the flush must have been cut off mid-write");
+
+        dev.flush().await.unwrap();
+        let image = mem.to_vec();
+        for blk in [0usize, 1, 5] {
+            assert!(block_is(&image, blk, 0xc0 + blk as u8), "block {blk} lost by the cancelled flush");
+        }
+    }
+
+    /// The same for an eviction cancelled mid-write by dropping the read that
+    /// triggered it.
+    #[tokio::test]
+    async fn a_cancelled_eviction_keeps_the_victims() {
+        let mem = Arc::new(MemDevice::new(1 << 20));
+        let faulty = Faulty::new(mem.clone());
+        let dev = CachedDevice::new(faulty.clone()).with_capacity(1);
+        for blk in 0u64..8 {
+            dev.write_at(blk * 4096, &vec![blk as u8 + 1; 4096]).await.unwrap();
+        }
+        faulty.hang.store(true, Ordering::SeqCst);
+        let mut buf = vec![0u8; 4096];
+        let cancelled = tokio::time::timeout(
+            std::time::Duration::from_millis(20),
+            dev.read_at(20 * 4096, &mut buf),
+        )
+        .await;
+        assert!(cancelled.is_err(), "the read must have been cut off mid-eviction");
+
+        for blk in 0u64..8 {
+            let mut buf = vec![0u8; 4096];
+            dev.read_at(blk * 4096, &mut buf).await.unwrap();
+            assert!(buf.iter().all(|&b| b == blk as u8 + 1), "block {blk} lost by the cancelled eviction");
+        }
+        dev.flush().await.unwrap();
+        let image = mem.to_vec();
+        for blk in 0usize..8 {
+            assert!(block_is(&image, blk, blk as u8 + 1), "block {blk} not on device after flush");
+        }
+    }
+
+    /// A `write_zeroes` the device refuses must not take earlier acknowledged
+    /// writes down with it: the cached block stays dirty and flushes.
+    #[tokio::test]
+    async fn a_failed_write_zeroes_keeps_earlier_writes() {
+        let mem = Arc::new(MemDevice::new(64 * 1024));
+        let faulty = Faulty::new(mem.clone());
+        let dev = CachedDevice::new(faulty.clone());
+        dev.write_at(0, &vec![0xffu8; 3 * 4096]).await.unwrap();
+        faulty.fail_next(1);
+        // Whole block 0, part of block 1.
+        assert!(dev.write_zeroes(0, 4096 + 100).await.is_err());
+        dev.flush().await.unwrap();
+        let image = mem.to_vec();
+        assert!(image[..3 * 4096].iter().all(|&b| b == 0xff), "acknowledged writes lost");
     }
 }
