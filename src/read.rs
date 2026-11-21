@@ -135,6 +135,18 @@ impl Ext4 {
             return Err(Error::corrupt("ext4 read", "superblock geometry is zero"));
         }
 
+        // A `BlockReader` does not know its size, so the bound
+        // `Filesystem::open` puts on the descriptor table (it must fit the
+        // device) is checked by reading the table's last block, as
+        // `ext2fs_open2` finds out by reading the whole table (#41, #49). A
+        // table past the end of the device is then an error at open, not an
+        // inode lookup that fails later for some groups and not others.
+        let table_blocks = sb.gdt_blocks() as u64;
+        if table_blocks > 0 {
+            let mut last = vec![0u8; block_size as usize];
+            read_exact(dev, gdt_offset + (table_blocks - 1) * block_size, &mut last)?;
+        }
+
         let inodes_per_group = sb.inodes_per_group;
         Ok(Ext4 {
             sb,

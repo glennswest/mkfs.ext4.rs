@@ -19,6 +19,10 @@
 - **fix(fsck):** repair corrects a wrong extended-attribute block
   `h_refcount` to the inodes found and restamps its checksum, as `e2fsck -y`
   does (#42, finding `5319d3d2a7d9`).
+- **fix(read):** `read::Ext4::open` reads the last block of the descriptor
+  table, so a table past the end of the device is refused at open as
+  `Filesystem::open` refuses it (a `BlockReader` has no size to compare
+  with); #41's geometry test caught the gap (#49).
 - **fix(fs):** an unwritten (preallocated) extent reads as zeroes through
   `Filesystem::read_file`, not as whatever its block still holds, and holds
   no entries for `read_dir` (#41, finding `24146537d73e`). New
