@@ -33,6 +33,7 @@ use alloc::vec::Vec;
 
 use crate::error::{Error, Result};
 use crate::features::IncompatFeatures;
+use crate::structs::dirent;
 use crate::structs::extent::{Extent, ExtentHeader, ExtentIdx};
 use crate::structs::inode::Inode;
 use crate::structs::superblock::{Superblock, SUPERBLOCK_OFFSET};
@@ -284,21 +285,24 @@ impl Ext4 {
     }
 
     /// List one directory's entries as `(name, inode)`.
+    ///
+    /// Each block is walked by [`dirent::parse_block`], the parser
+    /// `Filesystem::read_dir` uses: an entry's `rec_len` must stay inside its
+    /// block and its name inside its `rec_len` (`ext4_check_dir_entry`). A
+    /// name running into the next record used to be read with that record's
+    /// bytes as part of it (finding `e829f511800a`); a malformed entry now
+    /// fails the read as corruption rather than resolving a name that is not
+    /// there.
     pub fn read_dir(&self, dev: &impl BlockReader, dir: &Inode) -> Result<Vec<(Vec<u8>, u32)>> {
         let data = self.read_inode_data(dev, dir)?;
         let mut out = Vec::new();
-        let mut at = 0usize;
-        while at + 8 <= data.len() {
-            let ino = u32::from_le_bytes([data[at], data[at + 1], data[at + 2], data[at + 3]]);
-            let rec_len = u16::from_le_bytes([data[at + 4], data[at + 5]]) as usize;
-            let name_len = data[at + 6] as usize;
-            if rec_len < 8 || at + rec_len > data.len() {
-                break;
+        for block in data.chunks(self.block_size as usize) {
+            for entry in dirent::parse_block(block)? {
+                // Holes and the checksum tail (inode 0) are not names.
+                if entry.inode != 0 && !entry.name.is_empty() {
+                    out.push((entry.name, entry.inode));
+                }
             }
-            if ino != 0 && name_len > 0 && at + 8 + name_len <= data.len() {
-                out.push((data[at + 8..at + 8 + name_len].to_vec(), ino));
-            }
-            at += rec_len;
         }
         Ok(out)
     }
@@ -432,6 +436,40 @@ mod tests {
         assert_eq!(fs.lookup(&d, "/").unwrap(), ROOT_INO);
         assert_eq!(fs.lookup(&d, "").unwrap(), ROOT_INO);
         assert!(fs.lookup(&d, "/nothing-here").is_err());
+    }
+
+    /// Finding `e829f511800a` (#48): a name longer than its own record is
+    /// corruption, not a name made of the next record's bytes. The root's
+    /// `..` (rec_len 12) is given a name_len reaching into `lost+found`'s
+    /// entry; the sync reader then refuses the directory, as `Filesystem`
+    /// does, instead of listing a `..` that is not on disk.
+    #[tokio::test]
+    async fn a_name_past_its_record_is_corruption() {
+        let dev = formatted(64 << 20, Some(4096)).await;
+        let d = SyncOver(&dev);
+        let fs = Ext4::open(&d).unwrap();
+        let root = fs.read_inode(&d, ROOT_INO).unwrap();
+        assert!(fs.lookup(&d, "/lost+found").is_ok());
+
+        let block = fs.extents_of(&d, &root).unwrap()[0].start * fs.block_size();
+        let mut head = vec![0u8; 4096];
+        dev.read_at(block, &mut head).await.unwrap();
+        // "." at 0 (rec_len 12), ".." at 12 (rec_len 12), lost+found at 24.
+        assert_eq!(&head[12 + 8..12 + 10], b"..");
+        assert_eq!(u16::from_le_bytes([head[16], head[17]]), 12);
+        head[12 + 6] = 12; // name_len 12 > rec_len 12 - 8
+        dev.write_at(block, &head).await.unwrap();
+
+        assert!(
+            matches!(fs.read_dir(&d, &root), Err(Error::Corrupt { .. })),
+            "a name overflowing its rec_len was accepted"
+        );
+        assert!(fs.lookup(&d, "/lost+found").is_err());
+
+        // The async reader gives the same verdict on the same bytes.
+        let afs = crate::fs::Filesystem::open(&dev).await.unwrap();
+        let aroot = afs.read_inode(ROOT_INO).await.unwrap();
+        assert!(afs.read_dir(&aroot).await.is_err());
     }
 
     #[tokio::test]

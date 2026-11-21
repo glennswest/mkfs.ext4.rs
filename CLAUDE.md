@@ -480,6 +480,14 @@ to point at, not an open-ended guess about feature flags.
       1), which `Geometry::compute` refuses by its #9 group-0 rule. The tree
       is not `cargo fmt` clean (not a gate; #54). Unreleased (CHANGELOG).
 
+- [ ] Issue #48 (minor): the sync `read::Ext4::read_dir` bounded `name_len`
+      by the directory, not the entry's `rec_len` (finding `e829f511800a`).
+      Fix: walk each block with `dirent::parse_block` (the `Filesystem`
+      parser: rec_len inside the block, name inside rec_len), a malformed
+      entry `Error::Corrupt`. Test `read::tests::a_name_past_its_record_is_
+      corruption` (root's `..` name_len into `lost+found`'s record: both
+      readers refuse).
+
 Open (2026-11-14): #37 (P3: `first_meta_bg > 0` reserves the whole table in
 each classic copy), #36 (this pin refresh), #32 and #29 and #23 (P2: fsck ignores the orphan file's
 blocks; a 4 KiB-block fs just past a 128 MiB group is refused; `sparse_super2`

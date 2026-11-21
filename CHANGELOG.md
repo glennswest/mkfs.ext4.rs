@@ -11,6 +11,12 @@
   its device and touches nothing past it (#46).
 
 ### Fixed
+- **fix(read):** the `no_std` `read::Ext4::read_dir` (and so `lookup` and
+  `read_file`) walks each directory block with `dirent::parse_block`, the
+  parser `Filesystem::read_dir` uses. A name longer than its own `rec_len`
+  used to be read with the next record's bytes as part of it, so a damaged
+  or crafted directory could list a name that is not on disk. It is now
+  `Error::Corrupt`, as it is to `Filesystem` (#48, finding `e829f511800a`).
 - **fix(layout):** `-g` / `Params::blocks_per_group` and `-i` /
   `Params::inode_ratio` are bounded as `mke2fs` bounds them, in planning,
   before any device write. Blocks per group must be a multiple of 8 and
