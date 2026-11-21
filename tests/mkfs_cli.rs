@@ -19,7 +19,7 @@ const FILL: u8 = 0xa5;
 /// A 64 MiB image that is all `FILL`, so anything written shows.
 fn image(dir: &Path) -> String {
     let path = dir.join("fs.img");
-    std::fs::write(path, vec![FILL; DEVICE as usize]).unwrap();
+    std::fs::write(&path, vec![FILL; DEVICE as usize]).unwrap();
     path.to_str().unwrap().to_string()
 }
 
