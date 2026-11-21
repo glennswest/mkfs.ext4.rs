@@ -299,9 +299,7 @@ impl<D: BlockDevice> Filesystem<D> {
         for meta in old_desc_blocks..desc_blocks {
             // The block lives in the meta group's first group, after that
             // group's superblock copy if it has one.
-            let leader = meta * desc_per_block;
-            let at = self.group_first_block_for(leader, sb)
-                + self.group_has_super_for(leader, sb) as u64;
+            let at = sb.descriptor_block_loc(meta);
             let start = meta as usize * block_size;
             self.device
                 .read_at(self.block_offset(at), &mut raw[start..start + block_size])
@@ -311,34 +309,6 @@ impl<D: BlockDevice> Filesystem<D> {
         Ok((0..group_count as usize)
             .map(|g| GroupDesc::decode(&raw[g * desc_size..], desc_size))
             .collect())
-    }
-
-    /// First block of a group, without needing `self.superblock` to be set.
-    fn group_first_block_for(&self, group: u32, sb: &Superblock) -> u64 {
-        sb.first_data_block as u64 + group as u64 * sb.blocks_per_group as u64
-    }
-
-    /// Whether a group carries a superblock backup, given a superblock.
-    fn group_has_super_for(&self, group: u32, sb: &Superblock) -> bool {
-        if !sb
-            .feature_ro_compat
-            .contains(RoCompatFeatures::SPARSE_SUPER)
-        {
-            return true;
-        }
-        if group <= 1 {
-            return true;
-        }
-        if group % 2 == 0 {
-            return false;
-        }
-        [3u32, 5, 7].iter().any(|&base| {
-            let mut n = group;
-            while n % base == 0 {
-                n /= base;
-            }
-            n == 1
-        })
     }
 
     /// Where an inode lives: its group, block and byte offset within it.
@@ -593,26 +563,7 @@ impl<D: BlockDevice> Filesystem<D> {
 
     /// Whether a group carries a superblock backup.
     pub fn group_has_super(&self, group: u32) -> bool {
-        if !self
-            .superblock
-            .feature_ro_compat
-            .contains(RoCompatFeatures::SPARSE_SUPER)
-        {
-            return true;
-        }
-        if group <= 1 {
-            return true;
-        }
-        if group % 2 == 0 {
-            return false;
-        }
-        [3u32, 5, 7].iter().any(|&base| {
-            let mut n = group;
-            while n % base == 0 {
-                n /= base;
-            }
-            n == 1
-        })
+        self.superblock.group_has_super(group)
     }
 
     /// Walk every block an inode owns, contents and map structure alike.

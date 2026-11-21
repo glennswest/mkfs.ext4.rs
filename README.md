@@ -146,6 +146,13 @@ so to have `mkfs -t ext4` / `fsck -t ext4` dispatch to them, install them as
   tables: any meta_bg filesystem with more than one descriptor block — all
   of them past ~192 TiB at 4 KiB blocks — was damaged by its first flush.
 
+  The synchronous `read::Ext4` finds a group's descriptor the same way, through
+  `Superblock::descriptor_block_loc` (`ext2fs_descriptor_block_loc2`), which
+  `Filesystem` now shares. Before #44 (5.1.0 and earlier) it read every
+  descriptor from a contiguous table after group 0, so on a meta_bg image an
+  inode in any group past the first meta block group was looked up through
+  bitmap or inode-table bytes taken for a descriptor.
+
   `mmp::acquire` takes a filesystem formatted with `-O mmp` by the protocol
   of `ext2fs_mmp_start` (wait, stamp a random sequence, wait, confirm) and
   returns an `MmpLease`, or a refusal naming the holder. The holder calls

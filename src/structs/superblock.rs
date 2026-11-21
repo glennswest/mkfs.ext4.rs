@@ -689,6 +689,58 @@ impl Superblock {
         self.group_count().div_ceil(self.desc_per_block())
     }
 
+    /// First block of `group`.
+    pub fn group_first_block(&self, group: u32) -> u64 {
+        self.first_data_block as u64 + group as u64 * self.blocks_per_group as u64
+    }
+
+    /// Whether `group` carries a superblock copy: every group without
+    /// `sparse_super`, else groups 0, 1 and powers of 3, 5 and 7
+    /// (`ext2fs_bg_has_super`).
+    pub fn group_has_super(&self, group: u32) -> bool {
+        if !self.feature_ro_compat.contains(RoCompatFeatures::SPARSE_SUPER) {
+            return true;
+        }
+        if group <= 1 {
+            return true;
+        }
+        if group % 2 == 0 {
+            return false;
+        }
+        [3u32, 5, 7].iter().any(|&base| {
+            let mut n = group;
+            while n % base == 0 {
+                n /= base;
+            }
+            n == 1
+        })
+    }
+
+    /// Whether descriptor block `desc_block` lives in its own meta block
+    /// group rather than in the classic table: under `meta_bg`, every block
+    /// from `first_meta_bg` on.
+    pub fn desc_block_is_distributed(&self, desc_block: u32) -> bool {
+        self.feature_incompat.contains(IncompatFeatures::META_BG)
+            && desc_block >= self.first_meta_bg
+    }
+
+    /// The primary location of descriptor block `desc_block` (the block that
+    /// holds groups `desc_block * desc_per_block ..`), as
+    /// `ext2fs_descriptor_block_loc2` finds it.
+    ///
+    /// Classic blocks (all of them without `meta_bg`, those below
+    /// `first_meta_bg` with it) follow group 0's superblock contiguously.
+    /// A distributed block is in the first group of its meta block group,
+    /// after that group's superblock copy if it has one. One definition for
+    /// the async `Filesystem` and the `no_std` reader (#44).
+    pub fn descriptor_block_loc(&self, desc_block: u32) -> u64 {
+        if !self.desc_block_is_distributed(desc_block) {
+            return self.first_data_block as u64 + 1 + desc_block as u64;
+        }
+        let leader = desc_block * self.desc_per_block();
+        self.group_first_block(leader) + self.group_has_super(leader) as u64
+    }
+
     /// Inodes that fit in one block.
     pub fn inodes_per_block(&self) -> u32 {
         self.block_size() / self.inode_size as u32

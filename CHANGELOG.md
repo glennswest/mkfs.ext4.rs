@@ -13,6 +13,20 @@
   the retry writes exactly the runs left. `write_zeroes` passes to the device
   before it drops or zeroes cached copies, for the same reason (#43, finding
   `4023fa887fa7`).
+- **fix(read):** the synchronous `read::Ext4` honours `meta_bg` and
+  `first_meta_bg`: a group's descriptor is read from the block that holds
+  it, in its own meta block group when distributed, instead of from a
+  contiguous table after group 0. An inode past the first meta block group
+  of a meta_bg image read garbage or failed. `open` checks that the last
+  classic and the last distributed descriptor block are both readable (#44,
+  findings `6224225bbf29`, `efc124177580`). It also takes the descriptor
+  size from `Superblock::desc_size` (32 bytes without `64bit`), as
+  `Filesystem` does.
+
+### Added
+- `Superblock::descriptor_block_loc`, `desc_block_is_distributed`,
+  `group_has_super` and `group_first_block` (no_std): descriptor placement in
+  one place for the async and the sync reader (#44).
 
 ## [v5.1.0] — 2026-11-21
 

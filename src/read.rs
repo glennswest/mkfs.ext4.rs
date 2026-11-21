@@ -32,6 +32,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use crate::error::{Error, Result};
+use crate::features::IncompatFeatures;
 use crate::structs::extent::{Extent, ExtentHeader, ExtentIdx};
 use crate::structs::inode::Inode;
 use crate::structs::superblock::{Superblock, SUPERBLOCK_OFFSET};
@@ -108,8 +109,7 @@ pub struct Ext4 {
     inode_size: u64,
     inodes_per_group: u32,
     desc_size: u64,
-    /// Where the group descriptor table starts, in bytes.
-    gdt_offset: u64,
+    desc_per_block: u32,
 }
 
 impl Ext4 {
@@ -124,12 +124,10 @@ impl Ext4 {
 
         let block_size = 1024u64 << sb.log_block_size;
         let inode_size = sb.inode_size as u64;
-        let desc_size = if sb.desc_size == 0 { 32 } else { sb.desc_size as u64 };
-
-        // The GDT follows the superblock's block. With a 1 KiB block the
-        // superblock lives in block 1, so the table starts at block 2.
-        let sb_block = if block_size == 1024 { 1 } else { 0 };
-        let gdt_offset = (sb_block + 1) * block_size;
+        // 32 bytes without `64bit` whatever `s_desc_size` says, as the
+        // kernel and `Filesystem` read it.
+        let desc_size = sb.desc_size() as u64;
+        let desc_per_block = sb.desc_per_block();
 
         if block_size == 0 || inode_size == 0 || sb.inodes_per_group == 0 {
             return Err(Error::corrupt("ext4 read", "superblock geometry is zero"));
@@ -141,10 +139,24 @@ impl Ext4 {
         // `ext2fs_open2` finds out by reading the whole table (#41, #49). A
         // table past the end of the device is then an error at open, not an
         // inode lookup that fails later for some groups and not others.
-        let table_blocks = sb.gdt_blocks() as u64;
-        if table_blocks > 0 {
-            let mut last = vec![0u8; block_size as usize];
-            read_exact(dev, gdt_offset + (table_blocks - 1) * block_size, &mut last)?;
+        // Under meta_bg that is two reads: the last block of the classic
+        // table, and the last distributed block, in the last meta block
+        // group (#44).
+        let table_blocks = sb.gdt_blocks();
+        let mut last = vec![0u8; block_size as usize];
+        let classic_blocks = if sb.desc_block_is_distributed(0) {
+            0
+        } else if sb.feature_incompat.contains(IncompatFeatures::META_BG) {
+            sb.first_meta_bg.min(table_blocks)
+        } else {
+            table_blocks
+        };
+        let classic = classic_blocks.checked_sub(1);
+        let distributed = table_blocks
+            .checked_sub(1)
+            .filter(|&b| sb.desc_block_is_distributed(b));
+        for b in classic.into_iter().chain(distributed) {
+            read_exact(dev, sb.descriptor_block_loc(b) * block_size, &mut last)?;
         }
 
         let inodes_per_group = sb.inodes_per_group;
@@ -154,7 +166,7 @@ impl Ext4 {
             inode_size,
             inodes_per_group,
             desc_size,
-            gdt_offset,
+            desc_per_block,
         })
     }
 
@@ -163,8 +175,13 @@ impl Ext4 {
         self.block_size
     }
 
+    /// Group `group`'s descriptor, from the descriptor block that holds it:
+    /// the classic table, or under meta_bg the block in its own meta block
+    /// group (#44, findings `6224225bbf29`, `efc124177580`).
     fn read_group_desc(&self, dev: &impl BlockReader, group: u32) -> Result<GroupDesc> {
-        let off = self.gdt_offset + group as u64 * self.desc_size;
+        let block = self.sb.descriptor_block_loc(group / self.desc_per_block);
+        let within = (group % self.desc_per_block) as u64;
+        let off = block * self.block_size + within * self.desc_size;
         let mut buf = vec![0u8; self.desc_size as usize];
         read_exact(dev, off, &mut buf)?;
         Ok(GroupDesc::decode(&buf, self.desc_size as usize))
@@ -423,6 +440,98 @@ mod tests {
         assert!(
             Ext4::open(&SyncOver(&dev)).is_err(),
             "a zeroed device must not decode as a filesystem"
+        );
+    }
+
+    // ---- #44 (findings 6224225bbf29, efc124177580): descriptors under
+    // meta_bg live in their own meta block group, not in the classic table.
+
+    const MIB: u64 = 1 << 20;
+
+    /// 1 KiB blocks so a few hundred MiB already spans several meta block
+    /// groups, as `fs::tests::small_groups` does.
+    async fn small_groups(features: &str, first_meta_bg: Option<u32>, size: u64) -> MemDevice {
+        let dev = MemDevice::new(size);
+        let mut params = Params::new(crate::params::Profile::Ext4)
+            .block_size(1024)
+            .no_journal()
+            .features(features)
+            .uuid(*b"0123456789abcdef")
+            .mkfs_time(1_700_000_000);
+        params.first_meta_bg = first_meta_bg;
+        crate::format::format(&dev, &params).await.unwrap();
+        dev
+    }
+
+    /// Every group's descriptor read by the sync path is the one `Filesystem`
+    /// reads, and an inode in a group past the first meta block group (its
+    /// descriptor in a distributed block) reads back as written.
+    #[tokio::test]
+    async fn an_inode_past_the_first_meta_group_reads_back_under_meta_bg() {
+        let cases: [(&str, &str, Option<u32>); 3] = [
+            ("classic", "^meta_bg", None),
+            ("meta_bg", "meta_bg", None),
+            ("meta_bg, first_meta_bg 1", "meta_bg", Some(1)),
+        ];
+        for (name, features, first_meta_bg) in cases {
+            let dev = small_groups(features, first_meta_bg, 512 * MIB).await;
+            let fs = crate::fs::Filesystem::open(&dev).await.unwrap();
+            let dpb = fs.superblock().desc_per_block();
+            let groups = fs.superblock().group_count();
+            assert!(groups >= 3 * dpb, "{name}: three meta block groups at least");
+
+            // Mark an inode in a group of the third meta block group.
+            let group = 2 * dpb + 3;
+            let ino = group * fs.superblock().inodes_per_group + 1;
+            let mut inode = fs.read_inode(ino).await.unwrap();
+            inode.mode = 0o100644;
+            inode.size = 0x1234_5678;
+            inode.links_count = 7;
+            fs.write_inode(ino, &inode).await.unwrap();
+            let descs: Vec<GroupDesc> = fs.group_descs().to_vec();
+            drop(fs);
+
+            let d = SyncOver(&dev);
+            let sync = Ext4::open(&d).unwrap_or_else(|e| panic!("{name}: open: {e}"));
+            for g in 0..groups {
+                let gd = sync.read_group_desc(&d, g).unwrap();
+                assert_eq!(gd.inode_table, descs[g as usize].inode_table, "{name}: group {g}");
+                assert_eq!(gd.block_bitmap, descs[g as usize].block_bitmap, "{name}: group {g}");
+            }
+            let back = sync.read_inode(&d, ino).unwrap();
+            assert_eq!(
+                (back.mode, back.size, back.links_count),
+                (0o100644, 0x1234_5678, 7),
+                "{name}: inode {ino} in group {group}"
+            );
+            // And the root, in group 0, still resolves.
+            assert!(sync.read_inode(&d, ROOT_INO).unwrap().is_dir(), "{name}");
+        }
+    }
+
+    /// The device seen as if it ended at `len`: reads past it fail.
+    struct Truncated<'a>(&'a MemDevice, u64);
+
+    impl BlockReader for Truncated<'_> {
+        fn read_at(&self, offset: u64, buf: &mut [u8]) -> core::result::Result<(), ReadError> {
+            if offset + buf.len() as u64 > self.1 {
+                return Err(ReadError::new(1));
+            }
+            SyncOver(self.0).read_at(offset, buf)
+        }
+    }
+
+    /// A meta_bg image cut short: its classic area (nothing, at first_meta_bg
+    /// 0) is all there, but the last meta block group's descriptor block is
+    /// not, and open says so rather than mounting a table it cannot read.
+    #[tokio::test]
+    async fn a_truncated_meta_bg_table_is_refused_at_open() {
+        let dev = small_groups("meta_bg", None, 512 * MIB).await;
+        assert!(Ext4::open(&Truncated(&dev, 512 * MIB)).is_ok(), "the whole image opens");
+        let err = Ext4::open(&Truncated(&dev, 256 * MIB)).unwrap_err();
+        assert!(
+            matches!(err, Error::DeviceRead { offset, .. } if offset >= 256 * MIB),
+            "a table whose last block is past the end must be refused: {err:?}"
         );
     }
 }
