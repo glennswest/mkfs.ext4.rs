@@ -436,7 +436,7 @@ to point at, not an open-ended guess about feature flags.
       lib tests (both new `read::tests`), every suite, clippy `-D warnings`
       on both feature sets. Unreleased (CHANGELOG).
 
-- [ ] Issue #45 (major): lazy itable init skipped every table but group 0's
+- [x] Issue #45 (major): lazy itable init skipped every table but group 0's
       even with no descriptor checksum to vouch for `itable_unused`
       (`98c0cd3f8e21`): stale inodes on reused storage looked live. Fix, as
       `mke2fs` `write_inode_tables`: under lazy, zero
@@ -446,6 +446,9 @@ to point at, not an open-ended guess about feature flags.
       no_checksum_vouches_for` on a 0xa5-filled device: ext2, ext3, ext4
       ^metadata_csum,^uninit_bg zeroed; ext4 and ext4 uninit_bg left alone;
       all fsck clean.
+      **Done 2026-11-21** (62a7af4). sc-build on 62a7af4: 0 warnings, 230
+      lib tests (the new one among them), every suite incl. the goldens,
+      clippy `-D warnings` on both feature sets. Unreleased (CHANGELOG).
 
 Open (2026-11-14): #37 (P3: `first_meta_bg > 0` reserves the whole table in
 each classic copy), #36 (this pin refresh), #32 and #29 and #23 (P2: fsck ignores the orphan file's
