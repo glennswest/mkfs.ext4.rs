@@ -382,6 +382,19 @@ to point at, not an open-ended guess about feature flags.
       sc-build (build, tests, clippy `-D warnings` both feature sets), fix
       what it finds, `chore(release): v5.1.0`, close #41.
 
+- [ ] Issue #42 (P1): three review findings in `src/fsck.rs`.
+      `2f81571e62c4` pass 3: `children` from ordinary entries naming a
+      directory (never `.`/`..`), `..` kept as a claim and compared against
+      them; disconnected directories' link counts not touched.
+      `f771adccb6ac` `ScanState::blocks_complete` / `inodes_complete` (false
+      on `unwalkable-block-map`, or on inodes skipped by `itable_unused` of a
+      descriptor that failed its checksum) gate pass 5's block / inode
+      repairs; `names_complete` (pass 2 read every dir block) gates link
+      fixes. `5319d3d2a7d9` repair sets `h_refcount` to the references seen
+      and restamps the checksum (only on a block whose checksum verified).
+      Tests `fsck::tests::*` under "#42". Next: sc-build, release 5.1.0
+      together with #41 if both pass.
+
 Open (2026-11-14): #37 (P3: `first_meta_bg > 0` reserves the whole table in
 each classic copy), #36 (this pin refresh), #32 and #29 and #23 (P2: fsck ignores the orphan file's
 blocks; a 4 KiB-block fs just past a 128 MiB group is refused; `sparse_super2`

@@ -83,7 +83,7 @@ use alloc::{string::String, vec::Vec};
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use crate::bytes::get_u32;
+use crate::bytes::{get_u32, put_u32};
 use crate::csum::{self, GroupDescCsum};
 use crate::features::{CompatFeatures, IncompatFeatures, RoCompatFeatures};
 use crate::device::BlockDevice;
@@ -463,10 +463,24 @@ pub async fn check_opened<D: BlockDevice>(
     }
 
     if options.writes() {
-        for (index, inum, observed) in link_fixes {
-            let mut inode = fs.read_inode(inum).await?;
-            inode.links_count = observed;
-            fs.write_inode(inum, &inode).await?;
+        // Link counts only from a complete count of names (#42).
+        if state.names_complete {
+            for (index, inum, observed) in link_fixes {
+                let mut inode = fs.read_inode(inum).await?;
+                inode.links_count = observed;
+                fs.write_inode(inum, &inode).await?;
+                report.problems[index].fixed = true;
+            }
+        }
+        // e2fsck's adjust_extattr_refcount: h_refcount set to the inodes
+        // found pointing at the block, its checksum restamped (#42).
+        for (index, block, seen) in std::mem::take(&mut state.refcount_fixes) {
+            let mut buf = fs.read_block(block).await?;
+            put_u32(&mut buf, xattr::block_off::H_REFCOUNT, seen);
+            if fs.has_metadata_csum() {
+                xattr::stamp_block_csum(&mut buf, fs.csum_seed(), block);
+            }
+            fs.write_block(block, &buf).await?;
             report.problems[index].fixed = true;
         }
     }
@@ -867,14 +881,37 @@ struct ScanState {
     directories: BTreeSet<u32>,
     /// Link counts observed from directory entries.
     observed_links: BTreeMap<u32, u16>,
-    /// Parent directory of each directory, from its "..".
+    /// Parent directory of each directory, as its own ".." claims it. Only a
+    /// claim: pass 3 checks it against `children`, never walks it (#42).
     parents: BTreeMap<u32, u32>,
-    /// Which directories contain which subdirectories.
+    /// Which directories name which subdirectories, from ordinary entries —
+    /// never "." or "..", so a directory whose name was removed from its
+    /// parent is not reached through its own ".." (#42). Pass 3 walks this.
     children: BTreeMap<u32, Vec<u32>>,
+    /// Directories pass 3 could not reach from the root. Their link counts
+    /// are left alone: the name they lack is the problem, not the count.
+    disconnected: BTreeSet<u32>,
+    /// Groups whose descriptor checksum failed in pass 0, so their
+    /// `bg_itable_unused` cannot be trusted to skip inodes.
+    untrusted_groups: BTreeSet<u32>,
+    /// Whether pass 1 found every block every inode owns: false when a block
+    /// map could not be walked, or inodes went unread on a descriptor that
+    /// failed its checksum. Pass 5 then never frees a block (#42): a block
+    /// missing from `blocks` may still be some file's data.
+    blocks_complete: bool,
+    /// Whether pass 1 read every inode that may be in use (false for the
+    /// same skipped inodes), so the inode bitmap and counts can be rebuilt.
+    inodes_complete: bool,
+    /// Whether pass 2 read every directory block, so the names counted are
+    /// every name there is and link counts can be set from them.
+    names_complete: bool,
     /// Extended-attribute blocks (`i_file_acl`) seen so far: one block may be
     /// shared by many inodes, so each is claimed once and its references
     /// counted against `h_refcount` after pass 1.
     xattr_blocks: BTreeMap<u64, XattrRefs>,
+    /// The reference counts to correct, as (problem index, block, count),
+    /// made by the caller once it knows it may write.
+    refcount_fixes: Vec<(usize, u64, u32)>,
     /// Blocks metadata owns, per group, so pass 5 can rebuild bitmaps.
     inodes_per_group: u32,
     first_ino: u32,
@@ -890,7 +927,13 @@ impl ScanState {
             observed_links: BTreeMap::new(),
             parents: BTreeMap::new(),
             children: BTreeMap::new(),
+            disconnected: BTreeSet::new(),
+            untrusted_groups: BTreeSet::new(),
+            blocks_complete: true,
+            inodes_complete: true,
+            names_complete: true,
             xattr_blocks: BTreeMap::new(),
+            refcount_fixes: Vec::new(),
             inodes_per_group: fs.superblock().inodes_per_group,
             first_ino: fs.superblock().first_ino,
         }
@@ -914,6 +957,10 @@ struct XattrRefs {
     /// `h_refcount` on disk, or `None` when the block was not a valid one
     /// (already reported, so its count is not argued with as well).
     on_disk: Option<u32>,
+    /// Whether its checksum verified (or the filesystem keeps none). A
+    /// refcount repair restamps the checksum, so it is made only on a block
+    /// whose contents are otherwise known good.
+    csum_ok: bool,
     /// Inodes found pointing at it.
     seen: u32,
 }
@@ -956,6 +1003,7 @@ async fn pass1_xattr_block<D: BlockDevice>(
     let magic = get_u32(&buf, xattr::block_off::H_MAGIC);
     let h_blocks = get_u32(&buf, xattr::block_off::H_BLOCKS);
     let mut valid = true;
+    let mut csum_ok = true;
     if magic != xattr::XATTR_MAGIC || h_blocks != 1 {
         report.push(
             1,
@@ -976,12 +1024,14 @@ async fn pass1_xattr_block<D: BlockDevice>(
             Severity::Serious,
             format!("inode {inum} extended attribute block {block} checksum does not match its contents"),
         );
+        csum_ok = false;
     }
     state.claim(block);
     state.xattr_blocks.insert(
         block,
         XattrRefs {
             on_disk: valid.then(|| get_u32(&buf, xattr::block_off::H_REFCOUNT)),
+            csum_ok,
             seen: 1,
         },
     );
@@ -1110,6 +1160,7 @@ async fn pass0_superblock<D: BlockDevice>(
                 &buf,
             );
             if desc.checksum != expect {
+                state.untrusted_groups.insert(group);
                 report.push(
                     0,
                     "group-desc-csum",
@@ -1161,6 +1212,13 @@ async fn pass1_inodes<D: BlockDevice>(
             .map(|d| d.itable_unused.min(sb.inodes_per_group))
             .unwrap_or(0);
         let live = sb.inodes_per_group - unused;
+        // Skipping them on a descriptor that failed its checksum is trusting
+        // the one field that cannot be: whatever those inodes own goes
+        // unseen, so nothing may be freed or recounted on this scan (#42).
+        if unused > 0 && state.untrusted_groups.contains(&group) {
+            state.blocks_complete = false;
+            state.inodes_complete = false;
+        }
 
         for within in 0..live {
             let inum = group * sb.inodes_per_group + within + 1;
@@ -1245,6 +1303,8 @@ async fn pass1_inodes<D: BlockDevice>(
                     Severity::Serious,
                     format!("inode {inum} block map could not be walked: {e}"),
                 );
+                // The blocks it owns past the failure were never claimed.
+                state.blocks_complete = false;
                 continue;
             }
 
@@ -1309,8 +1369,11 @@ async fn pass1_inodes<D: BlockDevice>(
 
     // Every reference to a shared attribute block found, against the count
     // the block keeps (`PR_1_EXTATTR_REFCOUNT`).
-    for (block, refs) in &state.xattr_blocks {
+    for (&block, refs) in &state.xattr_blocks {
         if let Some(on_disk) = refs.on_disk.filter(|&r| r != refs.seen) {
+            if refs.csum_ok {
+                state.refcount_fixes.push((report.problems.len(), block, refs.seen));
+            }
             report.push(
                 1,
                 "xattr-refcount-wrong",
@@ -1354,8 +1417,19 @@ async fn pass2_directories<D: BlockDevice>(
         let mut entries = Vec::new();
         let mut walk_failed = false;
         for logical in 0..blocks {
-            let Some(physical) = fs.resolve_block(&dir, logical).await? else {
-                continue;
+            let physical = match fs.resolve_block(&dir, logical).await {
+                Ok(Some(p)) => p,
+                Ok(None) => continue,
+                Err(e) => {
+                    report.push(
+                        2,
+                        "dir-block-unreadable",
+                        Severity::Serious,
+                        format!("directory {dir_ino} block {logical} could not be mapped: {e}"),
+                    );
+                    walk_failed = true;
+                    break;
+                }
             };
             let buf = match fs.read_block(physical).await {
                 Ok(b) => b,
@@ -1420,6 +1494,9 @@ async fn pass2_directories<D: BlockDevice>(
             }
         }
         if walk_failed {
+            // Names in the blocks not read are not counted, so no link count
+            // may be set from what was (#42).
+            state.names_complete = false;
             continue;
         }
 
@@ -1446,7 +1523,6 @@ async fn pass2_directories<D: BlockDevice>(
         match entries.get(1) {
             Some(e) if e.name == b".." => {
                 state.parents.insert(dir_ino, e.inode);
-                state.children.entry(e.inode).or_default().push(dir_ino);
             }
             _ => report.push(
                 2,
@@ -1525,6 +1601,13 @@ async fn pass2_directories<D: BlockDevice>(
                 }
             }
 
+            // An ordinary name for a directory is an edge of the tree pass 3
+            // walks. "." and ".." are claims the directory makes about
+            // itself, and are checked against these edges, not walked.
+            if entry.name != b"." && entry.name != b".." && state.directories.contains(&entry.inode) {
+                state.children.entry(dir_ino).or_default().push(entry.inode);
+            }
+
             // Every name is a link. "." and ".." count too, which is why a
             // directory's link count is two plus its subdirectories.
             *state.observed_links.entry(entry.inode).or_insert(0) += 1;
@@ -1564,6 +1647,7 @@ async fn pass3_connectivity<D: BlockDevice>(
 
     for &dir in &state.directories {
         if !reached.contains(&dir) {
+            state.disconnected.insert(dir);
             report.push(
                 3,
                 "disconnected-directory",
@@ -1575,18 +1659,28 @@ async fn pass3_connectivity<D: BlockDevice>(
         }
     }
 
-    // A "..' that does not match the directory that actually contains it.
+    // A ".." that does not name a directory that actually lists it.
+    let mut listed_in: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
+    for (&parent, kids) in &state.children {
+        for &kid in kids {
+            listed_in.entry(kid).or_default().push(parent);
+        }
+    }
     for (&dir, &claimed_parent) in &state.parents {
         if dir == ino::ROOT {
+            if claimed_parent != ino::ROOT {
+                report.push(
+                    3,
+                    "parent-mismatch",
+                    Severity::Serious,
+                    format!("root directory '..' points at inode {claimed_parent}"),
+                );
+            }
             continue;
         }
-        let really_in = state
-            .children
-            .iter()
-            .find(|(_, kids)| kids.contains(&dir))
-            .map(|(&p, _)| p);
-        if let Some(actual) = really_in {
-            if actual != claimed_parent {
+        if let Some(parents) = listed_in.get(&dir) {
+            if !parents.contains(&claimed_parent) {
+                let actual = parents[0];
                 report.push(
                     3,
                     "parent-mismatch",
@@ -1624,6 +1718,12 @@ async fn pass4_link_counts<D: BlockDevice>(
         // design, reachable only through s_orphan_file_inum, so "no directory
         // entry refers to it" is its normal state rather than a fault.
         if orphan_file != 0 && inum == orphan_file {
+            continue;
+        }
+        // A directory no name reaches is reported by pass 3; counting its
+        // links down to the names it has left would make the loss permanent
+        // (#42). e2fsck reconnects it first; this checker does not.
+        if state.disconnected.contains(&inum) {
             continue;
         }
         let inode = fs.read_inode(inum).await?;
@@ -1687,6 +1787,19 @@ async fn pass5_bitmaps<D: BlockDevice>(
     let block_size = sb.block_size() as usize;
     let mut total_free_blocks = 0u64;
     let mut total_free_inodes = 0u32;
+    // What pass 1 could not see may not be freed (#42): with an incomplete
+    // scan, a block absent from `state.blocks` may still be a file's, so the
+    // block bitmap and every count taken from it are reported and left as
+    // they are. The inode side the same, on its own flag.
+    let fix_blocks = options.writes() && state.blocks_complete;
+    let fix_inodes = options.writes() && state.inodes_complete;
+    let held = |fix: bool, what: String| {
+        if options.writes() && !fix {
+            format!("{what}; not repaired, as pass 1 could not see every block and inode in use")
+        } else {
+            what
+        }
+    };
 
     for group in 0..sb.group_count() {
         let first = fs.group_first_block(group);
@@ -1706,12 +1819,12 @@ async fn pass5_bitmaps<D: BlockDevice>(
 
         let actual = fs.read_block_bitmap(group).await?;
         if actual != expected {
-            let fixed = options.writes();
+            let fixed = fix_blocks;
             report.push_fixed(
                 5,
                 "block-bitmap-differs",
                 Severity::Fixable,
-                format!("group {group} block bitmap does not match the blocks in use"),
+                held(fixed, format!("group {group} block bitmap does not match the blocks in use")),
                 fixed,
             );
             if fixed {
@@ -1742,12 +1855,12 @@ async fn pass5_bitmaps<D: BlockDevice>(
 
         let actual_inodes = fs.read_inode_bitmap(group).await?;
         if actual_inodes != expected_inodes {
-            let fixed = options.writes();
+            let fixed = fix_inodes;
             report.push_fixed(
                 5,
                 "inode-bitmap-differs",
                 Severity::Fixable,
-                format!("group {group} inode bitmap does not match the inodes in use"),
+                held(fixed, format!("group {group} inode bitmap does not match the inodes in use")),
                 fixed,
             );
             if fixed {
@@ -1759,41 +1872,41 @@ async fn pass5_bitmaps<D: BlockDevice>(
         // Counters in the descriptor.
         let desc = fs.group_descs()[group as usize];
         if desc.free_blocks_count != free_blocks {
-            let fixed = options.writes();
+            let fixed = fix_blocks;
             report.push_fixed(
                 5,
                 "group-free-blocks-wrong",
                 Severity::Fixable,
-                format!(
+                held(fixed, format!(
                     "group {group} free block count is {}, counted {free_blocks}",
                     desc.free_blocks_count
-                ),
+                )),
                 fixed,
             );
         }
         if desc.free_inodes_count != free_inodes {
-            let fixed = options.writes();
+            let fixed = fix_inodes;
             report.push_fixed(
                 5,
                 "group-free-inodes-wrong",
                 Severity::Fixable,
-                format!(
+                held(fixed, format!(
                     "group {group} free inode count is {}, counted {free_inodes}",
                     desc.free_inodes_count
-                ),
+                )),
                 fixed,
             );
         }
         if desc.used_dirs_count != used_dirs {
-            let fixed = options.writes();
+            let fixed = fix_inodes;
             report.push_fixed(
                 5,
                 "group-dir-count-wrong",
                 Severity::Fixable,
-                format!(
+                held(fixed, format!(
                     "group {group} directory count is {}, counted {used_dirs}",
                     desc.used_dirs_count
-                ),
+                )),
                 fixed,
             );
         }
@@ -1804,13 +1917,19 @@ async fn pass5_bitmaps<D: BlockDevice>(
             let bb_len = (sb.blocks_per_group as usize).div_ceil(8);
             let ib_len = (sb.inodes_per_group as usize).div_ceil(8);
             let desc = &mut fs.group_descs_mut()[group as usize];
-            desc.free_blocks_count = free_blocks;
-            desc.free_inodes_count = free_inodes;
-            desc.used_dirs_count = used_dirs;
-            if has_csum {
-                desc.block_bitmap_csum = csum::bitmap_csum(seed, &expected[..bb_len]);
-                desc.inode_bitmap_csum =
-                    csum::bitmap_csum(seed, &expected_inodes[..ib_len]);
+            if fix_blocks {
+                desc.free_blocks_count = free_blocks;
+                if has_csum {
+                    desc.block_bitmap_csum = csum::bitmap_csum(seed, &expected[..bb_len]);
+                }
+            }
+            if fix_inodes {
+                desc.free_inodes_count = free_inodes;
+                desc.used_dirs_count = used_dirs;
+                if has_csum {
+                    desc.inode_bitmap_csum =
+                        csum::bitmap_csum(seed, &expected_inodes[..ib_len]);
+                }
             }
         }
 
@@ -1820,15 +1939,15 @@ async fn pass5_bitmaps<D: BlockDevice>(
 
     // And the superblock's totals.
     if sb.free_blocks_count != total_free_blocks {
-        let fixed = options.writes();
+        let fixed = fix_blocks;
         report.push_fixed(
             5,
             "superblock-free-blocks-wrong",
             Severity::Fixable,
-            format!(
+            held(fixed, format!(
                 "superblock free block count is {}, counted {total_free_blocks}",
                 sb.free_blocks_count
-            ),
+            )),
             fixed,
         );
         if fixed {
@@ -1836,15 +1955,15 @@ async fn pass5_bitmaps<D: BlockDevice>(
         }
     }
     if sb.free_inodes_count != total_free_inodes {
-        let fixed = options.writes();
+        let fixed = fix_inodes;
         report.push_fixed(
             5,
             "superblock-free-inodes-wrong",
             Severity::Fixable,
-            format!(
+            held(fixed, format!(
                 "superblock free inode count is {}, counted {total_free_inodes}",
                 sb.free_inodes_count
-            ),
+            )),
             fixed,
         );
         if fixed {
@@ -2570,5 +2689,173 @@ mod tests {
         let mut uncorrected = FsckReport::default();
         uncorrected.push(1, "y", Severity::Serious, "left alone".into());
         assert_eq!(uncorrected.exit_code(), 4);
+    }
+
+    /// Edit the first block of directory `dir` and restamp its checksum.
+    async fn edit_dir_block(dev: &MemDevice, dir: u32, edit: impl FnOnce(&mut Vec<u8>)) {
+        let fs = Filesystem::open(dev).await.unwrap();
+        let inode = fs.read_inode(dir).await.unwrap();
+        let block = fs.resolve_block(&inode, 0).await.unwrap().unwrap();
+        let mut buf = fs.read_block(block).await.unwrap();
+        edit(&mut buf);
+        if fs.has_metadata_csum() {
+            fs.stamp_dir_block(&mut buf, dir, inode.generation);
+        }
+        fs.write_block(block, &buf).await.unwrap();
+    }
+
+    const LOST_FOUND: u32 = ino::ROOT + 9;
+
+    /// #42 `2f81571e62c4`: a directory whose name is gone from its parent is
+    /// not reached through its own "..". It is disconnected, its link count
+    /// is not lowered to the names it has left, and a repair does not mark
+    /// the filesystem clean.
+    #[tokio::test]
+    async fn a_directory_with_no_name_is_disconnected_and_its_links_kept() {
+        let dev = formatted(Profile::Ext4, 16 * MIB).await;
+        edit_dir_block(&dev, ino::ROOT, |buf| {
+            let at = buf
+                .windows(10)
+                .position(|w| w == b"lost+found")
+                .expect("lost+found in the root");
+            // The entry's inode field, 8 bytes before its name: a removed name.
+            put_u32(buf, at - 8, 0);
+        })
+        .await;
+
+        let report = check(&dev, &FsckOptions::check_only().force(true)).await.unwrap();
+        assert_eq!(codes(&report), ["disconnected-directory"], "{}", describe(&report));
+
+        let report = check(&dev, &FsckOptions::repair().force(true)).await.unwrap();
+        assert_eq!(report.exit_code(), 4, "{}", describe(&report));
+        let fs = Filesystem::open(&dev).await.unwrap();
+        assert_eq!(fs.read_inode(LOST_FOUND).await.unwrap().links_count, 2);
+        assert_eq!(fs.superblock().state & state::VALID_FS, 0);
+    }
+
+    /// #42 `2f81571e62c4`: a ".." that names a directory other than the one
+    /// listing it is found (it could not be before: the tree was built from
+    /// ".." itself).
+    #[tokio::test]
+    async fn a_dotdot_naming_the_wrong_parent_is_found() {
+        let dev = formatted(Profile::Ext4, 16 * MIB).await;
+        // lost+found's ".." is its second entry, after a 12-byte ".".
+        edit_dir_block(&dev, LOST_FOUND, |buf| {
+            assert_eq!(&buf[12 + 8..12 + 10], b"..");
+            put_u32(buf, 12, LOST_FOUND);
+        })
+        .await;
+        let report = check(&dev, &FsckOptions::check_only().force(true)).await.unwrap();
+        assert!(
+            report.problems.iter().any(|p| p.code == "parent-mismatch"
+                && p.message == format!("directory {LOST_FOUND} claims parent {LOST_FOUND} but is listed in 2")),
+            "{}",
+            describe(&report)
+        );
+        assert!(!codes(&report).contains(&"disconnected-directory"), "{}", describe(&report));
+    }
+
+    /// #42 `f771adccb6ac`: a block map that cannot be walked leaves the scan
+    /// incomplete, and a repair then frees none of the blocks it could not
+    /// see: the bitmap and the free counts stay as they were.
+    #[tokio::test]
+    async fn a_failed_map_walk_frees_nothing_in_repair() {
+        let dev = formatted(Profile::Ext4, 16 * MIB).await;
+        let fs = Filesystem::open(&dev).await.unwrap();
+        let mut inode = fs.read_inode(LOST_FOUND).await.unwrap();
+        let mut owned = Vec::new();
+        fs.walk_blocks(&inode, |b| owned.push(b.physical)).await.unwrap();
+        assert!(!owned.is_empty());
+        let free_before = fs.superblock().free_blocks_count;
+        // The extent header's magic, spoilt: the tree cannot be walked.
+        inode.block[0] ^= 0xff;
+        fs.write_inode(LOST_FOUND, &inode).await.unwrap();
+        drop(fs);
+
+        let report = check(&dev, &FsckOptions::check_only().force(true)).await.unwrap();
+        assert!(codes(&report).contains(&"unwalkable-block-map"), "{}", describe(&report));
+        assert!(codes(&report).contains(&"block-bitmap-differs"), "{}", describe(&report));
+
+        let report = check(&dev, &FsckOptions::repair().force(true)).await.unwrap();
+        assert_eq!(report.exit_code(), 4, "{}", describe(&report));
+        for p in report.problems.iter().filter(|p| p.pass == 5 && p.code.contains("block")) {
+            assert!(!p.fixed, "{}", describe(&report));
+        }
+        let fs = Filesystem::open(&dev).await.unwrap();
+        for block in owned {
+            let group = fs.group_of_block(block);
+            let bitmap = fs.read_block_bitmap(group).await.unwrap();
+            let index = block - fs.group_first_block(group);
+            assert!(
+                Filesystem::<&MemDevice>::test_bit(&bitmap, index),
+                "block {block} of the unwalkable map was freed"
+            );
+        }
+        assert_eq!(fs.superblock().free_blocks_count, free_before);
+        assert_eq!(fs.superblock().state & state::VALID_FS, 0);
+    }
+
+    /// #42 `f771adccb6ac`: inodes skipped on a descriptor's
+    /// `bg_itable_unused` when that descriptor failed its checksum are unseen,
+    /// so the repair leaves the bitmaps alone too.
+    #[tokio::test]
+    async fn an_untrusted_descriptor_leaves_the_bitmaps_alone() {
+        let dev = formatted(Profile::Ext4, 16 * MIB).await;
+        let mut fs = Filesystem::open(&dev).await.unwrap();
+        assert!(fs.group_descs()[0].itable_unused > 0);
+        let desc = fs.group_descs()[0];
+        let mut bitmap = fs.read_block_bitmap(0).await.unwrap();
+        for byte in bitmap.iter_mut().skip(200).take(20) {
+            *byte = 0xff;
+        }
+        fs.write_block(desc.block_bitmap, &bitmap).await.unwrap();
+        // The descriptor checksum spoilt, written without re-stamping.
+        fs.group_descs_mut()[0].checksum ^= 0xffff;
+        let sb = fs.superblock().clone();
+        let desc_size = sb.desc_size() as usize;
+        let mut raw = vec![0u8; sb.gdt_blocks() as usize * sb.block_size() as usize];
+        for (g, d) in fs.group_descs().iter().enumerate() {
+            d.encode_into(&mut raw[g * desc_size..], desc_size);
+        }
+        let gdt_block = if sb.block_size() == 1024 { 2 } else { 1 };
+        fs.write_block(gdt_block, &raw).await.unwrap();
+        drop(fs);
+
+        let report = check(&dev, &FsckOptions::repair().force(true)).await.unwrap();
+        let differs = report
+            .problems
+            .iter()
+            .find(|p| p.code == "block-bitmap-differs")
+            .unwrap_or_else(|| panic!("{}", describe(&report)));
+        assert!(!differs.fixed, "{}", describe(&report));
+        let fs = Filesystem::open(&dev).await.unwrap();
+        assert_eq!(fs.read_block_bitmap(0).await.unwrap(), bitmap);
+    }
+
+    /// #42 `5319d3d2a7d9`: a repair sets a wrong `h_refcount`, too low or
+    /// too high, to the inodes found pointing at the block, restamps its
+    /// checksum, and the next check is clean.
+    #[tokio::test]
+    async fn a_wrong_xattr_refcount_is_repaired() {
+        for profile in [Profile::Ext2, Profile::Ext4] {
+            for refcount in [1, 3] {
+                let dev = formatted(profile, 16 * MIB).await;
+                let block = share_an_xattr_block(&dev, refcount, |_, _, _| {}).await;
+                let report = check(&dev, &FsckOptions::repair().force(true)).await.unwrap();
+                assert_eq!(codes(&report), ["xattr-refcount-wrong"], "{}", describe(&report));
+                assert!(report.problems[0].fixed);
+                assert_eq!(report.exit_code(), 1);
+
+                let fs = Filesystem::open(&dev).await.unwrap();
+                let buf = fs.read_block(block).await.unwrap();
+                assert_eq!(get_u32(&buf, xattr::block_off::H_REFCOUNT), 2);
+                if fs.has_metadata_csum() {
+                    assert!(xattr::verify_block_csum(&buf, fs.csum_seed(), block));
+                }
+                drop(fs);
+                let again = check(&dev, &FsckOptions::check_only().force(true)).await.unwrap();
+                assert!(again.is_clean(), "{} {refcount}:\n{}", profile.name(), describe(&again));
+            }
+        }
     }
 }

@@ -4,6 +4,21 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-11-20
+- **fix(fsck):** pass 3 builds the directory tree from ordinary names, not
+  from each directory's own `..`: a directory whose name was removed is
+  `disconnected-directory` (it was "reachable" through itself), its link
+  count is not lowered, and a `..` naming the wrong parent is
+  `parent-mismatch`, which could not be found before (#42, finding
+  `2f81571e62c4`).
+- **fix(fsck):** repair frees nothing after an incomplete scan: an
+  unwalkable block map, or inodes skipped on a descriptor that failed its
+  checksum, leave the block (and inode) bitmaps and the free counts reported
+  and unrepaired; an unreadable directory block leaves link counts unset. A
+  directory whose extent tree cannot be mapped is `dir-block-unreadable`, no
+  longer an error that ends the check (#42, finding `f771adccb6ac`).
+- **fix(fsck):** repair corrects a wrong extended-attribute block
+  `h_refcount` to the inodes found and restamps its checksum, as `e2fsck -y`
+  does (#42, finding `5319d3d2a7d9`).
 - **fix(fs):** an unwritten (preallocated) extent reads as zeroes through
   `Filesystem::read_file`, not as whatever its block still holds, and holds
   no entries for `read_dir` (#41, finding `24146537d73e`). New

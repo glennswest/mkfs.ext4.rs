@@ -120,10 +120,22 @@ so to have `mkfs -t ext4` / `fsck -t ext4` dispatch to them, install them as
   inode that points at it, is in use once however many inodes share it
   (`h_refcount`, as `mkfs.ext4 -d` shares identical attribute sets), and is
   checked for its magic, `h_blocks` and checksum; a reference count that
-  disagrees with the inodes found is reported. Before #25 (4.1.1 and
+  disagrees with the inodes found is reported, and a repair sets it to them
+  and restamps the block's checksum (`e2fsck`'s `adjust_extattr_refcount`).
+  Before #25 (4.1.1 and
   earlier) the block was not counted, so any filesystem with attributes
   spilled out of the inode (SELinux labels, ACLs) reported `i-blocks-wrong`
   and bitmap differences that `e2fsck` does not.
+
+  Pass 3 walks the tree from the root through ordinary names only; a
+  directory's own `..` is a claim checked against the directory that lists
+  it (`parent-mismatch`), never a way in. A directory whose name is gone is
+  `disconnected-directory`, and its link count is left alone (this checker
+  does not reconnect to `lost+found`). A repair frees nothing pass 1 could
+  not see: when a block map cannot be walked, or inodes go unread on a
+  descriptor that failed its checksum, the bitmaps and free counts are
+  reported and left as they are; when a directory block cannot be read, no
+  link count is set from the names that were (#42).
 
   `Filesystem::flush_group_descs` (what fio-ext4's flush, orphan release and
   repair write descriptors with) puts each descriptor block where
